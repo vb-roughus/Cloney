@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from cloney.config import Settings, get_settings
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
+from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
 from cloney.pipeline import synthesize_chunks
 from cloney.web.jobs import JobRunner
@@ -110,12 +111,20 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     @app.get("/projects/{project_id}", response_class=HTMLResponse)
     def project_view(request: Request, project_id: str) -> HTMLResponse:
         project = load(project_id)
+        # Die Referenz gehört sichtbar auf die Seite: passt ihr Wortlaut nicht zur
+        # Aufnahme, ist das die häufigste Ursache für unverständliche Ausgabe.
+        voice = voices.get(project.voice) if voices.exists(project.voice) else None
+        rate = None
+        if voice and voice.transcript.strip() and voice.duration_s > 0:
+            rate = len(voice.transcript.strip()) / voice.duration_s
         return templates.TemplateResponse(
             request,
             "project.html",
             {
                 "project": project,
                 "engine": engine_info(project.engine),
+                "voice": voice,
+                "reference_rate": rate,
                 "running": runner.is_running(project_id),
                 "threshold": settings.cer_threshold,
             },
@@ -153,12 +162,34 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     # -- Einzelne Chunks --------------------------------------------------
 
     def _resynthesize(project: Project, index: int) -> None:
-        synthesize_chunks(
-            project,
-            [project.chunks[index]],
-            voices,
-            lambda: create_engine(project.engine, settings),
-        )
+        """Einen einzelnen Chunk neu erzeugen.
+
+        Schlägt das fehl -- fehlende Stimme, Modell nicht ladbar, Server weg --,
+        dann als HTTP-Fehler mit dem Grund im Text. Sonst bliebe im Browser ein
+        nacktes 'Internal Server Error' übrig, und der eigentliche Hinweis stünde
+        nur im Serverlog.
+        """
+        try:
+            synthesize_chunks(
+                project,
+                [project.chunks[index]],
+                voices,
+                lambda: create_engine(project.engine, settings),
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                400,
+                f"Die Stimme '{project.voice}' ist nicht mehr vorhanden. "
+                "Unter 'Stimmen' neu anlegen oder ein neues Projekt beginnen.",
+            ) from exc
+        except (EngineError, ValueError, RuntimeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        chunk = project.chunks[index]
+        if chunk.status == ChunkStatus.FAILED:
+            # Die Pipeline schreibt Fehler ins Manifest, statt sie zu werfen --
+            # hier soll der Klick aber sichtbar quittiert werden.
+            raise HTTPException(400, chunk.error or "Der Chunk konnte nicht erzeugt werden.")
 
     @app.post("/projects/{project_id}/chunks/{index}/reroll", response_class=HTMLResponse)
     def reroll(request: Request, project_id: str, index: int) -> HTMLResponse:
