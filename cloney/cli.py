@@ -194,6 +194,162 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
         )
 
 
+#: Kurzer Text für den Selbsttest. Bewusst voller Ziffern, Symbole und
+#: Abkürzungen -- man soll hören, dass die Normalisierung greift.
+DEMO_TEXT = (
+    "Am 3. Mai 2024 um 14:30 Uhr kostete es 1.250,50 €. "
+    "Dr. Meier sagte z.B., das seien ca. 50 % zu viel."
+)
+
+#: Wortlaut des Beispielclips, den F5-TTS mitbringt.
+_F5_EXAMPLE_TRANSCRIPT = "Some call me nature, others call me mother nature."
+
+
+@app.command()
+def doctor() -> None:
+    """Umgebung prüfen und zu jedem Befund den Befehl nennen, der ihn behebt."""
+    from cloney.doctor import run_checks
+
+    settings = get_settings()
+    report = run_checks(settings)
+
+    colors = {
+        "ok": typer.colors.GREEN,
+        "warn": typer.colors.YELLOW,
+        "fail": typer.colors.RED,
+    }
+    labels = {"ok": " OK ", "warn": "WARN", "fail": "FEHL"}
+    for check in report.results:
+        typer.secho(f"[{labels[check.status]}] ", fg=colors[check.status], nl=False)
+        typer.echo(f"{check.name:18} {check.detail}")
+        if check.remedy:
+            typer.secho(f"{'':25} -> {check.remedy}", fg=typer.colors.BRIGHT_BLACK)
+
+    typer.echo("")
+    if report.failures:
+        typer.secho(
+            f"{len(report.failures)} Punkte müssen behoben werden, "
+            f"{len(report.warnings)} Hinweise.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if report.warnings:
+        typer.secho(
+            f"Einsatzbereit, mit {len(report.warnings)} Hinweisen. "
+            "Nicht jeder davon muss dich betreffen.",
+            fg=typer.colors.YELLOW,
+        )
+        return
+    typer.secho("Alles bereit.", fg=typer.colors.GREEN)
+
+
+def _demo_voice(store: VoiceStore, audio: Path | None, voice: str, settings: Settings) -> str:
+    """Referenzstimme für den Selbsttest bestimmen."""
+    if audio is not None:
+        store.add(
+            "demo",
+            audio,
+            transcript="",
+            min_seconds=settings.ref_min_seconds,
+            max_seconds=settings.ref_max_seconds,
+        )
+        return "demo"
+    if voice:
+        return voice
+    existing = store.list_all()
+    if existing:
+        return existing[0].name
+
+    # Letzte Möglichkeit: der Beispielclip aus F5-TTS. Er ist englisch, taugt
+    # also nicht zur Beurteilung der Stimme -- wohl aber zum Nachweis, dass die
+    # Kette insgesamt läuft.
+    example: Path | None = None
+    try:
+        from importlib.resources import files
+
+        candidate = Path(str(files("f5_tts").joinpath("infer/examples/basic/basic_ref_en.wav")))
+        example = candidate if candidate.is_file() else None
+    except (ImportError, ModuleNotFoundError):
+        example = None
+    if example is None:
+        typer.secho(
+            "Keine Referenzstimme vorhanden. Eine Aufnahme mitgeben:\n"
+            "  cloney demo --audio meine_stimme.wav",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    typer.secho(
+        "Keine eigene Stimme hinterlegt -- der englische Beispielclip von F5-TTS springt ein.\n"
+        "Er belegt, dass die Kette läuft, sagt über die Klangqualität aber nichts aus.",
+        fg=typer.colors.YELLOW,
+    )
+    store.add("demo", example, transcript=_F5_EXAMPLE_TRANSCRIPT, min_seconds=0.0, max_seconds=99.0)
+    return "demo"
+
+
+@app.command()
+def demo(
+    audio: Path | None = typer.Option(
+        None, exists=True, help="Referenzaufnahme für den Selbsttest."
+    ),
+    voice: str = typer.Option("", help="Bereits angelegte Stimme verwenden."),
+    engine: str = typer.Option("", help="Engine. Standard: aus der Konfiguration."),
+    qc: bool = typer.Option(False, help="Qualitätskontrolle per Spracherkennung."),
+) -> None:
+    """Kurzen Text rendern, um die gesamte Kette einmal zu belegen."""
+    settings = get_settings()
+    settings.ensure_dirs()
+    engine_name = engine or settings.engine
+    info = engine_info(engine_name)
+
+    store = VoiceStore(settings.voices_dir)
+    name = _demo_voice(store, audio, voice, settings)
+    reference = store.get(name)
+
+    if info.requires_ref_text and not reference.transcript.strip():
+        typer.echo("Die Engine braucht den Wortlaut der Referenz -- wird ermittelt ...")
+        try:
+            from cloney.asr.whisper import WhisperASR
+            from cloney.core.audio import read_wav
+
+            samples, rate = read_wav(reference.audio_path)
+            asr = WhisperASR(settings.asr_model, settings.asr_device, settings.asr_compute_type)
+            transcript = asr.transcribe(samples, rate, settings.asr_language)
+            asr.close()
+        except RuntimeError as exc:
+            typer.secho(
+                f"{exc}\nAlternativ den Wortlaut von Hand hinterlegen:\n"
+                f'  cloney voices add --audio <datei> --name {name} --transcript "..."',
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1) from None
+        store.set_transcript(name, transcript)
+        reference = store.get(name)
+        typer.echo(f"Erkannt: {transcript}")
+
+    typer.echo(f"Engine {engine_name}, Stimme '{name}' ({reference.duration_s:.0f}s Referenz)")
+    typer.echo(f"Text: {DEMO_TEXT}")
+    typer.echo("")
+
+    project = Project.create(
+        name="Selbsttest",
+        text=DEMO_TEXT,
+        voice=name,
+        engine=info,
+        projects_dir=settings.projects_dir,
+        reference_seconds=reference.duration_s,
+        chars_per_second=settings.chars_per_second,
+        target_seconds=settings.target_chunk_seconds,
+        max_seconds=settings.max_chunk_seconds,
+    )
+    typer.echo(f"Gesprochen wird: {project.chunks[0].normalized_text}")
+    typer.echo("")
+    _run(project, settings, engine_name, qc)
+    typer.echo("")
+    typer.secho(f"Fertig. Anhören: {project.output_path.resolve()}", fg=typer.colors.GREEN)
+
+
 @app.command()
 def web(
     host: str = typer.Option("127.0.0.1", help="Adresse."),

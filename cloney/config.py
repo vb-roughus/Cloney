@@ -52,8 +52,9 @@ class Settings(BaseSettings):
     # nennt die Fehlermeldung der Engine die zu setzenden Variablen.
     f5_repo_id: str = "aihpi/F5-TTS-German"
     f5_model_config: str = "F5TTS_Base"
-    f5_ckpt_filename: str = "F5TTS_Base/model_last.safetensors"
-    f5_vocab_filename: str = "vocab.txt"
+    # Leer = im Repo nachsehen und selbst wählen.
+    f5_ckpt_filename: str = ""
+    f5_vocab_filename: str = ""
     # Lokale Dateien haben Vorrang vor dem Download.
     f5_ckpt_path: str = ""
     f5_vocab_path: str = ""

@@ -51,6 +51,12 @@ könnte — CLI, Web-UI und Wiederaufnahme lesen dieselbe Datei.
 | RTX 3090 / 4090 (24 GB) | passt bequem | passt mühelos |
 | 8-GB-Karten | passt nicht | passt |
 
+**Unter Windows steht nur `f5-de` zur Verfügung.** SGLang-Omni, über das Higgs v3
+bedient wird, [läuft nicht nativ unter Windows](https://docs.sglang.ai/get_started/install.html) —
+es setzt Linux-spezifische CUDA-Kernel voraus. Für Higgs braucht es dort WSL2.
+Da `f5-de` ohnehin das auf Deutsch nachtrainierte Modell ist, ist das kein großer
+Verlust.
+
 **Blackwell (RTX 50-Serie) braucht eine neuere Toolchain.** Der sm_120-Rechenkern
 der 5080 wird erst ab **CUDA 12.8** und **PyTorch 2.7** unterstützt. Ältere
 PyTorch-Builds starten zwar, melden aber `no kernel image is available for
@@ -73,14 +79,64 @@ Voraussetzung dafür, dass beide Rollen überhaupt zusammenpassen.
 
 ## Installation
 
+**Windows** (PowerShell, im Projektordner):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+**Linux und macOS:**
+
 ```bash
-uv venv --python 3.11
-uv pip install -e ".[dev,asr,f5]"
+./install.sh
+```
+
+Der Installer legt die virtuelle Umgebung an, installiert PyTorch aus dem
+CUDA-12.8-Index (nötig für RTX-50-Karten, unschädlich für ältere), installiert
+Cloney samt Extras, legt die `.env` an und führt zum Schluss die Diagnose aus.
+Argumente werden durchgereicht: `--skip-torch`, `--extras ""`, `--dry-run`.
+
+Von Hand geht es genauso:
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install -e ".[dev,asr,f5]"
 cp .env.example .env
 ```
 
 Die Extras sind einzeln wählbar: `asr` bringt faster-whisper für die
 Qualitätskontrolle, `f5` das deutsche F5-TTS-Modell. Ohne beide läuft der Kern.
+
+### Prüfen, ob alles bereit ist
+
+```bash
+cloney doctor
+```
+
+Die Diagnose prüft durch Ausführen statt durch Nachschlagen von Versionsnummern:
+Sie lädt tatsächlich eine WAV-Datei mit `torchaudio`, hält die Architekturliste
+des PyTorch-Builds gegen die Architektur der eingebauten Karte, sieht im
+Modell-Repo nach, fragt beim Higgs-Server an und fährt einen vollständigen
+Durchstich mit der Dummy-Engine. Zu jedem Befund steht der Befehl, der ihn behebt.
+
+```
+[ OK ] PyTorch            2.7.0 (CUDA 12.8) auf NVIDIA GeForce RTX 5080, sm_120, 16 GB VRAM
+[ OK ] Audio-Laden        torchaudio liest WAV (24000 Hz, 24000 Samples)
+[WARN] Engine higgs       SGLang-Omni läuft nicht nativ unter Windows
+                          -> Für Higgs v3 wird WSL2 gebraucht. Unter Windows ist f5-de die Engine der Wahl.
+[ OK ] Durchstich         1 Chunks, 7.5s erzeugt, Fehlerrate 0%
+```
+
+### Einmal den ganzen Weg gehen
+
+```bash
+cloney demo --audio meine_stimme.wav
+```
+
+Rendert einen kurzen Satz voller Ziffern, Symbole und Abkürzungen — man soll
+hören, dass die Normalisierung greift. Braucht die gewählte Engine einen
+Referenztext, wird er unterwegs selbst ermittelt.
 
 Der `asr`-Extra bringt faster-whisper für die Qualitätskontrolle mit. Ohne ihn
 läuft alles außer der Fehlermessung; das Manifest vermerkt dann `cer = null`,
@@ -145,11 +201,16 @@ Zwei Eigenheiten von `f5-de` sind zu beachten:
 - **Eine Generierung umfasst rund 22 Sekunden**, Referenz eingerechnet. Cloney
   schneidet die Chunks entsprechend kleiner — siehe unten.
 
-Die Dateinamen der deutschen Finetunes sind uneinheitlich. Die Voreinstellung
-zeigt auf [`aihpi/F5-TTS-German`](https://huggingface.co/aihpi/F5-TTS-German);
-schlägt der Download fehl, nennt die Fehlermeldung die zu setzenden Variablen.
-Alternativen sind [`hvoss-techfak/F5-TTS-German`](https://huggingface.co/hvoss-techfak/F5-TTS-German)
+Die Dateinamen der deutschen Finetunes sind uneinheitlich — mal flach, mal in
+Unterordnern, mal `.pt` statt `.safetensors`, mit beliebiger Schrittzahl im Namen.
+Cloney rät deshalb keinen Namen, sondern sieht im Repo nach und wählt: bevorzugt
+`.safetensors`, den höchsten Stand, ohne BigVGAN (das zusätzliche Abhängigkeiten
+mitbringt). Voreingestellt ist
+[`aihpi/F5-TTS-German`](https://huggingface.co/aihpi/F5-TTS-German); Alternativen
+sind [`hvoss-techfak/F5-TTS-German`](https://huggingface.co/hvoss-techfak/F5-TTS-German)
 und [`marduk-ra/F5-TTS-German`](https://huggingface.co/marduk-ra/F5-TTS-German).
+Mit `CLONEY_F5_CKPT_FILENAME` lässt sich die Auswahl überschreiben, mit
+`CLONEY_F5_CKPT_PATH` direkt auf eine lokale Datei zeigen.
 
 ### Warum die Chunk-Länge von der Engine abhängt
 
@@ -224,7 +285,10 @@ Als Nächstes: LLM-gestützte Textvorbereitung für das, was Regeln nicht könne
 `higgs` und `f5-de` auf einem deutschen Testsatz vergleicht statt sie nach Gefühl
 auszuwählen.
 
-Zwei Stellen sind gegen die öffentliche Dokumentation gebaut, aber nicht gegen
-echte Hardware verifiziert: das Anfrageschema der Higgs-Engine und die
-voreingestellten Dateinamen des deutschen F5-Checkpoints. Beide Engines geben
-den Fehler der Gegenstelle unverändert weiter, statt ihn zu verschlucken.
+Das Anfrageschema der Higgs-Engine ist gegen die öffentliche Dokumentation
+gebaut, aber nicht gegen einen laufenden Server verifiziert; die Engine gibt den
+Fehler der Gegenstelle unverändert weiter, statt ihn zu verschlucken. Der
+Windows-Installer `install.ps1` konnte mangels PowerShell in der
+Entwicklungsumgebung nicht ausgeführt werden — die gesamte Logik liegt deshalb in
+`scripts/setup.py`, das geprüft ist; das Skript selbst beschränkt sich auf das
+Anlegen der Umgebung.

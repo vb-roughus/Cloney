@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import pathlib
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -61,21 +63,65 @@ def _resolve_device(device: str) -> str | None:
     return None  # F5-TTS wählt dann selbst cuda / mps / cpu
 
 
+def choose_model_files(files: list[str], prefer_bigvgan: bool = False) -> tuple[str, str]:
+    """Sucht Checkpoint und Vokabular in der Dateiliste eines Modell-Repos.
+
+    Die deutschen Finetunes legen ihre Dateien unterschiedlich ab -- mal flach,
+    mal in Unterordnern, mal als .pt statt .safetensors, und die Schrittzahl im
+    Namen ist beliebig. Statt einen Namen zu raten wird hier gewählt.
+    """
+    vocabs = [f for f in files if pathlib.PurePosixPath(f).name == "vocab.txt"]
+    if not vocabs:
+        raise EngineError("Im Modell-Repo gibt es keine vocab.txt")
+    # Flach liegende Vokabulare gelten für das ganze Repo.
+    vocab = min(vocabs, key=lambda f: (f.count("/"), len(f)))
+
+    candidates = [f for f in files if f.endswith((".safetensors", ".pt"))]
+    if not candidates:
+        raise EngineError("Im Modell-Repo gibt es keinen Checkpoint (.safetensors oder .pt)")
+
+    def rank(name: str) -> tuple:
+        lower = name.lower()
+        digits = re.findall(r"\d+", pathlib.PurePosixPath(name).stem)
+        return (
+            # bigvgan braucht zusätzliche Abhängigkeiten -- nur auf Wunsch.
+            ("bigvgan" in lower) != prefer_bigvgan,
+            not name.endswith(".safetensors"),
+            # Bei mehreren Ständen den höchsten nehmen; "last" schlägt alles.
+            0 if "last" in lower else 1,
+            -max((int(d) for d in digits), default=0),
+            len(name),
+        )
+
+    return min(candidates, key=rank), vocab
+
+
+def discover_model_files(repo_id: str, prefer_bigvgan: bool = False) -> tuple[str, str]:
+    try:
+        from huggingface_hub import list_repo_files
+    except ImportError as exc:
+        raise EngineError('huggingface_hub fehlt. Installation: pip install -e ".[f5]"') from exc
+    try:
+        files = list(list_repo_files(repo_id))
+    except Exception as exc:
+        raise EngineError(f"Dateiliste von '{repo_id}' nicht abrufbar: {exc}") from exc
+    return choose_model_files(files, prefer_bigvgan)
+
+
 def _download(repo_id: str, filename: str) -> str:
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as exc:
-        raise EngineError("huggingface_hub fehlt. Installation: uv pip install -e '.[f5]'") from exc
+        raise EngineError('huggingface_hub fehlt. Installation: pip install -e ".[f5]"') from exc
 
     try:
         return hf_hub_download(repo_id=repo_id, filename=filename)
     except Exception as exc:
         raise EngineError(
             f"'{filename}' konnte nicht aus '{repo_id}' geladen werden: {exc}\n"
-            "Die Dateinamen unterscheiden sich zwischen den deutschen Finetunes. "
-            "Sieh im Dateibaum des Modells nach und setze CLONEY_F5_CKPT_FILENAME "
-            "und CLONEY_F5_VOCAB_FILENAME entsprechend -- oder zeige mit "
-            "CLONEY_F5_CKPT_PATH und CLONEY_F5_VOCAB_PATH direkt auf lokale Dateien."
+            "Mit CLONEY_F5_CKPT_FILENAME und CLONEY_F5_VOCAB_FILENAME lässt sich die "
+            "Auswahl überschreiben, mit CLONEY_F5_CKPT_PATH und CLONEY_F5_VOCAB_PATH "
+            "direkt auf lokale Dateien zeigen."
         ) from exc
 
 
@@ -91,8 +137,8 @@ class F5GermanEngine:
         self,
         model_config: str = "F5TTS_Base",
         repo_id: str = "aihpi/F5-TTS-German",
-        ckpt_filename: str = "F5TTS_Base/model_last.safetensors",
-        vocab_filename: str = "vocab.txt",
+        ckpt_filename: str = "",
+        vocab_filename: str = "",
         ckpt_path: str = "",
         vocab_path: str = "",
         device: str = "auto",
@@ -111,9 +157,12 @@ class F5GermanEngine:
             from f5_tts.api import F5TTS
         except ImportError as exc:
             raise EngineError(
-                "f5-tts ist nicht installiert. Installation: uv pip install -e '.[f5]'"
+                'f5-tts ist nicht installiert. Installation: pip install -e ".[f5]"'
             ) from exc
 
+        if not (ckpt_path and vocab_path) and not (ckpt_filename and vocab_filename):
+            # Nichts vorgegeben: im Repo nachsehen, statt Namen zu raten.
+            ckpt_filename, vocab_filename = discover_model_files(repo_id)
         checkpoint = ckpt_path or _download(repo_id, ckpt_filename)
         vocabulary = vocab_path or _download(repo_id, vocab_filename)
         for label, path in (("Checkpoint", checkpoint), ("Vokabular", vocabulary)):

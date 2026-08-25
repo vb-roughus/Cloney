@@ -143,7 +143,7 @@ def test_fehlender_referenztext_bricht_verstaendlich_ab(
 
 
 def test_fehlendes_modell_nennt_die_installation(model_files: tuple[str, str]) -> None:
-    with pytest.raises(EngineError, match="uv pip install"):
+    with pytest.raises(EngineError, match=r"pip install -e"):
         _engine(model_files)
 
 

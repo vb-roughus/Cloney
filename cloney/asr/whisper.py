@@ -35,7 +35,7 @@ class WhisperASR:
             from faster_whisper import WhisperModel
         except ImportError as exc:
             raise RuntimeError(
-                "faster-whisper ist nicht installiert. Installation: uv pip install -e '.[asr]'"
+                'faster-whisper ist nicht installiert. Installation: pip install -e ".[asr]"'
             ) from exc
         self._model = WhisperModel(model, device=device, compute_type=compute_type)
 
