@@ -43,11 +43,40 @@ Der gesamte Zustand steht im Projekt-Manifest auf Platte und wird nach jedem
 Chunk atomar geschrieben. Es gibt keinen zweiten Zustand, der auseinanderlaufen
 könnte — CLI, Web-UI und Wiederaufnahme lesen dieselbe Datei.
 
+## Hardware
+
+| Karte | Higgs v3 (bf16, ~11 GB) | Anmerkung |
+|---|---|---|
+| RTX 5080 / 4080 (16 GB) | passt | ~5 GB Reserve, ausreichend für die ASR-Phase |
+| RTX 3090 / 4090 (24 GB) | passt bequem | |
+| 8-GB-Karten | passt nicht | kleinere Engine nötig (siehe unten) |
+
+**Blackwell (RTX 50-Serie) braucht eine neuere Toolchain.** Der sm_120-Rechenkern
+der 5080 wird erst ab **CUDA 12.8** und **PyTorch 2.7** unterstützt. Ältere
+PyTorch-Builds starten zwar, melden aber `no kernel image is available for
+execution on the device` oder fallen still auf die CPU zurück. Prüfen mit:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_capability())"
+# erwartet: 2.7+ , 12.8+ , (12, 0)
+```
+
+Passende Wheels kommen vom cu128-Index:
+
+```bash
+uv pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+Auch mit 16 GB liegen TTS-Modell und Text-LLM nie gleichzeitig im Speicher --
+das Phasenmodell ist keine Notlösung für kleine Karten, sondern die
+Voraussetzung dafür, dass beide Rollen überhaupt zusammenpassen.
+
 ## Installation
 
 ```bash
 uv venv --python 3.11
 uv pip install -e ".[dev,asr]"
+cp .env.example .env
 ```
 
 Der `asr`-Extra bringt faster-whisper für die Qualitätskontrolle mit. Ohne ihn
@@ -132,6 +161,10 @@ pytest          # läuft vollständig ohne GPU und ohne Netz
 ruff check .
 ruff format .
 ```
+
+Entwickelt wird über Pull Requests gegen `main`. Die CI führt dieselben drei
+Befehle aus; sie braucht weder GPU noch Modelldownload und läuft deshalb in
+Sekunden.
 
 `DummyEngine` und `DummyASR` bilden ein geschlossenes Paar: die Engine kodiert
 eine Kennung quantisierungsfest in die ersten Samples, die Spracherkennung liest

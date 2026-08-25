@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  # Auf main, damit der Stand des Hauptbranch belegt ist -- und auf Pull
+  # Requests. Nicht auf jeden Branch-Push, sonst läuft jeder PR doppelt.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 jobs:
