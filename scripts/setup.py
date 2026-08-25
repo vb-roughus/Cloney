@@ -13,6 +13,7 @@ Aufruf innerhalb der virtuellen Umgebung:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import subprocess
@@ -101,6 +102,9 @@ def main() -> int:
     parser.add_argument("--skip-torch", action="store_true", help="PyTorch nicht anfassen.")
     parser.add_argument("--extras", default="asr,f5", help="Extras, kommagetrennt. Leer = keine.")
     parser.add_argument("--dry-run", action="store_true", help="Nur zeigen, was liefe.")
+    parser.add_argument(
+        "--no-web", action="store_true", help="Die Oberfläche am Ende nicht starten."
+    )
     args = parser.parse_args()
 
     print(paint("Cloney einrichten", GREEN))
@@ -163,10 +167,20 @@ def main() -> int:
 
     print(
         "      Einmal den ganzen Weg gehen, mit einer eigenen Aufnahme:\n"
-        f"        {paint('cloney demo --audio meine_stimme.wav', GREEN)}\n\n"
-        "      Danach die Oberfläche:\n"
-        f"        {paint('cloney web', GREEN)}"
+        f"        {paint('cloney demo --audio meine_stimme.wav', GREEN)}"
     )
+
+    # Ohne Terminal im Vordergrund liefe der Server ins Leere und würde einen
+    # Skriptaufruf blockieren -- dann bleibt es bei der Anleitung.
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if args.no_web or args.dry_run or not interactive:
+        print(f"\n      Oberfläche starten mit: {paint('cloney web', GREEN)}")
+        return 0
+
+    print("\n      Oberfläche wird gestartet, der Browser öffnet sich gleich.")
+    print(paint("      Strg+C beendet sie; danach jederzeit wieder mit 'cloney web'.", DIM))
+    with contextlib.suppress(KeyboardInterrupt):
+        subprocess.run([sys.executable, "-m", "cloney.cli", "web"], cwd=ROOT)
     return 0
 
 

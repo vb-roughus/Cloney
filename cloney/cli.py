@@ -355,15 +355,26 @@ def web(
     host: str = typer.Option("127.0.0.1", help="Adresse."),
     port: int = typer.Option(8080, help="Port."),
     qc: bool = typer.Option(True, help="Qualitätskontrolle per Spracherkennung."),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Browser öffnen, sobald der Server antwortet."
+    ),
 ) -> None:
     """Web-Oberfläche starten."""
     import uvicorn
 
     from cloney.web.app import create_app
+    from cloney.web.launch import open_browser_when_ready
 
     settings = get_settings()
-    typer.echo(f"Cloney läuft auf http://{host}:{port}")
-    uvicorn.run(create_app(settings, _asr_factory(settings, qc)), host=host, port=port)
+    url = f"http://{host}:{port}"
+    typer.secho(f"Cloney läuft auf {url}", fg=typer.colors.GREEN)
+    typer.secho("Beenden mit Strg+C", fg=typer.colors.BRIGHT_BLACK)
+    if open_browser:
+        open_browser_when_ready(url)
+    try:
+        uvicorn.run(create_app(settings, _asr_factory(settings, qc)), host=host, port=port)
+    except KeyboardInterrupt:
+        typer.echo("")
 
 
 if __name__ == "__main__":
