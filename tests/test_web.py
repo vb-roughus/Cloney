@@ -144,3 +144,98 @@ def test_leerer_text_wird_abgelehnt(settings: Settings, voice_store: VoiceStore)
         data={"name": "Leer", "text": "   ", "voice": "test-stimme", "engine": "dummy"},
     )
     assert response.status_code == 400
+
+
+# -- Rückmeldung in der Oberfläche -----------------------------------------
+
+
+def test_ruhende_statuskarte_hat_keinen_ausloeser(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein leeres hx-trigger ist kein 'kein Auslöser': htmx fällt dann auf
+    seinen Standard zurück, und der ist bei einem div der Klick. Die Karte
+    hätte sich bei jedem Klick in ihr selbst neu geladen und dabei das Ergebnis
+    der eigentlichen Anfrage überschrieben."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    page = client.get(f"/projects/{project_id}").text
+    assert 'hx-trigger=""' not in page
+    assert "every 1500ms" not in page
+
+
+def test_laufende_statuskarte_fragt_nach(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    karte = client.post(f"/projects/{project_id}/run").text
+    assert "every 1500ms" in karte
+    assert 'data-fertig="0"' in karte
+    _wait_for_run(client, project_id)
+
+
+def test_statuskarte_zeigt_fortschritt(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    assert "<progress" in client.get(f"/projects/{project_id}").text
+
+
+def test_aktionen_zeigen_dass_sie_arbeiten(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ohne Anzeige sieht ein Klick, der eine halbe Minute lädt, aus wie einer,
+    der nichts bewirkt hat."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    page = client.get(f"/projects/{project_id}").text
+    assert "htmx-indicator" in page
+    assert "hx-disabled-elt" in page
+
+
+def test_projektseite_zeigt_die_referenz(settings: Settings, voice_store: VoiceStore) -> None:
+    """Passt der Referenztext nicht zur Aufnahme, ist das die häufigste Ursache
+    für unverständliche Ausgabe -- also gehört er sichtbar auf die Seite."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    page = client.get(f"/projects/{project_id}").text
+    assert "Dies ist die Referenzaufnahme." in page
+    assert "Zeichen/s" in page
+
+
+def test_fehlende_stimme_wird_als_klartext_gemeldet(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein nacktes 'Internal Server Error' im Browser hilft niemandem -- der
+    Grund muss mit."""
+    import shutil
+
+    client = _client(settings)
+    project_id = _create_project(client)
+    shutil.rmtree(settings.voices_dir / "test-stimme")
+
+    response = client.post(f"/projects/{project_id}/chunks/0/reroll")
+    assert response.status_code == 400
+    assert "nicht mehr vorhanden" in response.json()["detail"]
+
+
+def test_engine_fehler_wird_als_klartext_gemeldet(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    from cloney.engines.base import EngineError
+    from cloney.web import app as web_app
+
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    def kaputt(_name: str, _settings: Settings):  # noqa: ANN202
+        raise EngineError("Modell konnte nicht geladen werden: kein Speicher")
+
+    original = web_app.create_engine
+    web_app.create_engine = kaputt
+    try:
+        response = client.post(f"/projects/{project_id}/chunks/0/reroll")
+    finally:
+        web_app.create_engine = original
+
+    assert response.status_code == 400
+    assert "kein Speicher" in response.json()["detail"]

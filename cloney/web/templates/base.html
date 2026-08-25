@@ -6,7 +6,8 @@
   <title>{% block title %}Cloney{% endblock %}</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ctext y=%2713%27 font-size=%2713%27%3E%F0%9F%8E%99%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header>
@@ -14,5 +15,6 @@
     <nav><a href="/">Projekte</a><a href="/voices">Stimmen</a></nav>
   </header>
   <main>{% block content %}{% endblock %}</main>
+  <div id="meldungen" class="toasts" aria-live="polite"></div>
 </body>
 </html>

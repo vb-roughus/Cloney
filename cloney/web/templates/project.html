@@ -2,23 +2,40 @@
 {% block title %}{{ project.name }} &mdash; Cloney{% endblock %}
 {% block content %}
 <h1>{{ project.name }}</h1>
-<p class="muted">
-  Stimme <strong>{{ project.voice }}</strong> &middot;
-  Engine <strong>{{ project.engine }}</strong> &middot;
-  {{ engine.license }}
-</p>
 
-<div id="status"
-     hx-get="/projects/{{ project.id }}/status"
-     hx-trigger="{% if running %}load delay:1s, {% endif %}every 2s"
-     hx-swap="outerHTML">
-  {% include "_status.html" %}
-</div>
+<details class="card einstellungen">
+  <summary>Womit gerendert wird</summary>
+  <table class="kv">
+    <tr><th>Engine</th><td>{{ project.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
+    <tr><th>Stimme</th><td>{{ project.voice }}</td></tr>
+    {% if voice %}
+    <tr><th>Referenz</th>
+      <td>{{ "%.1f"|format(voice.duration_s) }}&nbsp;s
+        {% if reference_rate %}
+          &middot; {{ "%.1f"|format(reference_rate) }} Zeichen/s
+          <span class="muted">(deutsches Sprechtempo liegt bei etwa 14)</span>
+        {% endif %}
+      </td></tr>
+    <tr><th>Referenztext</th>
+      <td>{% if voice.transcript %}<span class="spoken">{{ voice.transcript }}</span>
+          {% else %}<span class="warn-text">nicht hinterlegt</span>{% endif %}
+        <br><a href="/voices">Stimmen verwalten</a></td></tr>
+    {% endif %}
+    <tr><th>Chunk-Länge</th><td>bis {{ "%.0f"|format(project.target_chunk_seconds) }}&nbsp;s</td></tr>
+  </table>
+  <p class="muted">
+    Klingt das Ergebnis unverständlich, ist der Referenztext der erste Verdacht:
+    Er muss der Wortlaut der Aufnahme sein, nicht ihre Beschriftung.
+  </p>
+</details>
+
+{% include "_status.html" %}
 
 <h2>Sätze</h2>
 <p class="muted">
   Schwelle für die Fehlerrate: {{ "%.0f"|format(threshold * 100) }}&nbsp;%.
   Darüber wird ein Satz zur Durchsicht markiert.
+  Einzelne Sätze neu zu rendern lädt das Modell erneut &mdash; das dauert beim ersten Mal.
 </p>
 <div id="chunks">{% include "_chunk_table.html" %}</div>
 {% endblock %}
