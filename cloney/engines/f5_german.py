@@ -125,6 +125,29 @@ def _download(repo_id: str, filename: str) -> str:
         ) from exc
 
 
+def resolve_model_files(
+    repo_id: str, ckpt_filename: str = "", vocab_filename: str = ""
+) -> tuple[str, str]:
+    """Lädt Checkpoint und Vokabular herunter und gibt die lokalen Pfade zurück.
+
+    Ohne Vorgabe wird im Repo nachgesehen. Mit Vorgabe wird sie versucht -- und
+    bei einem Fehlschlag ebenfalls gesucht: ein Name, den es im Repo nicht mehr
+    gibt, stammt meist aus einer veralteten Konfiguration und soll den Lauf nicht
+    aufhalten, solange das gewünschte Modell erreichbar ist.
+    """
+    if ckpt_filename and vocab_filename:
+        try:
+            return (
+                _download(repo_id, ckpt_filename),
+                _download(repo_id, vocab_filename),
+            )
+        except EngineError:
+            pass
+
+    found_ckpt, found_vocab = discover_model_files(repo_id)
+    return _download(repo_id, found_ckpt), _download(repo_id, found_vocab)
+
+
 class F5GermanEngine:
     """Anbindung an ``f5_tts.api.F5TTS``.
 
@@ -160,11 +183,10 @@ class F5GermanEngine:
                 'f5-tts ist nicht installiert. Installation: pip install -e ".[f5]"'
             ) from exc
 
-        if not (ckpt_path and vocab_path) and not (ckpt_filename and vocab_filename):
-            # Nichts vorgegeben: im Repo nachsehen, statt Namen zu raten.
-            ckpt_filename, vocab_filename = discover_model_files(repo_id)
-        checkpoint = ckpt_path or _download(repo_id, ckpt_filename)
-        vocabulary = vocab_path or _download(repo_id, vocab_filename)
+        if ckpt_path and vocab_path:
+            checkpoint, vocabulary = ckpt_path, vocab_path
+        else:
+            checkpoint, vocabulary = resolve_model_files(repo_id, ckpt_filename, vocab_filename)
         for label, path in (("Checkpoint", checkpoint), ("Vokabular", vocabulary)):
             if not Path(path).exists():
                 raise EngineError(f"{label} nicht gefunden: {path}")
