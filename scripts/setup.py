@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -68,6 +69,30 @@ def ensure_pip(dry_run: bool = False) -> None:
 
 def pip(*arguments: str, dry_run: bool = False) -> None:
     run([sys.executable, "-m", "pip", *arguments], dry_run=dry_run)
+
+
+def cloney_command() -> str:
+    """Der Aufruf, der ohne aktivierte Umgebung funktioniert.
+
+    'cloney' allein liegt nur im Suchpfad, solange die Umgebung aktiviert ist --
+    ein frisch geöffnetes Fenster kennt den Befehl nicht. Hier wird deshalb der
+    Weg genannt, der immer geht.
+    """
+    scripts = Path(sys.executable).parent
+    name = "cloney.exe" if platform.system() == "Windows" else "cloney"
+    ausfuehrbar = scripts / name
+    if not ausfuehrbar.exists():
+        return f"{sys.executable} -m cloney.cli"
+    try:
+        return f".{os.sep}{ausfuehrbar.relative_to(ROOT)}"
+    except ValueError:
+        return str(ausfuehrbar)
+
+
+def activation_hint() -> str:
+    if platform.system() == "Windows":
+        return r".\.venv\Scripts\Activate.ps1"
+    return "source .venv/bin/activate"
 
 
 def in_virtualenv() -> bool:
@@ -159,22 +184,27 @@ def main() -> int:
         print(
             paint(
                 "      Die Diagnose meldet offene Punkte. Sie stehen oben mit dem\n"
-                "      jeweils passenden Befehl -- danach erneut: cloney doctor",
+                f"      jeweils passenden Befehl -- danach erneut: {cloney_command()} doctor",
                 YELLOW,
             )
         )
         return 1
 
+    befehl = cloney_command()
     print(
         "      Einmal den ganzen Weg gehen, mit einer eigenen Aufnahme:\n"
-        f"        {paint('cloney demo --audio meine_stimme.wav', GREEN)}"
+        f"        {paint(befehl + ' demo --audio meine_stimme.wav', GREEN)}\n\n"
+        "      Kürzer wird es, sobald die Umgebung in diesem Fenster aktiv ist:\n"
+        f"        {paint(activation_hint(), GREEN)}\n"
+        f"        {paint('cloney demo --audio meine_stimme.wav', GREEN)}\n"
+        "      Das gilt je Fenster -- ein neues braucht die Aktivierung erneut."
     )
 
     # Ohne Terminal im Vordergrund liefe der Server ins Leere und würde einen
     # Skriptaufruf blockieren -- dann bleibt es bei der Anleitung.
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if args.no_web or args.dry_run or not interactive:
-        print(f"\n      Oberfläche starten mit: {paint('cloney web', GREEN)}")
+        print(f"\n      Oberfläche starten mit: {paint(befehl + ' web', GREEN)}")
         return 0
 
     print("\n      Oberfläche wird gestartet, der Browser öffnet sich gleich.")
