@@ -249,3 +249,27 @@ def test_unerreichbares_repo_meldet_den_fehler(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr("cloney.engines.f5_german.discover_model_files", explode)
     with pytest.raises(EngineError, match="nicht abrufbar"):
         resolve_model_files("tippfehler/modell")
+
+
+def test_vokabular_gehoert_zum_checkpoint() -> None:
+    """Ein Modell liefert Token-Nummern; erst das Vokabular macht Zeichen daraus.
+    Nimmt man das eines anderen Standes, lädt alles anstandslos und heraus kommt
+    Kauderwelsch -- deshalb zählt die Nachbarschaft zum Checkpoint."""
+    from cloney.engines.f5_german import choose_model_files
+
+    files = [
+        "vocab.txt",
+        "F5TTS_Base/vocab.txt",
+        "F5TTS_Base/model_420000.safetensors",
+    ]
+    assert choose_model_files(files) == (
+        "F5TTS_Base/model_420000.safetensors",
+        "F5TTS_Base/vocab.txt",
+    )
+
+
+def test_wurzelvokabular_wenn_daneben_keines_liegt() -> None:
+    from cloney.engines.f5_german import choose_model_files
+
+    files = ["vocab.txt", "F5TTS_Base/model_420000.safetensors"]
+    assert choose_model_files(files)[1] == "vocab.txt"

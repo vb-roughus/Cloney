@@ -73,8 +73,6 @@ def choose_model_files(files: list[str], prefer_bigvgan: bool = False) -> tuple[
     vocabs = [f for f in files if pathlib.PurePosixPath(f).name == "vocab.txt"]
     if not vocabs:
         raise EngineError("Im Modell-Repo gibt es keine vocab.txt")
-    # Flach liegende Vokabulare gelten für das ganze Repo.
-    vocab = min(vocabs, key=lambda f: (f.count("/"), len(f)))
 
     candidates = [f for f in files if f.endswith((".safetensors", ".pt"))]
     if not candidates:
@@ -93,7 +91,16 @@ def choose_model_files(files: list[str], prefer_bigvgan: bool = False) -> tuple[
             len(name),
         )
 
-    return min(candidates, key=rank), vocab
+    checkpoint = min(candidates, key=rank)
+
+    # Das Vokabular muss zum Checkpoint gehören. Ein Modell liefert Token-Nummern;
+    # erst das Vokabular macht Zeichen daraus. Nimmt man das eines anderen Standes,
+    # lädt alles anstandslos und heraus kommt Kauderwelsch. Deshalb zuerst im
+    # Ordner des Checkpoints suchen und erst dann flacher.
+    directory = str(pathlib.PurePosixPath(checkpoint).parent)
+    beside = [v for v in vocabs if str(pathlib.PurePosixPath(v).parent) == directory]
+    vocab = min(beside or vocabs, key=lambda v: (v.count("/"), len(v)))
+    return checkpoint, vocab
 
 
 def discover_model_files(repo_id: str, prefer_bigvgan: bool = False) -> tuple[str, str]:

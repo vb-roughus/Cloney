@@ -22,6 +22,12 @@ _META = "voice.json"
 _REFERENCE = "reference.wav"
 
 
+#: Deutsches Sprechtempo in Zeichen je Sekunde. Der Bereich ist bewusst weit --
+#: er soll nicht langsame oder schnelle Sprecher bemängeln, sondern Transkripte,
+#: die offensichtlich nicht zur Aufnahme gehören.
+PLAUSIBLE_CHARS_PER_SECOND = (7.0, 24.0)
+
+
 @dataclass(frozen=True)
 class VoiceCheck:
     """Ergebnis der Eingangsprüfung. ``ok`` heißt: brauchbar, nicht perfekt."""
@@ -32,6 +38,8 @@ class VoiceCheck:
     sample_rate: int
     peak_dbfs: float
     speech_ratio: float
+    #: Zeichen je Sekunde aus Transkriptlänge und Dauer. None ohne Transkript.
+    chars_per_second: float | None = None
 
 
 def inspect_reference(
@@ -39,6 +47,7 @@ def inspect_reference(
     sample_rate: int,
     min_seconds: float = 5.0,
     max_seconds: float = 12.0,
+    transcript: str = "",
 ) -> VoiceCheck:
     duration = duration_seconds(audio, sample_rate)
     peak = peak_dbfs(audio)
@@ -67,6 +76,29 @@ def inspect_reference(
             f"Nur {ratio:.0%} der Aufnahme ist Sprache. Lange Pausen schwächen die Referenz."
         )
 
+    # Der Referenztext ist keine Beschriftung, sondern der Wortlaut. F5-TTS
+    # leitet aus dem Verhältnis von Textlänge zu Dauer die Sprechgeschwindigkeit
+    # ab und bemisst danach, wie lang das Erzeugte werden darf. Ein Transkript,
+    # das nicht zur Aufnahme gehört, verzerrt genau diese Rechnung -- das
+    # Ergebnis klingt dann verhaspelt oder zerdehnt, ohne dass etwas abstürzt.
+    rate: float | None = None
+    if transcript.strip() and duration > 0:
+        rate = len(transcript.strip()) / duration
+        low, high = PLAUSIBLE_CHARS_PER_SECOND
+        if rate < low:
+            warnings.append(
+                f"Der Referenztext ist mit {len(transcript.strip())} Zeichen sehr kurz für "
+                f"{duration:.1f}s Aufnahme ({rate:.1f} Zeichen/s). Er muss der Wortlaut des "
+                "Gesprochenen sein, keine Beschriftung -- sonst verschätzt sich das Modell "
+                "beim Tempo und das Ergebnis wird unverständlich."
+            )
+        elif rate > high:
+            warnings.append(
+                f"Der Referenztext ist mit {len(transcript.strip())} Zeichen sehr lang für "
+                f"{duration:.1f}s Aufnahme ({rate:.1f} Zeichen/s). Enthält er mehr, als in "
+                "der Aufnahme gesprochen wird?"
+            )
+
     blocking = duration < 1.0 or ratio < 0.2
     return VoiceCheck(
         ok=not blocking,
@@ -75,6 +107,7 @@ def inspect_reference(
         sample_rate=sample_rate,
         peak_dbfs=peak,
         speech_ratio=ratio,
+        chars_per_second=rate,
     )
 
 
@@ -97,7 +130,7 @@ class VoiceStore:
         max_seconds: float = 12.0,
     ) -> tuple[VoiceRef, VoiceCheck]:
         audio, sample_rate = read_wav(audio_path)
-        check = inspect_reference(audio, sample_rate, min_seconds, max_seconds)
+        check = inspect_reference(audio, sample_rate, min_seconds, max_seconds, transcript)
 
         directory = self.path(name)
         directory.mkdir(parents=True, exist_ok=True)
