@@ -129,6 +129,36 @@ cp .env.example .env
 Die Extras sind einzeln wählbar: `asr` bringt faster-whisper für die
 Qualitätskontrolle, `f5` das deutsche F5-TTS-Modell. Ohne beide läuft der Kern.
 
+### Der Befehl `cloney`
+
+`pip install -e .` legt eine ausführbare Datei in der virtuellen Umgebung an:
+`.venv\Scripts\cloney.exe` unter Windows, `.venv/bin/cloney` sonst. Dieser Ordner
+liegt nur dann im Suchpfad, wenn die Umgebung **aktiviert** ist — ein frisch
+geöffnetes Fenster kennt den Befehl nicht.
+
+In den globalen Suchpfad gehört er nicht: er braucht die Python-Umgebung samt
+Torch und Modellen aus `.venv` und zeigt ins Leere, sobald die Umgebung neu
+angelegt wird.
+
+```powershell
+# Umgebung aktivieren, dann kurz tippen -- gilt je Fenster
+.\.venv\Scripts\Activate.ps1
+cloney doctor
+
+# Oder ohne Aktivierung, direkt
+.\.venv\Scripts\cloney.exe doctor
+
+# Oder als Modul, falls die ausführbare Datei zickt
+.\.venv\Scripts\python.exe -m cloney.cli doctor
+```
+
+Scheitert `Activate.ps1` an der Ausführungsrichtlinie, hilft
+`Set-ExecutionPolicy -Scope Process Bypass` im selben Fenster — oder der direkte
+Aufruf.
+
+Unter Linux und macOS entsprechend `source .venv/bin/activate` beziehungsweise
+`./.venv/bin/cloney`.
+
 ### Prüfen, ob alles bereit ist
 
 ```bash
