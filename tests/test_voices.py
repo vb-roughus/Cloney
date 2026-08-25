@@ -51,3 +51,60 @@ def test_uebersteuerte_aufnahme_wird_bemaengelt() -> None:
 
 def test_zu_kurze_aufnahme_wird_bemaengelt() -> None:
     assert any("instabil" in w for w in inspect_reference(_speech(2.0), SR).warnings)
+
+
+# -- Sprechtempo und Reglervorschlag ---------------------------------------
+
+
+def test_tempo_wird_auf_dem_sprachanteil_gerechnet() -> None:
+    """F5-TTS schneidet lange Stille aus der Referenz, bevor es das Tempo
+    ableitet. Auf der Dateilänge gerechnet wirkte eine Aufnahme mit Vorlauf
+    langsamer als sie ist -- und der Vorschlag daneben."""
+    import numpy as np
+
+    from cloney.core.audio import silence
+
+    sprache = _speech(6.0)
+    mit_vorlauf = np.concatenate([silence(4.0, SR), sprache, silence(4.0, SR)])
+
+    ohne = inspect_reference(sprache, SR, transcript="x" * 100)
+    mit = inspect_reference(mit_vorlauf, SR, transcript="x" * 100)
+
+    assert mit.duration_s > ohne.duration_s + 7
+    # Trotz doppelter Dateilänge nahezu dasselbe Tempo.
+    assert mit.chars_per_second == pytest.approx(ohne.chars_per_second, rel=0.15)
+
+
+@pytest.mark.parametrize(
+    ("rate", "erwartet"),
+    [(17.0, 0.85), (20.0, 0.72), (11.0, 1.32)],
+)
+def test_vorschlag_bringt_auf_angenehmes_tempo(rate: float, erwartet: float) -> None:
+    from cloney.core.voices import suggested_speed
+
+    assert suggested_speed(rate) == pytest.approx(erwartet, abs=0.01)
+
+
+@pytest.mark.parametrize("rate", [14.0, 14.5, 15.0])
+def test_kein_vorschlag_wenn_das_tempo_schon_passt(rate: float) -> None:
+    """Ein Regler, der nichts ändert, ist nur Zierde."""
+    from cloney.core.voices import suggested_speed
+
+    assert suggested_speed(rate) is None
+
+
+def test_vorschlag_bleibt_in_den_grenzen_des_reglers() -> None:
+    from cloney.core.voices import suggested_speed
+
+    assert suggested_speed(60.0) == 0.5
+    assert suggested_speed(2.0) == 1.5
+    assert suggested_speed(None) is None
+    assert suggested_speed(0.0) is None
+
+
+def test_zuegiges_sprechen_ist_keine_beanstandung() -> None:
+    """17 Zeichen/s ist Podcast-Tempo -- zügig, aber normal. Wer das bemängelt,
+    lenkt von echten Fehlern ab."""
+    check = inspect_reference(_speech(10.0), SR, transcript="x" * 170)
+    assert check.chars_per_second > 16
+    assert not any("Referenztext" in w for w in check.warnings)

@@ -295,8 +295,19 @@ unter „Womit gerendert wird", über die Kommandozeile mit `-o speed=0.85`, dau
 
 **Der Referenztext.** Ist er länger als das tatsächlich Gesprochene, sinkt der Wert
 für Sekunden je Zeichen — und alles wird zu schnell. Die Projektseite zeigt deshalb
-die gemessenen Zeichen pro Sekunde; deutsches Sprechtempo liegt bei etwa 14.
-Deutlich darüber heißt: der Text passt nicht zur Aufnahme.
+die gemessenen Zeichen pro Sekunde, berechnet auf dem Sprachanteil statt der
+Dateilänge: F5-TTS schneidet lange Stille selbst heraus, bevor es das Tempo ableitet.
+
+Übliches deutsches Sprechtempo liegt bei **12 bis 18 Zeichen pro Sekunde** —
+hergeleitet aus 120 bis 150 Wörtern je Minute und rund sechs Zeichen je Wort samt
+Leerzeichen. Siebzehn ist zügiges Podcast-Tempo, also normal. Erst weit außerhalb
+(unter 7 oder über 24) passt der Text vermutlich nicht zur Aufnahme.
+
+**Wichtig dabei:** F5-TTS *übernimmt* die Geschwindigkeit der Referenz. Spricht das
+Vorbild zügig, spricht der Klon zügig — das ist kein Fehler, sondern der Zweck. Wer
+ruhiger vorgelesen haben will als sein Vorbild spricht, stellt das über das
+Sprechtempo ein und nicht über den Referenztext, der schlicht stimmen muss. Cloney
+rechnet den passenden Wert aus und bietet ihn an: bei 17 Zeichen/s sind das 0,85.
 
 Weiter helfen können `nfe_step` (mehr Schritte klingen glatter, kosten Rechenzeit)
 und `cfg_strength` (höher bindet enger an die Referenz, wirkt aber steifer).

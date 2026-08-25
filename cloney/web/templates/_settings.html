@@ -10,7 +10,9 @@
       <td>{{ "%.1f"|format(voice.duration_s) }}&nbsp;s
         {% if reference_rate %}
           &middot; <strong>{{ "%.1f"|format(reference_rate) }} Zeichen/s</strong>
-          <span class="muted">(deutsches Sprechtempo liegt bei etwa 14)</span>
+          <span class="muted">&mdash; übliches Sprechtempo im Deutschen liegt zwischen
+            {{ "%.0f"|format(typical_rate[0]) }} und {{ "%.0f"|format(typical_rate[1]) }};
+            darüber ist zügig, aber nicht falsch.</span>
         {% endif %}
       </td></tr>
     <tr><th>Referenztext</th>
@@ -40,6 +42,17 @@
         {% if option.help %}<span class="muted">{{ option.help }}</span>{% endif %}
       </label>
     {% endfor %}
+    {% if speed_suggestion %}
+      <p class="hinweis">
+        Die Referenz spricht mit {{ "%.1f"|format(reference_rate) }} Zeichen/s. F5-TTS
+        übernimmt dieses Tempo. Für ruhigeres Zuhören entspräche das einem Sprechtempo
+        von <strong>{{ "%.2f"|format(speed_suggestion) }}</strong>.
+        <button type="button" class="small secondary"
+                onclick="var r = document.querySelector('input[name=speed]');
+                         r.value = {{ speed_suggestion }};
+                         r.dispatchEvent(new Event('input'));">Wert eintragen</button>
+      </p>
+    {% endif %}
     <div class="actions">
       <button type="submit">{% include "_spinner.html" %}Regler übernehmen</button>
       <button type="button" class="secondary"

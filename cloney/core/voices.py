@@ -23,10 +23,35 @@ _META = "voice.json"
 _REFERENCE = "reference.wav"
 
 
-#: Deutsches Sprechtempo in Zeichen je Sekunde. Der Bereich ist bewusst weit --
-#: er soll nicht langsame oder schnelle Sprecher bemängeln, sondern Transkripte,
-#: die offensichtlich nicht zur Aufnahme gehören.
+#: Übliches deutsches Sprechtempo in Zeichen je Sekunde.
+#:
+#: Hergeleitet aus 120 bis 150 Wörtern je Minute und rund sechs Zeichen je Wort
+#: samt Leerzeichen (Normseite: 1500 Zeichen auf 250 Wörter). Zügiges Sprechen
+#: im Podcast-Tempo liegt bei etwa 17 -- das ist normal, kein Mangel.
+TYPICAL_CHARS_PER_SECOND = (12.0, 18.0)
+
+#: Außerhalb dieses Bereichs gehört das Transkript vermutlich nicht zur Aufnahme.
+#: Bewusst weit: er soll keine langsamen oder schnellen Sprecher bemängeln.
 PLAUSIBLE_CHARS_PER_SECOND = (7.0, 24.0)
+
+#: Angenehmes Tempo für längeres Zuhören. Dient nur als Ausgangspunkt für den
+#: Vorschlag unten, nicht als Sollwert.
+COMFORTABLE_CHARS_PER_SECOND = 14.5
+
+
+def suggested_speed(chars_per_second: float | None) -> float | None:
+    """Reglerwert, der ein zügiges Vorbild auf angenehmes Tempo bringt.
+
+    F5-TTS übernimmt die Sprechgeschwindigkeit der Referenz. Wer ruhiger vorgelesen
+    haben will als sein Vorbild spricht, stellt das über den Regler ein -- nicht
+    über den Referenztext, der schlicht stimmen muss.
+    """
+    if not chars_per_second or chars_per_second <= 0:
+        return None
+    wert = COMFORTABLE_CHARS_PER_SECOND / chars_per_second
+    if 0.95 <= wert <= 1.05:
+        return None  # nah genug, ein Regler wäre nur Zierde
+    return round(max(0.5, min(1.5, wert)), 2)
 
 
 @dataclass(frozen=True)
@@ -82,22 +107,26 @@ def inspect_reference(
     # ab und bemisst danach, wie lang das Erzeugte werden darf. Ein Transkript,
     # das nicht zur Aufnahme gehört, verzerrt genau diese Rechnung -- das
     # Ergebnis klingt dann verhaspelt oder zerdehnt, ohne dass etwas abstürzt.
+    # Gerechnet wird auf dem Sprachanteil, nicht auf der Dateilänge: F5-TTS
+    # schneidet lange Stille aus der Referenz heraus, bevor es das Tempo
+    # ableitet. Eine Aufnahme mit viel Vorlauf wirkt sonst langsamer als sie ist.
+    speech_seconds = duration_seconds(speech, sample_rate) or duration
     rate: float | None = None
-    if transcript.strip() and duration > 0:
-        rate = len(transcript.strip()) / duration
+    if transcript.strip() and speech_seconds > 0:
+        rate = len(transcript.strip()) / speech_seconds
         low, high = PLAUSIBLE_CHARS_PER_SECOND
         if rate < low:
             warnings.append(
                 f"Der Referenztext ist mit {len(transcript.strip())} Zeichen sehr kurz für "
-                f"{duration:.1f}s Aufnahme ({rate:.1f} Zeichen/s). Er muss der Wortlaut des "
-                "Gesprochenen sein, keine Beschriftung -- sonst verschätzt sich das Modell "
-                "beim Tempo und das Ergebnis wird unverständlich."
+                f"{speech_seconds:.1f}s Sprache ({rate:.1f} Zeichen/s). Er muss der Wortlaut "
+                "des Gesprochenen sein, keine Beschriftung -- sonst verschätzt sich das "
+                "Modell beim Tempo und das Ergebnis wird unverständlich."
             )
         elif rate > high:
             warnings.append(
                 f"Der Referenztext ist mit {len(transcript.strip())} Zeichen sehr lang für "
-                f"{duration:.1f}s Aufnahme ({rate:.1f} Zeichen/s). Enthält er mehr, als in "
-                "der Aufnahme gesprochen wird?"
+                f"{speech_seconds:.1f}s Sprache ({rate:.1f} Zeichen/s). Enthält er mehr, als "
+                "in der Aufnahme gesprochen wird?"
             )
 
     blocking = duration < 1.0 or ratio < 0.2
@@ -188,6 +217,14 @@ class VoiceStore:
         pruefung = inspect_reference(audio, sample_rate, transcript=stimme.transcript)
         self.set_metadata(name, warnings=pruefung.warnings)
         return pruefung
+
+    def speaking_rate(self, name: str) -> float | None:
+        """Gemessenes Sprechtempo der Referenz in Zeichen je Sekunde."""
+        stimme = self.get(name)
+        if not stimme.transcript.strip():
+            return None
+        audio, sample_rate = read_wav(stimme.audio_path)
+        return inspect_reference(audio, sample_rate, transcript=stimme.transcript).chars_per_second
 
     def get(self, name: str) -> VoiceRef:
         directory = self.path(name)
