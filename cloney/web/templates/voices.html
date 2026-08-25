@@ -15,8 +15,10 @@
     <li>Spitzenpegel {{ "%.1f"|format(check.peak_dbfs) }} dBFS</li>
     <li>Sprachanteil {{ "%.0f"|format(check.speech_ratio * 100) }} %</li>
     {% if check.chars_per_second %}
-      <li>Transkript: {{ "%.1f"|format(check.chars_per_second) }} Zeichen/s
-        <span class="muted">(deutsches Sprechtempo liegt bei etwa 14)</span></li>
+      <li>Sprechtempo: {{ "%.1f"|format(check.chars_per_second) }} Zeichen/s
+        <span class="muted">&mdash; üblich sind {{ "%.0f"|format(typical_rate[0]) }} bis
+          {{ "%.0f"|format(typical_rate[1]) }}; gerechnet auf dem Sprachanteil,
+          nicht auf der Dateilänge</span></li>
     {% endif %}
   </ul>
   {% if check.warnings %}
@@ -34,8 +36,7 @@
       <span class="muted">{{ "%.1f"|format(v.duration_s) }} s</span>
       {% if v.transcript and v.duration_s %}
         {% set rate = v.transcript|length / v.duration_s %}
-        <span class="{% if rate < 7 or rate > 24 %}warn-text{% else %}muted{% endif %}">
-          {{ "%.1f"|format(rate) }} Zeichen/s</span>
+        <span class="muted">rund {{ "%.0f"|format(rate) }} Zeichen/s</span>
       {% endif %}
     </div>
     <audio controls preload="none" src="/voices/{{ v.name }}/audio"></audio>

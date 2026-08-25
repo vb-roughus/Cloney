@@ -99,6 +99,19 @@ def voice_add(
         f"'{name}' angelegt: {check.duration_s:.1f}s bei {check.sample_rate} Hz, "
         f"Spitze {check.peak_dbfs:.1f} dBFS, Sprachanteil {check.speech_ratio:.0%}"
     )
+    if check.chars_per_second:
+        from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, suggested_speed
+
+        unten, oben = TYPICAL_CHARS_PER_SECOND
+        typer.echo(
+            f"  Sprechtempo {check.chars_per_second:.1f} Zeichen/s "
+            f"(üblich sind {unten:.0f} bis {oben:.0f})"
+        )
+        vorschlag = suggested_speed(check.chars_per_second)
+        if vorschlag:
+            typer.echo(
+                f"  F5-TTS übernimmt dieses Tempo. Für ruhigeres Zuhören: -o speed={vorschlag:g}"
+            )
     for warning in check.warnings:
         typer.secho(f"  Achtung: {warning}", fg=typer.colors.YELLOW)
     if not check.ok:

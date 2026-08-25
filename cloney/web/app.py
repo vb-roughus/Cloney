@@ -19,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 
 from cloney.config import Settings, get_settings
 from cloney.core.project import ChunkStatus, Project
-from cloney.core.voices import VoiceStore
+from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
 from cloney.pipeline import synthesize_chunks
@@ -43,6 +43,7 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     app = FastAPI(title="Cloney")
     app.mount("/static", StaticFiles(directory=_HERE / "static"), name="static")
     templates = Jinja2Templates(directory=_HERE / "templates")
+    templates.env.globals["typical_rate"] = TYPICAL_CHARS_PER_SECOND
     templates.env.globals["status_label"] = lambda s: STATUS_LABEL[s][0]
     templates.env.globals["status_class"] = lambda s: STATUS_LABEL[s][1]
 
@@ -63,13 +64,20 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
             raise HTTPException(409, "Es läuft gerade ein Renderlauf")
 
     def _reference_context(project: Project) -> dict[str, object]:
-        """Referenzstimme samt Sprechtempo -- beides erklärt, wie schnell das
-        Ergebnis wird, und gehört deshalb sichtbar auf die Projektseite."""
+        """Referenzstimme samt Sprechtempo.
+
+        F5-TTS übernimmt die Geschwindigkeit der Referenz. Wer ruhiger vorgelesen
+        haben will als sein Vorbild spricht, stellt das über den Regler ein --
+        deshalb steht hier neben dem gemessenen Tempo gleich der Wert, der es auf
+        angenehmes Zuhören bringt.
+        """
         voice = voices.get(project.voice) if voices.exists(project.voice) else None
-        rate = None
-        if voice and voice.transcript.strip() and voice.duration_s > 0:
-            rate = len(voice.transcript.strip()) / voice.duration_s
-        return {"voice": voice, "reference_rate": rate}
+        rate = voices.speaking_rate(project.voice) if voice else None
+        vorschlag = suggested_speed(rate)
+        # Nur anbieten, solange der Regler nicht schon von Hand gesetzt wurde.
+        if "speed" in project.engine_options or engine_info(project.engine).option("speed") is None:
+            vorschlag = None
+        return {"voice": voice, "reference_rate": rate, "speed_suggestion": vorschlag}
 
     def render_row(request: Request, project: Project, index: int) -> HTMLResponse:
         return templates.TemplateResponse(
