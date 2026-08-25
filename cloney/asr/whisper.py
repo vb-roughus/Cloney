@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from cloney.asr.base import TranscribedWord, Transcript
+
 #: faster-whisper erwartet 16 kHz Mono.
 WHISPER_SAMPLE_RATE = 16000
 
@@ -39,7 +41,7 @@ class WhisperASR:
             ) from exc
         self._model = WhisperModel(model, device=device, compute_type=compute_type)
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int, language: str = "de") -> str:
+    def transcribe(self, audio: np.ndarray, sample_rate: int, language: str = "de") -> Transcript:
         samples = resample_linear(audio, sample_rate, WHISPER_SAMPLE_RATE)
         segments, _ = self._model.transcribe(
             samples,
@@ -48,8 +50,17 @@ class WhisperASR:
             # Ohne diese Abschaltung reicht Whisper den vorherigen Text als
             # Kontext weiter und halluziniert bei kurzen Chunks Fortsetzungen.
             condition_on_previous_text=False,
+            # Die Wortzeiten braucht die Erkennung des Referenz-Vorspanns.
+            word_timestamps=True,
         )
-        return " ".join(segment.text.strip() for segment in segments).strip()
+
+        teile: list[str] = []
+        woerter: list[TranscribedWord] = []
+        for segment in segments:
+            teile.append(segment.text.strip())
+            for wort in segment.words or ():
+                woerter.append(TranscribedWord(wort.word.strip(), wort.start, wort.end))
+        return Transcript(text=" ".join(teile).strip(), words=tuple(woerter))
 
     def close(self) -> None:
         self._model = None

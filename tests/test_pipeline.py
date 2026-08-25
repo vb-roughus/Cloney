@@ -143,3 +143,48 @@ def test_synthesefehler_landet_im_manifest(settings: Settings, voice_store: Voic
 
     assert all(c.status == ChunkStatus.FAILED for c in project.chunks)
     assert all("Server nicht erreichbar" in (c.error or "") for c in project.chunks)
+
+
+def test_referenz_vorspann_wird_abgeschnitten(settings: Settings, voice_store: VoiceStore) -> None:
+    """F5-TTS lässt gelegentlich ein Stück der Referenz am Anfang stehen. Nach
+    Lautstärke ist es nicht zu fassen -- es ist Sprache. Über die Rückschrift
+    schon: sie sagt, ab welchem Wort der gewünschte Text beginnt."""
+    from cloney.core.audio import duration_seconds, read_wav
+
+    project = _project(settings)
+    run_project(
+        project,
+        settings,
+        voice_store,
+        DummyEngine,
+        lambda: DummyASR(bleed_words="Rest der Referenzaufnahme von vorher"),
+    )
+
+    erster = project.chunks[0]
+    assert erster.trimmed_bleed_s is not None
+    assert erster.trimmed_bleed_s > 0
+    # Der Vorspann zählt nicht als Fehler -- verglichen wird ohne ihn.
+    assert erster.cer == 0.0
+    # Und er ist wirklich aus der Datei verschwunden.
+    audio, rate = read_wav(project.chunk_path(0))
+    assert duration_seconds(audio, rate) > 0
+
+
+def test_ohne_vorspann_wird_nichts_angetastet(settings: Settings, voice_store: VoiceStore) -> None:
+    from cloney.core.audio import read_wav
+
+    project = _project(settings)
+    run_project(project, settings, voice_store, DummyEngine, DummyASR)
+    vorher = len(read_wav(project.chunk_path(0))[0])
+
+    assert all(c.trimmed_bleed_s is None for c in project.chunks)
+    assert len(read_wav(project.chunk_path(0))[0]) == vorher
+
+
+def test_abschneiden_laesst_sich_abschalten(settings: Settings, voice_store: VoiceStore) -> None:
+    settings.trim_reference_bleed = False
+    project = _project(settings)
+    run_project(
+        project, settings, voice_store, DummyEngine, lambda: DummyASR(bleed_words="Rest davor")
+    )
+    assert all(c.trimmed_bleed_s is None for c in project.chunks)

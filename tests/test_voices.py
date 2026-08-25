@@ -108,3 +108,34 @@ def test_zuegiges_sprechen_ist_keine_beanstandung() -> None:
     check = inspect_reference(_speech(10.0), SR, transcript="x" * 170)
     assert check.chars_per_second > 16
     assert not any("Referenztext" in w for w in check.warnings)
+
+
+# -- Abruptes Ende der Referenz --------------------------------------------
+
+
+def test_abruptes_ende_wird_bemaengelt() -> None:
+    """F5-TTS verspricht dem Modell am Referenzende eine Pause. Bricht die
+    Aufnahme mitten im Klang ab, bleibt ein Stück davon am Anfang des
+    erzeugten Tons stehen.
+
+    Das Prüfsignal muss dafür wirklich auf vollem Pegel abbrechen -- die
+    Hüllkurve von ``_speech`` allein endet je nach Länge zufällig leise.
+    """
+    import numpy as np
+
+    from cloney.core.voices import ends_abruptly
+
+    abrupt = np.concatenate([_speech(8.0), np.full(3000, 0.3, dtype=np.float32)])
+    assert ends_abruptly(abrupt, SR)
+    assert any("endet abrupt" in w for w in inspect_reference(abrupt, SR).warnings)
+
+
+def test_ausklingende_aufnahme_ist_in_ordnung() -> None:
+    import numpy as np
+
+    from cloney.core.audio import silence
+    from cloney.core.voices import ends_abruptly
+
+    mit_ausklang = np.concatenate([_speech(8.0), silence(0.5, SR)])
+    assert not ends_abruptly(mit_ausklang, SR)
+    assert not any("endet abrupt" in w for w in inspect_reference(mit_ausklang, SR).warnings)

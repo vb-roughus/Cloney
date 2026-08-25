@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # --- Qualitätskontrolle ----------------------------------------------
     cer_threshold: float = 0.10
     max_retries: int = 2
+    # F5-TTS lässt gelegentlich ein Stück der Referenz am Anfang stehen. Wird es
+    # erkannt und ist es länger als dieser Wert, schneidet Cloney es weg.
+    trim_reference_bleed: bool = True
+    min_bleed_seconds: float = 0.15
 
     # --- Assembly ---------------------------------------------------------
     target_lufs: float = -16.0

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import assemble, read_wav, write_wav
+from cloney.core.bleed import find_content_start
 from cloney.core.metrics import cer
 from cloney.core.project import Chunk, ChunkStatus, Project
 from cloney.core.voices import VoiceStore
@@ -112,8 +113,14 @@ def quality_check(
         on_event(ProgressEvent("qc", "Spracherkennung geladen", 0, len(pending)))
         for done, chunk in enumerate(pending, start=1):
             audio, sample_rate = read_wav(project.chunk_path(chunk.index))
-            hypothesis = asr.transcribe(audio, sample_rate, settings.asr_language)
+            transcript = asr.transcribe(audio, sample_rate, settings.asr_language)
             spoken = strip_unsupported_tags(chunk.normalized_text, frozenset())
+
+            hypothesis = transcript.text
+            if settings.trim_reference_bleed:
+                hypothesis = _trim_reference_bleed(
+                    project, chunk, audio, sample_rate, transcript, spoken, settings
+                )
             score = cer(spoken, hypothesis)
 
             chunk.asr_text = hypothesis
@@ -125,6 +132,41 @@ def quality_check(
             on_event(
                 ProgressEvent("qc", f"Chunk {chunk.index}: CER {score:.3f}", done, len(pending))
             )
+
+
+def _trim_reference_bleed(
+    project: Project,
+    chunk: Chunk,
+    audio,  # noqa: ANN001 - np.ndarray, ohne Import in der Signatur
+    sample_rate: int,
+    transcript,  # noqa: ANN001 - Transcript
+    spoken: str,
+    settings: Settings,
+) -> str:
+    """Schneidet ein am Anfang stehen gebliebenes Stück der Referenz weg.
+
+    F5-TTS erzeugt Referenz und neuen Text am Stück und trennt sie an einer
+    berechneten Stelle. Weicht die Aufnahme von ihrem Wortlaut ab, rutscht ein
+    Rest der Referenz hinter diese Stelle. Nach Lautstärke ist er nicht zu
+    fassen -- er ist Sprache. Über die Rückschrift schon: sie sagt, ab welchem
+    Wort der gewünschte Text beginnt, und wann dieses Wort erklingt.
+
+    Erkannt wird nur, was sich sicher zuordnen lässt; im Zweifel bleibt das
+    Audio unangetastet.
+    """
+    start, vorspann_woerter = find_content_start(transcript.words, spoken)
+    if start is None or start < settings.min_bleed_seconds:
+        return transcript.text
+
+    ab = int(start * sample_rate)
+    if ab >= len(audio):
+        return transcript.text
+
+    write_wav(project.chunk_path(chunk.index), audio[ab:], sample_rate)
+    chunk.trimmed_bleed_s = round(start, 3)
+    # Verglichen wird gegen die Rückschrift ohne den Vorspann -- sonst zählte
+    # der eben entfernte Teil als Fehler.
+    return " ".join(w.text for w in transcript.words[vorspann_woerter:])
 
 
 def assemble_output(
