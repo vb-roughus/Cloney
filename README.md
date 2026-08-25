@@ -216,6 +216,13 @@ cloney render --text kapitel1.txt --voice erzaehlstimme --engine higgs
 # Unterbrochenen Lauf fortsetzen -- fertige Chunks bleiben unberührt
 cloney resume 20260825-105939-kapitel-1
 
+# Verwalten
+cloney projects list
+cloney projects discard <kennung>   # Ton verwerfen, Seeds behalten
+cloney projects remove <kennung>
+cloney voices transcript <name> --text "Der Wortlaut der Aufnahme."
+cloney voices remove <name>
+
 # Weboberfläche mit dem Satz-Editor
 cloney web
 ```

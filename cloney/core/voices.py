@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -152,10 +153,41 @@ class VoiceStore:
         return self.get(name), check
 
     def set_transcript(self, name: str, transcript: str) -> None:
-        meta_path = self.path(name) / _META
+        self.set_metadata(name, transcript=transcript)
+
+    def resolve(self, name: str) -> Path:
+        """Name zu Ordner -- und nur zu einem darunterliegenden.
+
+        Der Name kommt aus einer URL. Schon der Slug entschärft Pfadangaben, weil
+        er alles außer Buchstaben und Ziffern ersetzt; diese Prüfung ist die
+        zweite Linie und stellt sicher, dass eine spätere Änderung am Slug nicht
+        unbemerkt ein Löschen außerhalb des Datenverzeichnisses erlaubt.
+        """
+        directory = self.path(name).resolve()
+        if directory.parent != self.root.resolve():
+            raise ValueError(f"Ungültiger Stimmenname: {name!r}")
+        return directory
+
+    def set_metadata(self, name: str, **felder: object) -> None:
+        meta_path = self.resolve(name) / _META
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        meta["transcript"] = transcript
+        meta.update(felder)
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def delete(self, name: str) -> None:
+        shutil.rmtree(self.resolve(name), ignore_errors=True)
+
+    def recheck(self, name: str) -> VoiceCheck:
+        """Die Aufnahme erneut prüfen, etwa nachdem der Wortlaut geändert wurde.
+
+        Das Sprechtempo ergibt sich aus Transkript und Dauer -- ein geänderter
+        Text ändert also den Befund, ohne dass die Aufnahme angefasst wurde.
+        """
+        stimme = self.get(name)
+        audio, sample_rate = read_wav(stimme.audio_path)
+        pruefung = inspect_reference(audio, sample_rate, transcript=stimme.transcript)
+        self.set_metadata(name, warnings=pruefung.warnings)
+        return pruefung
 
     def get(self, name: str) -> VoiceRef:
         directory = self.path(name)

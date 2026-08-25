@@ -182,3 +182,16 @@ label.regler input[type="range"] {
   accent-color: var(--accent); background: none; border: none;
 }
 label.regler .muted { display: block; font-size: .82rem; }
+
+/* --- Verwalten ---------------------------------------------------------- */
+
+.projektkopf h1 { margin-bottom: .1rem; }
+.verwalten summary { cursor: pointer; font-size: .85rem; }
+.verwalten .actions { margin-top: .8rem; }
+.verwalten form { display: inline; }
+button.gefahr {
+  color: var(--fail); background: transparent; border-color: var(--fail);
+}
+button.gefahr:hover { background: var(--fail-bg); filter: none; }
+.card.stimme { padding-bottom: .8rem; }
+.card.stimme audio { width: 100%; max-width: 26rem; margin: .5rem 0; }

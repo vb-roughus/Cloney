@@ -59,6 +59,15 @@
     {% if project.output_file %}
       <a class="button secondary" href="/projects/{{ project.id }}/output">Fertige Spur laden</a>
     {% endif %}
+    {% if not running and done %}
+      <button class="secondary gefahr"
+              hx-post="/projects/{{ project.id }}/discard"
+              hx-target="#status" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-indicator="this"
+              hx-confirm="Erzeugten Ton aller Sätze verwerfen? Die Seeds bleiben erhalten.">
+        {% include "_spinner.html" %}Ton verwerfen
+      </button>
+    {% endif %}
   </div>
 
   {% if project.output_file %}

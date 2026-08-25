@@ -38,6 +38,15 @@
             hx-indicator="#chunk-{{ chunk.index }}">
       {% include "_spinner.html" %}Neu würfeln
     </button>
+    {% if chunk.audio_file %}
+      <button class="small secondary"
+              hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/discard"
+              hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-indicator="#chunk-{{ chunk.index }}"
+              title="Ton verwerfen, Seed behalten -- zeigt die Wirkung geänderter Regler">
+        {% include "_spinner.html" %}Ton verwerfen
+      </button>
+    {% endif %}
     {% if chunk.status.value == "needs_review" %}
       <button class="small secondary"
               hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/accept"

@@ -319,3 +319,145 @@ def test_alles_neu_rendern_merkt_die_saetze_vor(
     project = Project.load(settings.projects_dir / project_id)
     assert all(c.status == ChunkStatus.PENDING for c in project.chunks)
     assert all(c.attempts == 1 for c in project.chunks)
+
+
+# -- Verwalten: Projekte ----------------------------------------------------
+
+
+def test_projekt_umbenennen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    response = client.post(f"/projects/{project_id}/rename", data={"name": "Kapitel sieben"})
+    assert response.status_code == 200
+    assert Project.load(settings.projects_dir / project_id).name == "Kapitel sieben"
+
+
+def test_leerer_name_wird_abgelehnt(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    assert client.post(f"/projects/{project_id}/rename", data={"name": "  "}).status_code == 400
+
+
+def test_projekt_loeschen_entfernt_auch_den_ton(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    root = settings.projects_dir / project_id
+    assert (root / "chunks").exists()
+
+    response = client.post(f"/projects/{project_id}/delete", follow_redirects=False)
+    assert response.status_code == 303
+    assert not root.exists()
+
+
+def test_projektkennung_darf_nicht_ausbrechen(settings: Settings) -> None:
+    """Die Kennung kommt aus der URL. Ohne Prüfung ließe sich beim Löschen aus
+    dem Datenverzeichnis herausgreifen."""
+    assert _client(settings).post("/projects/..%2F..%2Fetc/delete").status_code in (400, 404)
+
+
+def test_kopie_uebernimmt_regler_aber_keinen_ton(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project_with(client, "f5-de")
+    client.post(f"/projects/{project_id}/options", data={"speed": "0.8"})
+
+    response = client.post(f"/projects/{project_id}/duplicate", follow_redirects=False)
+    assert response.status_code == 303
+    kopie_id = response.headers["location"].rsplit("/", 1)[-1]
+
+    kopie = Project.load(settings.projects_dir / kopie_id)
+    original = Project.load(settings.projects_dir / project_id)
+    assert kopie.id != original.id
+    assert kopie.engine_options == {"speed": 0.8}
+    assert kopie.source_text == original.source_text
+    assert all(c.status == ChunkStatus.PENDING for c in kopie.chunks)
+
+
+# -- Verwalten: erzeugter Ton -----------------------------------------------
+
+
+def test_ton_eines_satzes_verwerfen_behaelt_den_seed(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Anders als das Neuwürfeln: nur so lässt sich die Wirkung geänderter
+    Regler an einem Satz beurteilen, ohne dass zugleich der Zufall wechselt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    vorher = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert vorher.audio_file
+
+    client.post(f"/projects/{project_id}/chunks/0/discard")
+    nachher = Project.load(settings.projects_dir / project_id).chunks[0]
+
+    assert nachher.seed == vorher.seed
+    assert nachher.attempts == vorher.attempts
+    assert nachher.audio_file is None
+    assert nachher.status == ChunkStatus.PENDING
+    assert not (settings.projects_dir / project_id / "chunks" / "chunk_0000.wav").exists()
+
+
+def test_ton_aller_saetze_verwerfen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    client.post(f"/projects/{project_id}/discard")
+    project = Project.load(settings.projects_dir / project_id)
+    assert all(c.audio_file is None for c in project.chunks)
+    assert all(
+        c.seed == Project.load(settings.projects_dir / project_id).chunks[c.index].seed
+        for c in project.chunks
+    )
+    assert project.output_file is None
+    assert not project.output_path.exists()
+
+
+# -- Verwalten: Stimmen -----------------------------------------------------
+
+
+def test_wortlaut_aendern_prueft_neu(settings: Settings, voice_store: VoiceStore) -> None:
+    """Das Sprechtempo ergibt sich aus Wortlaut und Dauer -- ein geänderter Text
+    ändert den Befund, ohne dass die Aufnahme angefasst wurde."""
+    client = _client(settings)
+
+    response = client.post("/voices/test-stimme/transcript", data={"transcript": "kurz"})
+    assert response.status_code == 200
+    assert "Beschriftung" in response.text
+    assert VoiceStore(settings.voices_dir).get("test-stimme").transcript == "kurz"
+
+
+def test_stimme_in_benutzung_wird_nicht_geloescht(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Sonst blieben Projekte mit einem Verweis ins Leere zurück."""
+    client = _client(settings)
+    _create_project(client)
+
+    response = client.post("/voices/test-stimme/delete")
+    assert response.status_code == 409
+    assert "wird noch verwendet" in response.json()["detail"]
+    assert VoiceStore(settings.voices_dir).exists("test-stimme")
+
+
+def test_unbenutzte_stimme_wird_geloescht(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    response = client.post("/voices/test-stimme/delete", follow_redirects=False)
+    assert response.status_code == 303
+    assert not VoiceStore(settings.voices_dir).exists("test-stimme")
+
+
+def test_referenzaufnahme_ist_anhoerbar(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ohne sie zu hören lässt sich nicht beurteilen, ob der Wortlaut stimmt."""
+    response = _client(settings).get("/voices/test-stimme/audio")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"

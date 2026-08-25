@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -133,6 +134,19 @@ class Project(BaseModel):
         return project
 
     @classmethod
+    def resolve(cls, projects_dir: Path, project_id: str) -> Path:
+        """Kennung zu Ordner -- und zwar nur zu einem darunterliegenden.
+
+        Die Kennung kommt aus einer URL. Ohne diese Prüfung ließe sich mit
+        '../..' aus dem Datenverzeichnis herausgreifen, was spätestens beim
+        Löschen fatal wäre.
+        """
+        root = (projects_dir / project_id).resolve()
+        if root.parent != projects_dir.resolve():
+            raise ValueError(f"Ungültige Projektkennung: {project_id!r}")
+        return root
+
+    @classmethod
     def list_all(cls, projects_dir: Path) -> list[Project]:
         if not projects_dir.exists():
             return []
@@ -192,6 +206,62 @@ class Project(BaseModel):
         mid = len(values) // 2
         return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
 
+    def delete(self) -> None:
+        """Projekt samt erzeugtem Ton entfernen."""
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def rename(self, name: str) -> None:
+        """Nur die Anzeige ändern. Die Kennung bleibt, damit Pfade und die aus
+        ihr abgeleiteten Seeds gültig bleiben."""
+        self.name = name.strip() or self.name
+        self.save()
+
+    def duplicate(self, name: str, projects_dir: Path) -> Project:
+        """Gleicher Text, neues Projekt -- ohne den erzeugten Ton.
+
+        Der Weg, dieselbe Vorlage mit anderer Stimme, Engine oder Reglerstellung
+        zu hören, ohne das Vorhandene zu verlieren.
+        """
+        kopie = Project.create(
+            name=name,
+            text=self.source_text,
+            voice=self.voice,
+            engine=_engine_info(self.engine),
+            projects_dir=projects_dir,
+            reference_seconds=0.0,
+            target_seconds=self.target_chunk_seconds,
+            max_seconds=self.target_chunk_seconds,
+        )
+        kopie.engine_options = dict(self.engine_options)
+        kopie.save()
+        return kopie
+
+    def discard_audio(self, index: int) -> Chunk:
+        """Erzeugten Ton eines Satzes verwerfen, Seed behalten.
+
+        Anders als das Neuwürfeln: derselbe Seed mit veränderten Reglern ergibt
+        ein anderes Ergebnis, und nur so lässt sich die Wirkung einer Einstellung
+        an einem Satz beurteilen, ohne dass zugleich der Zufall wechselt.
+        """
+        chunk = self.chunks[index]
+        self.chunk_path(index).unlink(missing_ok=True)
+        chunk.audio_file = None
+        chunk.status = ChunkStatus.PENDING
+        chunk.asr_text = None
+        chunk.cer = None
+        chunk.error = None
+        return chunk
+
+    def discard_all_audio(self) -> int:
+        """Ton aller Sätze verwerfen. Gibt zurück, wie viele betroffen waren."""
+        betroffen = sum(1 for c in self.chunks if c.audio_file or c.status != ChunkStatus.PENDING)
+        for chunk in self.chunks:
+            self.discard_audio(chunk.index)
+        self.output_path.unlink(missing_ok=True)
+        self.output_file = None
+        self.save()
+        return betroffen
+
     def reroll(self, index: int) -> Chunk:
         """Neuer Seed für einen Chunk -- die Grundlage des 'Neu würfeln' in der UI."""
         chunk = self.chunks[index]
@@ -211,6 +281,12 @@ class Project(BaseModel):
         chunk.raw_text = raw_text
         chunk.normalized_text = normalize_german(raw_text)
         return self.reroll(index)
+
+
+def _engine_info(name: str) -> EngineInfo:
+    from cloney.engines.registry import engine_info
+
+    return engine_info(name)
 
 
 def derive_seed(project_id: str, index: int, attempt: int) -> int:
