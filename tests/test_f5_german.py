@@ -179,3 +179,73 @@ def test_leeres_ergebnis_wird_nicht_stillschweigend_akzeptiert(
     engine._model.infer = lambda **_k: (None, 24000, None)  # type: ignore[method-assign]
     with pytest.raises(EngineError, match="kein Audio"):
         engine.synthesize("Text", _voice(), seed=1)
+
+
+# -- Auflösung der Modelldateien -------------------------------------------
+
+
+@pytest.fixture
+def repo(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]]:
+    """Ein Modell-Repo, das nur bekannte Dateinamen herausgibt."""
+    available = ["F5TTS_Base/model_420000.safetensors", "vocab.txt"]
+    calls: dict[str, list[str]] = {"download": [], "discover": []}
+
+    def fake_download(repo_id: str, filename: str) -> str:
+        calls["download"].append(filename)
+        if filename not in available:
+            raise EngineError(f"404 Entry Not Found for {filename}")
+        return f"/cache/{filename}"
+
+    def fake_discover(repo_id: str, prefer_bigvgan: bool = False) -> tuple[str, str]:
+        calls["discover"].append(repo_id)
+        return available[0], available[1]
+
+    monkeypatch.setattr("cloney.engines.f5_german._download", fake_download)
+    monkeypatch.setattr("cloney.engines.f5_german.discover_model_files", fake_discover)
+    return calls
+
+
+def test_ohne_vorgabe_wird_im_repo_nachgesehen(repo: dict[str, list[str]]) -> None:
+    from cloney.engines.f5_german import resolve_model_files
+
+    ckpt, vocab = resolve_model_files("aihpi/F5-TTS-German")
+    assert ckpt == "/cache/F5TTS_Base/model_420000.safetensors"
+    assert vocab == "/cache/vocab.txt"
+    assert repo["discover"] == ["aihpi/F5-TTS-German"]
+
+
+def test_gueltige_vorgabe_wird_genommen(repo: dict[str, list[str]]) -> None:
+    from cloney.engines.f5_german import resolve_model_files
+
+    ckpt, _ = resolve_model_files(
+        "aihpi/F5-TTS-German", "F5TTS_Base/model_420000.safetensors", "vocab.txt"
+    )
+    assert ckpt == "/cache/F5TTS_Base/model_420000.safetensors"
+    # Bei gültiger Vorgabe wird gar nicht erst gesucht.
+    assert repo["discover"] == []
+
+
+def test_veraltete_vorgabe_faellt_auf_die_suche_zurueck(repo: dict[str, list[str]]) -> None:
+    """Der gemeldete Fall: eine alte Konfiguration nannte model_last.safetensors,
+    das es im Repo nie gab. Ein 404 darf den Lauf nicht beenden, solange das
+    gewünschte Modell erreichbar ist."""
+    from cloney.engines.f5_german import resolve_model_files
+
+    ckpt, vocab = resolve_model_files(
+        "aihpi/F5-TTS-German", "F5TTS_Base/model_last.safetensors", "vocab.txt"
+    )
+    assert ckpt == "/cache/F5TTS_Base/model_420000.safetensors"
+    assert vocab == "/cache/vocab.txt"
+    assert repo["discover"] == ["aihpi/F5-TTS-German"]
+    assert "F5TTS_Base/model_last.safetensors" in repo["download"]
+
+
+def test_unerreichbares_repo_meldet_den_fehler(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cloney.engines.f5_german import resolve_model_files
+
+    def explode(*_args: object, **_kwargs: object) -> tuple[str, str]:
+        raise EngineError("Dateiliste von 'tippfehler/modell' nicht abrufbar: 404")
+
+    monkeypatch.setattr("cloney.engines.f5_german.discover_model_files", explode)
+    with pytest.raises(EngineError, match="nicht abrufbar"):
+        resolve_model_files("tippfehler/modell")
