@@ -73,6 +73,22 @@ Passende Wheels kommen vom cu128-Index:
 uv pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
+**FFmpeg wird gebraucht, und zwar als Shared-Build.** Ab torchaudio 2.10 sind die
+eigenen Backends entfernt; jedes Laden einer Audiodatei läuft über torchcodec,
+und das verlangt die FFmpeg-Bibliotheken. Der übliche Befehl führt dabei in die
+Irre: `winget install Gyan.FFmpeg` installiert den *statischen* Build, der nur
+`ffmpeg.exe` ablegt. `ffmpeg` steht dann im Suchpfad, torchcodec scheitert
+trotzdem. Richtig ist:
+
+```powershell
+winget install --id Gyan.FFmpeg.Shared
+```
+
+Danach die Konsole neu öffnen, damit der Suchpfad übernommen wird. `cloney doctor`
+prüft das durch einen echten Ladeversuch und unterscheidet die beiden möglichen
+Ursachen — fehlende Bibliotheken oder eine torchcodec-Fassung, die nicht zur
+PyTorch-Version passt.
+
 Auch mit 16 GB liegen TTS-Modell und Text-LLM nie gleichzeitig im Speicher --
 das Phasenmodell ist keine Notlösung für kleine Karten, sondern die
 Voraussetzung dafür, dass beide Rollen überhaupt zusammenpassen.

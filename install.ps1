@@ -55,14 +55,19 @@ if (-not (Test-Path $venvPython)) {
     }
 }
 
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-    # Fuer WAV-Referenzen nicht noetig. Neuere torchaudio-Versionen laden aber
-    # ueber torchcodec, das FFmpeg-Bibliotheken voraussetzt -- die Diagnose am
-    # Ende prueft das durch einen echten Ladeversuch.
+# torchaudio laedt ab Version 2.10 ausschliesslich ueber torchcodec, und das
+# verlangt die FFmpeg-Bibliotheken. Entscheidend sind die DLLs, nicht ffmpeg.exe:
+# der statische Build legt nur die ausfuehrbare Datei ab und nuetzt hier nichts.
+$ffmpegLibs = $env:PATH -split ';' | Where-Object { $_ } | ForEach-Object {
+    Get-ChildItem -Path (Join-Path $_ 'avcodec-*.dll') -ErrorAction SilentlyContinue
+}
+if (-not $ffmpegLibs) {
     Write-Host ''
-    Write-Host 'Hinweis: FFmpeg ist nicht im Suchpfad.' -ForegroundColor DarkYellow
-    Write-Host '         Meist nicht noetig. Falls die Diagnose "Audio-Laden" bemaengelt:' -ForegroundColor DarkGray
-    Write-Host '           winget install --id=Gyan.FFmpeg' -ForegroundColor DarkGray
+    Write-Host 'Hinweis: Die FFmpeg-Bibliotheken fehlen im Suchpfad.' -ForegroundColor DarkYellow
+    Write-Host '         Ohne sie kann torchaudio keine Audiodateien oeffnen.' -ForegroundColor DarkGray
+    Write-Host '         Der Shared-Build wird gebraucht, nicht der statische:' -ForegroundColor DarkGray
+    Write-Host '           winget install --id Gyan.FFmpeg.Shared' -ForegroundColor DarkGray
+    Write-Host '         Danach die Konsole neu oeffnen.' -ForegroundColor DarkGray
 }
 
 & $venvPython (Join-Path 'scripts' 'setup.py') @SetupArgs

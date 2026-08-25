@@ -127,3 +127,95 @@ def test_repo_ohne_checkpoint_wird_gemeldet() -> None:
 
     with pytest.raises(EngineError, match="keinen Checkpoint"):
         choose_model_files(["vocab.txt", "README.md"])
+
+
+# -- Fehlermeldungen von torchcodec ----------------------------------------
+
+#: Gekürzte, aber wortgetreue Fassung des Fehlers, den torchcodec unter Windows
+#: wirft, wenn nur der statische FFmpeg-Build installiert ist.
+_TORCHCODEC_MISSING_DLL = (
+    r"Failed to create AudioDecoder for C:\Temp\probe.wav: "
+    "Could not load libtorchcodec. Likely causes:\n"
+    r"""
+  1. FFmpeg is not properly installed in your environment. We support
+     versions 4, 5, 6, 7, 8, and 9. On Windows, ensure you've installed the
+     "full-shared" version which ships DLLs.
+  2. The PyTorch version (2.11.0+cu128) is not compatible with
+     this version of TorchCodec.
+
+[start of libtorchcodec loading traceback]
+FFmpeg version 9:
+FileNotFoundError: Could not find module 'libtorchcodec_core9.dll' (or one of its dependencies).
+FFmpeg version 8:
+FileNotFoundError: Could not find module 'libtorchcodec_core8.dll' (or one of its dependencies).
+[end of libtorchcodec loading traceback]."""
+)
+
+
+def test_fehlerlawine_wird_auf_eine_zeile_eingedampft() -> None:
+    """torchcodec probiert sechs FFmpeg-Versionen durch und legt jeden Fehlschlag
+    offen. Ungekürzt macht das den Diagnosebericht unlesbar."""
+    from cloney.doctor import summarise_decoder_error
+
+    summary, _ = summarise_decoder_error(_TORCHCODEC_MISSING_DLL)
+    assert "\n" not in summary
+    assert len(summary) <= 200
+    assert "Likely causes" not in summary
+    assert "AudioDecoder" in summary
+
+
+def test_fehlende_bibliotheken_verweisen_auf_den_shared_build() -> None:
+    """Der eigentliche Fallstrick: 'winget install Gyan.FFmpeg' liefert den
+    statischen Build. Der legt ffmpeg.exe ab und sonst nichts -- torchcodec
+    braucht die DLLs."""
+    from cloney.doctor import summarise_decoder_error
+
+    _, remedy = summarise_decoder_error(_TORCHCODEC_MISSING_DLL)
+    assert "Gyan.FFmpeg.Shared" in remedy
+    assert "Konsole neu öffnen" in remedy
+
+
+def test_abi_fehler_verweist_auf_die_versionen() -> None:
+    from cloney.doctor import summarise_decoder_error
+
+    _, remedy = summarise_decoder_error("Could not load: undefined symbol: _ZN3c10abc")
+    assert "torchcodec" in remedy
+    assert "PyTorch-Version" in remedy
+    assert "Gyan.FFmpeg.Shared" not in remedy
+
+
+def test_leerer_fehler_bricht_nicht_ab() -> None:
+    from cloney.doctor import summarise_decoder_error
+
+    summary, remedy = summarise_decoder_error("")
+    assert summary
+    assert remedy
+
+
+def test_nur_ffmpeg_exe_ist_kein_gruenes_licht(monkeypatch) -> None:  # noqa: ANN001
+    """Der Fehler in der ersten Fassung: ffmpeg.exe im Suchpfad wurde als 'in
+    Ordnung' gemeldet, während jedes Laden einer Audiodatei scheiterte."""
+    from cloney.doctor import Report, check_ffmpeg
+
+    monkeypatch.setattr("cloney.doctor.platform.system", lambda: "Windows")
+    monkeypatch.setattr("cloney.doctor.shutil.which", lambda _name: r"C:\ffmpeg\bin\ffmpeg.exe")
+    monkeypatch.setattr("cloney.doctor.find_ffmpeg_shared_libraries", list)
+
+    report = Report()
+    check_ffmpeg(report)
+    result = report.results[0]
+    assert result.status == "warn"
+    assert "statische Build" in result.detail
+    assert "Gyan.FFmpeg.Shared" in result.remedy
+
+
+def test_vorhandene_bibliotheken_sind_in_ordnung(monkeypatch) -> None:  # noqa: ANN001
+    from cloney.doctor import Report, check_ffmpeg
+
+    monkeypatch.setattr(
+        "cloney.doctor.find_ffmpeg_shared_libraries",
+        lambda: [r"C:\ffmpeg\bin\avcodec-61.dll"],
+    )
+    report = Report()
+    check_ffmpeg(report)
+    assert report.results[0].status == "ok"

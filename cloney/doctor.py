@@ -12,7 +12,10 @@ ob ``torchaudio`` eine WAV-Datei öffnen kann, entscheidet ein echter Ladeversuc
 
 from __future__ import annotations
 
+import glob
+import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -122,6 +125,58 @@ def check_torch(report: Report) -> None:
     )
 
 
+#: winget-Paket mit den FFmpeg-Bibliotheken. Nicht "Gyan.FFmpeg" -- das ist der
+#: statische Build, der nur ffmpeg.exe mitbringt und torchcodec nichts nützt.
+FFMPEG_WINGET = "winget install --id Gyan.FFmpeg.Shared"
+
+#: Dateien, an denen ein Shared-Build erkennbar ist.
+_FFMPEG_LIBS = ("avcodec-*.dll", "avformat-*.dll", "avutil-*.dll")
+
+
+def find_ffmpeg_shared_libraries() -> list[str]:
+    """Sucht die FFmpeg-DLLs im Suchpfad. Leer = kein Shared-Build vorhanden."""
+    found: list[str] = []
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        for pattern in _FFMPEG_LIBS:
+            found.extend(glob.glob(os.path.join(directory, pattern)))
+    return found
+
+
+def summarise_decoder_error(text: str) -> tuple[str, str]:
+    """Verdichtet die Fehlerlawine von torchcodec auf Ursache und Abhilfe.
+
+    torchcodec probiert sechs FFmpeg-Versionen durch und legt jeden Fehlschlag
+    einzeln offen -- rund hundert Zeilen. Ungekürzt in einen Diagnosebericht
+    gekippt macht das den Bericht unlesbar und verdeckt die anderen Befunde.
+    """
+    first = text.strip().splitlines()[0].strip() if text.strip() else "unbekannter Fehler"
+    # Der Anreißer endet oft mit "Likely causes:" -- die Ursachen stehen danach
+    # ohnehin ausführlich da und werden hier durch die Abhilfe ersetzt.
+    first = re.split(r"\s*Likely causes:?", first)[0]
+    first = re.sub(r"\s+", " ", first).strip()[:200]
+
+    if "could not find module" in text.lower() or "cannot open shared object" in text.lower():
+        cause = (
+            "Die FFmpeg-Bibliotheken fehlen. Der statische FFmpeg-Build bringt nur "
+            "ffmpeg.exe mit; torchcodec braucht die DLLs des Shared-Builds. "
+            f"Installieren mit: {FFMPEG_WINGET} -- danach die Konsole neu öffnen, "
+            "damit der Suchpfad übernommen wird."
+        )
+    elif "undefined symbol" in text.lower() or "not compatible" in text.lower():
+        cause = (
+            "torchcodec passt nicht zur installierten PyTorch-Version. "
+            "Passende Fassung wählen: pip install --upgrade torchcodec "
+            "(Kompatibilitätstabelle: github.com/pytorch/torchcodec)."
+        )
+    else:
+        cause = (
+            f"Ursache unklar. Häufigster Fall sind fehlende FFmpeg-Bibliotheken: {FFMPEG_WINGET}"
+        )
+    return first, cause
+
+
 def check_audio_loading(report: Report) -> None:
     """Kann torchaudio eine WAV-Datei öffnen?
 
@@ -151,12 +206,9 @@ def check_audio_loading(report: Report) -> None:
         try:
             waveform, rate = torchaudio.load(str(path))
         except Exception as exc:
+            summary, remedy = summarise_decoder_error(str(exc))
             report.add(
-                "Audio-Laden",
-                "fail",
-                f"torchaudio kann keine WAV-Datei öffnen: {exc}",
-                "Meist fehlen die FFmpeg-Bibliotheken, die torchcodec braucht. "
-                "Unter Windows: winget install --id=Gyan.FFmpeg",
+                "Audio-Laden", "fail", f"torchaudio öffnet keine WAV-Datei: {summary}", remedy
             )
             return
 
@@ -165,16 +217,36 @@ def check_audio_loading(report: Report) -> None:
 
 
 def check_ffmpeg(report: Report) -> None:
-    if shutil.which("ffmpeg"):
-        report.add("FFmpeg", "ok", "im Suchpfad gefunden")
+    """Nicht die ausführbare Datei zählt, sondern die Bibliotheken.
+
+    ffmpeg.exe im Suchpfad sagt nichts darüber, ob torchcodec arbeiten kann:
+    der statische Build bringt genau diese Datei mit und sonst nichts. Wer nur
+    darauf prüft, meldet 'in Ordnung', während das Laden jeder Audiodatei
+    scheitert.
+    """
+    executable = shutil.which("ffmpeg")
+    libraries = find_ffmpeg_shared_libraries()
+
+    if libraries:
+        where = Path(libraries[0]).parent
+        report.add("FFmpeg", "ok", f"Bibliotheken gefunden in {where}")
+    elif executable and platform.system() == "Windows":
+        report.add(
+            "FFmpeg",
+            "warn",
+            "nur ffmpeg.exe gefunden, keine Bibliotheken -- das ist der statische Build",
+            f"Für torchcodec wird der Shared-Build gebraucht: {FFMPEG_WINGET} "
+            "-- danach die Konsole neu öffnen.",
+        )
+    elif executable:
+        report.add("FFmpeg", "ok", f"ffmpeg gefunden unter {executable}")
     else:
         report.add(
             "FFmpeg",
             "warn",
             "nicht im Suchpfad",
-            "Für WAV-Referenzen nicht nötig. Falls das Audio-Laden oben fehlschlägt "
-            "oder du Referenzen in anderen Formaten nutzt: "
-            "winget install --id=Gyan.FFmpeg",
+            "Für WAV-Referenzen nicht nötig. Scheitert das Audio-Laden oben, ist dies "
+            f"die Ursache: {FFMPEG_WINGET}",
         )
 
 
