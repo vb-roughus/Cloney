@@ -93,8 +93,13 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Der Installer legt die virtuelle Umgebung an, installiert PyTorch aus dem
 CUDA-12.8-Index (nötig für RTX-50-Karten, unschädlich für ältere), installiert
-Cloney samt Extras, legt die `.env` an und führt zum Schluss die Diagnose aus.
-Argumente werden durchgereicht: `--skip-torch`, `--extras ""`, `--dry-run`.
+Cloney samt Extras, legt die `.env` an, führt die Diagnose aus und startet zum
+Schluss die Oberfläche -- der Browser öffnet sich, sobald der Server antwortet.
+
+Argumente werden durchgereicht: `--no-web` startet die Oberfläche nicht,
+`--skip-torch` lässt PyTorch unangetastet, `--extras ""` installiert nur den
+Kern, `--dry-run` zeigt nur, was liefe. Ohne Terminal im Vordergrund -- etwa in
+einem Skript -- bleibt es ohnehin bei der Anleitung, statt zu blockieren.
 
 Von Hand geht es genauso:
 
@@ -137,6 +142,13 @@ cloney demo --audio meine_stimme.wav
 Rendert einen kurzen Satz voller Ziffern, Symbole und Abkürzungen — man soll
 hören, dass die Normalisierung greift. Braucht die gewählte Engine einen
 Referenztext, wird er unterwegs selbst ermittelt.
+
+Die Oberfläche einzeln starten:
+
+```bash
+cloney web              # öffnet den Browser, sobald der Server antwortet
+cloney web --no-open    # ohne Browser
+```
 
 Der `asr`-Extra bringt faster-whisper für die Qualitätskontrolle mit. Ohne ihn
 läuft alles außer der Fehlermessung; das Manifest vermerkt dann `cer = null`,
