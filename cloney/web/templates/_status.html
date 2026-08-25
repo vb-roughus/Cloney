@@ -1,0 +1,40 @@
+<div id="status" class="card status"
+     hx-get="/projects/{{ project.id }}/status"
+     hx-trigger="{% if running %}every 2s{% endif %}"
+     hx-swap="outerHTML">
+  {% set done, total = project.progress %}
+  <div class="statline">
+    <span class="badge {% if project.is_complete %}ok{% elif running %}pending{% else %}warn{% endif %}">
+      {% if running %}läuft{% elif project.is_complete %}fertig{% else %}bereit{% endif %}
+    </span>
+    <span>{{ done }} von {{ total }} Sätzen</span>
+    {% if project.median_cer() is not none %}
+      <span>Median-Fehlerrate {{ "%.1f"|format(project.median_cer() * 100) }}&nbsp;%</span>
+    {% endif %}
+    {% if project.flagged() %}
+      <span class="warn-text">{{ project.flagged() | length }} zur Durchsicht</span>
+    {% endif %}
+  </div>
+
+  {% if job and job.message %}
+    <p class="muted">{{ job.message }}{% if job.total %} ({{ job.done }}/{{ job.total }}){% endif %}</p>
+  {% endif %}
+  {% if job and job.error %}<p class="error">{{ job.error }}</p>{% endif %}
+
+  <div class="actions">
+    {% if not running %}
+      <button hx-post="/projects/{{ project.id }}/run" hx-target="#status" hx-swap="outerHTML">
+        {% if done %}Offene Sätze rendern{% else %}Rendern starten{% endif %}
+      </button>
+      <button class="secondary" hx-get="/projects/{{ project.id }}/table"
+              hx-target="#chunks" hx-swap="innerHTML">Tabelle aktualisieren</button>
+    {% endif %}
+    {% if project.output_file %}
+      <a class="button secondary" href="/projects/{{ project.id }}/output">Fertige Spur laden</a>
+    {% endif %}
+  </div>
+
+  {% if project.output_file %}
+    <audio controls preload="none" src="/projects/{{ project.id }}/output"></audio>
+  {% endif %}
+</div>

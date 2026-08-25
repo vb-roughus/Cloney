@@ -31,13 +31,35 @@ from cloney.engines.base import EngineInfo, VoiceRef
 HIGGS_TAGS = frozenset(
     {
         # Emotion
-        "neutral", "happy", "sad", "angry", "excited", "calm",
-        "fearful", "surprised", "disgusted",
+        "neutral",
+        "happy",
+        "sad",
+        "angry",
+        "excited",
+        "calm",
+        "fearful",
+        "surprised",
+        "disgusted",
         # Stil und Prosodie
-        "whisper", "shout", "soft", "loud", "fast", "slow",
-        "high", "low", "emphasis",
+        "whisper",
+        "shout",
+        "soft",
+        "loud",
+        "fast",
+        "slow",
+        "high",
+        "low",
+        "emphasis",
         # Geräusche
-        "laugh", "sigh", "breath", "cough", "gasp", "pause", "hum", "cry", "sing",
+        "laugh",
+        "sigh",
+        "breath",
+        "cough",
+        "gasp",
+        "pause",
+        "hum",
+        "cry",
+        "sing",
     }
 )
 

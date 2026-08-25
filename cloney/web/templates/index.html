@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Neues Projekt</h1>
+
+{% if not voices %}
+  <p class="notice">Noch keine Referenzstimme vorhanden.
+    <a href="/voices">Zuerst eine Stimme anlegen.</a></p>
+{% else %}
+<form method="post" action="/projects" class="card">
+  <label>Name
+    <input type="text" name="name" required placeholder="Kapitel 1">
+  </label>
+  <div class="row">
+    <label>Stimme
+      <select name="voice">
+        {% for v in voices %}<option value="{{ v.name }}">{{ v.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Engine
+      <select name="engine">
+        {% for e in engines %}
+          <option value="{{ e.name }}" {% if e.name == default_engine %}selected{% endif %}>
+            {{ e.name }} &mdash; {{ e.vram_gb }} GB VRAM
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <label>Text
+    <textarea name="text" rows="12" required
+      placeholder="Absätze durch eine Leerzeile trennen."></textarea>
+  </label>
+  <button type="submit">Projekt anlegen</button>
+</form>
+
+<details class="card">
+  <summary>Verfügbare Engines und ihre Lizenzlage</summary>
+  <table class="engines">
+    <tr><th>Engine</th><th>VRAM</th><th>Lizenz der Gewichte</th><th>Inline-Tags</th></tr>
+    {% for e in engines %}
+    <tr>
+      <td><strong>{{ e.name }}</strong><br><span class="muted">{{ e.description }}</span></td>
+      <td>{{ e.vram_gb }} GB</td>
+      <td>{{ e.license }}</td>
+      <td>{{ e.supported_tags | length }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</details>
+{% endif %}
+
+<h2>Projekte</h2>
+{% if projects %}
+<table class="projects">
+  <tr><th>Name</th><th>Stimme</th><th>Engine</th><th>Chunks</th><th>Angelegt</th></tr>
+  {% for p in projects %}
+  <tr>
+    <td><a href="/projects/{{ p.id }}">{{ p.name }}</a></td>
+    <td>{{ p.voice }}</td><td>{{ p.engine }}</td>
+    <td>{{ p.progress[0] }}/{{ p.progress[1] }}</td>
+    <td class="muted">{{ p.created_at }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Noch keine Projekte.</p>{% endif %}
+{% endblock %}

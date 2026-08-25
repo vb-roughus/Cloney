@@ -43,3 +43,8 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff.lint.per-file-ignores]
+# Typer und FastAPI deklarieren Parameter idiomatisch über Aufrufe im Default.
+"cloney/cli.py" = ["B008"]
+"cloney/web/app.py" = ["B008"]

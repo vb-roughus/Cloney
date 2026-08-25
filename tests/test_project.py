@@ -22,9 +22,7 @@ def test_manifest_roundtrip(settings: Settings) -> None:
     project = _create(settings)
     loaded = Project.load(project.root)
     assert loaded.id == project.id
-    assert [c.normalized_text for c in loaded.chunks] == [
-        c.normalized_text for c in project.chunks
-    ]
+    assert [c.normalized_text for c in loaded.chunks] == [c.normalized_text for c in project.chunks]
     assert loaded.root == project.root
 
 

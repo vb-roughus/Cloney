@@ -57,9 +57,7 @@ def test_durchstich_erzeugt_wav_und_manifest(settings: Settings, voice_store: Vo
     assert Project.load(project.root).is_complete
 
 
-def test_qc_erkennt_fehler_und_retry_repariert(
-    settings: Settings, voice_store: VoiceStore
-) -> None:
+def test_qc_erkennt_fehler_und_retry_repariert(settings: Settings, voice_store: VoiceStore) -> None:
     """Der erste Seed jedes Chunks liefert Müll, der zweite ist sauber --
     genau der Fall, den die Retry-Schleife abfangen soll."""
     project = _project(settings)

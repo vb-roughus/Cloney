@@ -129,9 +129,23 @@ UNITS: dict[str, tuple[str, str, str]] = {
 #: "ein" zurück -- ein Genusfehler ist immer noch weit besser als "eins Minute".
 FEMININE_NOUNS = frozenset(
     {
-        "Minute", "Sekunde", "Stunde", "Woche", "Tonne", "Million", "Milliarde",
-        "Person", "Seite", "Nacht", "Frage", "Antwort", "Möglichkeit",
-        "Stimme", "Aufnahme", "Datei", "Zeile",
+        "Minute",
+        "Sekunde",
+        "Stunde",
+        "Woche",
+        "Tonne",
+        "Million",
+        "Milliarde",
+        "Person",
+        "Seite",
+        "Nacht",
+        "Frage",
+        "Antwort",
+        "Möglichkeit",
+        "Stimme",
+        "Aufnahme",
+        "Datei",
+        "Zeile",
     }
 )
 
