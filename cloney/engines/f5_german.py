@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from cloney.core.audio import to_mono
-from cloney.engines.base import EngineError, EngineInfo, VoiceRef
+from cloney.engines.base import EngineError, EngineInfo, EngineOption, VoiceRef
 
 #: F5-TTS zielt auf dieses Gesamtbudget je Generierung (siehe infer_process:
 #: max_chars leitet sich aus 22 minus Referenzlänge ab).
@@ -54,6 +54,46 @@ F5_INFO = EngineInfo(
     ),
     max_generation_seconds=MAX_GENERATION_SECONDS,
     max_reference_seconds=MAX_REFERENCE_SECONDS,
+    options=(
+        EngineOption(
+            key="speed",
+            label="Sprechtempo",
+            minimum=0.5,
+            maximum=1.5,
+            step=0.05,
+            default=1.0,
+            help=(
+                "Unter 1 wird langsamer gesprochen, über 1 schneller. F5-TTS leitet "
+                "die Dauer aus der Referenz ab; klingt das Ergebnis gehetzt, ist "
+                "0,85 ein guter erster Versuch."
+            ),
+        ),
+        EngineOption(
+            key="nfe_step",
+            label="Qualitätsschritte",
+            minimum=16,
+            maximum=64,
+            step=4,
+            default=32,
+            integer=True,
+            help=(
+                "Mehr Schritte klingen glatter und kosten Rechenzeit. 32 ist der "
+                "Standard, 16 reicht zum schnellen Ausprobieren."
+            ),
+        ),
+        EngineOption(
+            key="cfg_strength",
+            label="Bindung an die Referenz",
+            minimum=1.0,
+            maximum=4.0,
+            step=0.1,
+            default=2.0,
+            help=(
+                "Höhere Werte halten sich enger an die Referenzstimme, wirken aber "
+                "steifer. Niedrigere klingen freier, entfernen sich aber von ihr."
+            ),
+        ),
+    ),
 )
 
 

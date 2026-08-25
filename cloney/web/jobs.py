@@ -81,7 +81,7 @@ class JobRunner:
                     project,
                     settings,
                     voice_store,
-                    lambda: create_engine(project.engine, settings),
+                    lambda: create_engine(project.engine, settings, project.engine_options),
                     asr_factory,
                     job.update,
                 )

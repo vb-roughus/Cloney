@@ -29,6 +29,30 @@ def _asr_factory(settings: Settings, enabled: bool):  # noqa: ANN202
     return make
 
 
+def _parse_options(rohwerte: list[str] | None, info) -> dict[str, float]:  # noqa: ANN001
+    """'-o speed=0.85' zu Zahlen. Unbekannte Namen brechen ab, statt zu wirken,
+    als hätten sie etwas bewirkt."""
+    if not rohwerte:
+        return {}
+    gesammelt: dict[str, float] = {}
+    for eintrag in rohwerte:
+        name, _, wert = eintrag.partition("=")
+        name = name.strip()
+        if info.option(name) is None:
+            erlaubt = ", ".join(o.key for o in info.options) or "keine"
+            typer.secho(
+                f"'{name}' ist kein Regler von '{info.name}'. Verfügbar: {erlaubt}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        try:
+            gesammelt[name] = float(wert)
+        except ValueError:
+            typer.secho(f"'{wert}' ist keine Zahl (bei --option {eintrag})", fg=typer.colors.RED)
+            raise typer.Exit(1) from None
+    return info.clean_options(gesammelt)
+
+
 def _echo(event: ProgressEvent) -> None:
     progress = f" [{event.done}/{event.total}]" if event.total else ""
     typer.echo(f"  {event.phase}{progress}: {event.message}")
@@ -101,6 +125,9 @@ def render(
     name: str = typer.Option("", help="Projektname. Standard: Dateiname."),
     engine: str = typer.Option("", help="Engine. Standard: aus der Konfiguration."),
     qc: bool = typer.Option(True, help="Qualitätskontrolle per Spracherkennung."),
+    option: list[str] = typer.Option(
+        None, "--option", "-o", help="Regler der Engine, etwa -o speed=0.85. Mehrfach möglich."
+    ),
 ) -> None:
     """Text zu einer fertigen Spur rendern."""
     settings = get_settings()
@@ -123,6 +150,8 @@ def render(
         )
         raise typer.Exit(1)
 
+    options = _parse_options(option, info)
+
     project = Project.create(
         name=name or text.stem,
         text=text.read_text(encoding="utf-8"),
@@ -134,6 +163,11 @@ def render(
         target_seconds=settings.target_chunk_seconds,
         max_seconds=settings.max_chunk_seconds,
     )
+    if options:
+        project.engine_options = options
+        project.save()
+        gesetzt = ", ".join(f"{k}={v:g}" for k, v in sorted(options.items()))
+        typer.echo(f"Regler: {gesetzt}")
     typer.echo(
         f"Projekt {project.id} mit {len(project.chunks)} Chunks angelegt "
         f"(bis {project.target_chunk_seconds:.0f}s je Chunk)."
@@ -166,7 +200,7 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
             project,
             settings,
             store,
-            lambda: create_engine(engine_name, settings),
+            lambda: create_engine(engine_name, settings, project.engine_options),
             _asr_factory(settings, qc),
             _echo,
         )

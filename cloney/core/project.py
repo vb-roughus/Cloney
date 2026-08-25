@@ -62,6 +62,9 @@ class Project(BaseModel):
     #: Tatsächlich verwendete Chunk-Länge. Kann unter dem Wunschwert liegen, wenn
     #: die Engine eine Obergrenze je Generierung hat -- siehe EngineInfo.
     target_chunk_seconds: float = 20.0
+    #: Reglerstellung der Engine. Gehört ins Manifest, damit ein Lauf auch
+    #: nachträglich reproduzierbar bleibt.
+    engine_options: dict[str, float] = Field(default_factory=dict)
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
     #: Ordner des Projekts. Nicht Teil des Manifests -- er ergibt sich aus dem Ort.

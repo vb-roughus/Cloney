@@ -163,3 +163,22 @@ table.kv th {
 }
 table.kv td { font-size: .9rem; }
 .einstellungen summary { cursor: pointer; font-weight: 550; }
+
+/* --- Regler der Engine --------------------------------------------------- */
+
+.einstellungen h3 {
+  margin: 1.2rem 0 .2rem; font-size: .95rem;
+}
+label.regler { margin: .9rem 0; }
+.reglerkopf {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: .9rem; color: var(--ink); font-weight: 550;
+}
+.reglerkopf output {
+  font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 650;
+}
+label.regler input[type="range"] {
+  width: 100%; margin: .35rem 0 .2rem; padding: 0;
+  accent-color: var(--accent); background: none; border: none;
+}
+label.regler .muted { display: block; font-size: .82rem; }

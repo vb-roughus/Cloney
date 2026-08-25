@@ -270,6 +270,34 @@ und [`marduk-ra/F5-TTS-German`](https://huggingface.co/marduk-ra/F5-TTS-German).
 Mit `CLONEY_F5_CKPT_FILENAME` lässt sich die Auswahl überschreiben, mit
 `CLONEY_F5_CKPT_PATH` direkt auf eine lokale Datei zeigen.
 
+### Wenn es zu schnell oder unnatürlich klingt
+
+F5-TTS berechnet die Dauer des Erzeugten aus der Referenz:
+
+```python
+duration = ref_audio_len + ref_audio_len / ref_text_len * gen_text_len / speed
+```
+
+Maßgeblich ist also **wie viele Sekunden je Zeichen** die Referenz braucht. Daraus
+folgen zwei Stellschrauben:
+
+**Sprechtempo.** Werte unter 1 verlängern die Dauer, es wird langsamer gesprochen.
+Klingt das Ergebnis gehetzt, ist 0,85 ein guter erster Versuch. In der Oberfläche
+unter „Womit gerendert wird", über die Kommandozeile mit `-o speed=0.85`, dauerhaft
+über `CLONEY_F5_SPEED`.
+
+**Der Referenztext.** Ist er länger als das tatsächlich Gesprochene, sinkt der Wert
+für Sekunden je Zeichen — und alles wird zu schnell. Die Projektseite zeigt deshalb
+die gemessenen Zeichen pro Sekunde; deutsches Sprechtempo liegt bei etwa 14.
+Deutlich darüber heißt: der Text passt nicht zur Aufnahme.
+
+Weiter helfen können `nfe_step` (mehr Schritte klingen glatter, kosten Rechenzeit)
+und `cfg_strength` (höher bindet enger an die Referenz, wirkt aber steifer).
+
+Die Reglerstellung steht im Projekt-Manifest — ein Lauf bleibt damit auch
+nachträglich reproduzierbar. Welche Regler es gibt, bestimmt die Engine selbst;
+die Oberfläche zeigt, was da ist.
+
 ### Warum die Chunk-Länge von der Engine abhängt
 
 F5-TTS teilt zu lange Eingaben selbst auf und blendet die Teile ineinander. Das

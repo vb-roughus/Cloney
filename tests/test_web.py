@@ -227,7 +227,7 @@ def test_engine_fehler_wird_als_klartext_gemeldet(
     client = _client(settings)
     project_id = _create_project(client)
 
-    def kaputt(_name: str, _settings: Settings):  # noqa: ANN202
+    def kaputt(_name: str, _settings: Settings, _options=None):  # noqa: ANN001, ANN202
         raise EngineError("Modell konnte nicht geladen werden: kein Speicher")
 
     original = web_app.create_engine
@@ -239,3 +239,83 @@ def test_engine_fehler_wird_als_klartext_gemeldet(
 
     assert response.status_code == 400
     assert "kein Speicher" in response.json()["detail"]
+
+
+# -- Regler der Engine ------------------------------------------------------
+
+
+def _create_project_with(client: TestClient, engine: str) -> str:
+    response = client.post(
+        "/projects",
+        data={"name": "Regler", "text": TEXT, "voice": "test-stimme", "engine": engine},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    return response.headers["location"].rsplit("/", 1)[-1]
+
+
+def test_regler_landen_im_manifest(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project_with(client, "f5-de")
+
+    response = client.post(
+        f"/projects/{project_id}/options",
+        data={"speed": "0.85", "nfe_step": "48", "cfg_strength": "2.2"},
+    )
+    assert response.status_code == 200
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.engine_options == {"speed": 0.85, "nfe_step": 48.0, "cfg_strength": 2.2}
+
+
+def test_ausreisser_werden_gekappt(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project_with(client, "f5-de")
+
+    client.post(f"/projects/{project_id}/options", data={"speed": "99", "unbekannt": "5"})
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.engine_options["speed"] == 1.5
+    assert "unbekannt" not in project.engine_options
+
+
+def test_teilangabe_laesst_die_uebrigen_stehen(settings: Settings, voice_store: VoiceStore) -> None:
+    """Sonst würfe ein einzeln verstellter Regler die anderen stillschweigend
+    auf ihren Standard zurück."""
+    client = _client(settings)
+    project_id = _create_project_with(client, "f5-de")
+
+    client.post(f"/projects/{project_id}/options", data={"speed": "0.8", "nfe_step": "48"})
+    client.post(f"/projects/{project_id}/options", data={"speed": "0.9"})
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.engine_options == {"speed": 0.9, "nfe_step": 48.0}
+
+
+def test_engine_ohne_regler_zeigt_keine(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project_with(client, "dummy")
+    seite = client.get(f"/projects/{project_id}").text
+    assert 'type="range"' not in seite
+
+
+def test_engine_mit_reglern_zeigt_sie(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project_with(client, "f5-de")
+    seite = client.get(f"/projects/{project_id}").text
+    assert 'name="speed"' in seite
+    assert "Sprechtempo" in seite
+
+
+def test_alles_neu_rendern_merkt_die_saetze_vor(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    assert Project.load(settings.projects_dir / project_id).is_complete
+
+    client.post(f"/projects/{project_id}/rerender")
+    project = Project.load(settings.projects_dir / project_id)
+    assert all(c.status == ChunkStatus.PENDING for c in project.chunks)
+    assert all(c.attempts == 1 for c in project.chunks)
