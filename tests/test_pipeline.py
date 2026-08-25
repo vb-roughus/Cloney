@@ -27,8 +27,7 @@ def _project(settings: Settings) -> Project:
         name="Durchstich",
         text=TEXT,
         voice="test-stimme",
-        engine="dummy",
-        sample_rate=24000,
+        engine=DummyEngine.info,
         projects_dir=settings.projects_dir,
         target_seconds=4.0,
     )

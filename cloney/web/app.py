@@ -85,13 +85,22 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
         if not voices.exists(voice):
             raise HTTPException(400, f"Stimme '{voice}' gibt es nicht")
 
+        info = engine_info(engine)
+        reference = voices.get(voice)
+        if info.requires_ref_text and not reference.transcript.strip():
+            raise HTTPException(
+                400,
+                f"Die Engine '{engine}' braucht den Wortlaut der Referenzaufnahme, "
+                f"'{voice}' hat aber keinen hinterlegt.",
+            )
+
         project = Project.create(
             name=name.strip() or "Ohne Titel",
             text=text,
             voice=voice,
-            engine=engine,
-            sample_rate=engine_info(engine).sample_rate,
+            engine=info,
             projects_dir=settings.projects_dir,
+            reference_seconds=reference.duration_s,
             chars_per_second=settings.chars_per_second,
             target_seconds=settings.target_chunk_seconds,
             max_seconds=settings.max_chunk_seconds,

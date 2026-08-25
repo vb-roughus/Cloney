@@ -24,7 +24,7 @@ import numpy as np
 import soundfile as sf
 
 from cloney.core.audio import to_mono
-from cloney.engines.base import EngineInfo, VoiceRef
+from cloney.engines.base import EngineError, EngineInfo, VoiceRef
 
 #: Inline-Steuertoken von Higgs v3. Tags außerhalb dieser Menge entfernt die
 #: Pipeline vor der Synthese.
@@ -76,10 +76,6 @@ HIGGS_INFO = EngineInfo(
         "Braucht in bf16 rund 11 GB VRAM -- auf 8-GB-Karten nicht lauffähig."
     ),
 )
-
-
-class EngineError(RuntimeError):
-    pass
 
 
 class HiggsEngine:

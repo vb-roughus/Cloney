@@ -106,19 +106,38 @@ def render(
     settings = get_settings()
     settings.ensure_dirs()
     engine_name = engine or settings.engine
+    info = engine_info(engine_name)
+
+    store = VoiceStore(settings.voices_dir)
+    if not store.exists(voice):
+        typer.secho(f"Stimme '{voice}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    reference = store.get(voice)
+    if info.requires_ref_text and not reference.transcript.strip():
+        # Lieber jetzt abbrechen als nach der halben Synthese.
+        typer.secho(
+            f"Die Engine '{engine_name}' braucht den Wortlaut der Referenzaufnahme, "
+            f"'{voice}' hat aber keinen. Nachtragen mit:\n"
+            f"  cloney voices add --audio <datei> --name {voice} --auto-transcript",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
 
     project = Project.create(
         name=name or text.stem,
         text=text.read_text(encoding="utf-8"),
         voice=voice,
-        engine=engine_name,
-        sample_rate=engine_info(engine_name).sample_rate,
+        engine=info,
         projects_dir=settings.projects_dir,
+        reference_seconds=reference.duration_s,
         chars_per_second=settings.chars_per_second,
         target_seconds=settings.target_chunk_seconds,
         max_seconds=settings.max_chunk_seconds,
     )
-    typer.echo(f"Projekt {project.id} mit {len(project.chunks)} Chunks angelegt.")
+    typer.echo(
+        f"Projekt {project.id} mit {len(project.chunks)} Chunks angelegt "
+        f"(bis {project.target_chunk_seconds:.0f}s je Chunk)."
+    )
     _run(project, settings, engine_name, qc)
 
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from cloney.core.segment import build_chunks
+from cloney.engines.base import EngineInfo
 
 _MANIFEST = "project.json"
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -58,6 +59,9 @@ class Project(BaseModel):
     engine: str
     sample_rate: int
     source_text: str
+    #: Tatsächlich verwendete Chunk-Länge. Kann unter dem Wunschwert liegen, wenn
+    #: die Engine eine Obergrenze je Generierung hat -- siehe EngineInfo.
+    target_chunk_seconds: float = 20.0
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
     #: Ordner des Projekts. Nicht Teil des Manifests -- er ergibt sich aus dem Ort.
@@ -74,9 +78,9 @@ class Project(BaseModel):
         name: str,
         text: str,
         voice: str,
-        engine: str,
-        sample_rate: int,
+        engine: EngineInfo,
         projects_dir: Path,
+        reference_seconds: float = 0.0,
         chars_per_second: float = 14.0,
         target_seconds: float = 20.0,
         max_seconds: float = 25.0,
@@ -84,6 +88,14 @@ class Project(BaseModel):
         project_id = _make_id(name)
         root = projects_dir / project_id
         root.mkdir(parents=True, exist_ok=True)
+
+        # Engines wie F5-TTS erzeugen nur eine begrenzte Dauer am Stück und
+        # teilen längere Eingaben sonst selbst auf. Ein so entstandener Chunk
+        # enthielte Nähte, die sich nicht einzeln nachbessern lassen -- deshalb
+        # wird hier von vornherein kleiner geschnitten.
+        budget = engine.chunk_budget_seconds(reference_seconds, target_seconds)
+        if budget < target_seconds:
+            max_seconds = budget
 
         chunks = [
             Chunk(
@@ -93,7 +105,7 @@ class Project(BaseModel):
                 ends_paragraph=c.ends_paragraph,
                 seed=derive_seed(project_id, i, 0),
             )
-            for i, c in enumerate(build_chunks(text, chars_per_second, target_seconds, max_seconds))
+            for i, c in enumerate(build_chunks(text, chars_per_second, budget, max_seconds))
         ]
 
         project = cls(
@@ -101,9 +113,10 @@ class Project(BaseModel):
             name=name,
             created_at=datetime.now(UTC).isoformat(timespec="seconds"),
             voice=voice,
-            engine=engine,
-            sample_rate=sample_rate,
+            engine=engine.name,
+            sample_rate=engine.sample_rate,
             source_text=text,
+            target_chunk_seconds=budget,
             chunks=chunks,
             root=root,
         )
