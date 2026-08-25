@@ -1,0 +1,59 @@
+{# Was den Klang bestimmt -- an einer Stelle, verstellbar ohne Neustart. #}
+<details id="einstellungen" class="card einstellungen" {% if project.engine_options %}open{% endif %}>
+  <summary>Womit gerendert wird</summary>
+
+  <table class="kv">
+    <tr><th>Engine</th><td>{{ project.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
+    <tr><th>Stimme</th><td>{{ project.voice }}</td></tr>
+    {% if voice %}
+    <tr><th>Referenz</th>
+      <td>{{ "%.1f"|format(voice.duration_s) }}&nbsp;s
+        {% if reference_rate %}
+          &middot; <strong>{{ "%.1f"|format(reference_rate) }} Zeichen/s</strong>
+          <span class="muted">(deutsches Sprechtempo liegt bei etwa 14)</span>
+        {% endif %}
+      </td></tr>
+    <tr><th>Referenztext</th>
+      <td>{% if voice.transcript %}<span class="spoken">{{ voice.transcript }}</span>
+          {% else %}<span class="warn-text">nicht hinterlegt</span>{% endif %}
+        <br><a href="/voices">Stimmen verwalten</a></td></tr>
+    {% endif %}
+    <tr><th>Chunk-Länge</th><td>bis {{ "%.0f"|format(project.target_chunk_seconds) }}&nbsp;s</td></tr>
+  </table>
+
+  {% if engine.options %}
+  <form hx-post="/projects/{{ project.id }}/options"
+        hx-target="#einstellungen" hx-swap="outerHTML"
+        hx-disabled-elt="find button" hx-indicator="find button">
+    <h3>Regler</h3>
+    {% for option in engine.options %}
+      {% set wert = project.engine_options.get(option.key, option.default) %}
+      <label class="regler">
+        <span class="reglerkopf">{{ option.label }}
+          <output id="wert-{{ option.key }}">{{ "%.2f"|format(wert) if not option.integer
+            else "%d"|format(wert) }}</output></span>
+        <input type="range" name="{{ option.key }}"
+               min="{{ option.minimum }}" max="{{ option.maximum }}" step="{{ option.step }}"
+               value="{{ wert }}"
+               oninput="document.getElementById('wert-{{ option.key }}').value =
+                        this.step % 1 === 0 ? this.value : (+this.value).toFixed(2)">
+        {% if option.help %}<span class="muted">{{ option.help }}</span>{% endif %}
+      </label>
+    {% endfor %}
+    <div class="actions">
+      <button type="submit">{% include "_spinner.html" %}Regler übernehmen</button>
+      <button type="button" class="secondary"
+              hx-post="/projects/{{ project.id }}/rerender"
+              hx-target="#status" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-indicator="this"
+              hx-confirm="Alle Sätze werden zum Neurendern vorgemerkt. Fortfahren?">
+        {% include "_spinner.html" %}Alle Sätze neu rendern
+      </button>
+    </div>
+    <p class="muted">
+      Übernehmen ändert nichts am vorhandenen Ton. Um eine Einstellung zu hören,
+      einen einzelnen Satz unten neu würfeln &mdash; erst wenn sie sitzt, alles neu rendern.
+    </p>
+  </form>
+  {% endif %}
+</details>

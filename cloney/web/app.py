@@ -54,6 +54,15 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
             raise HTTPException(404, f"Projekt '{project_id}' gibt es nicht")
         return Project.load(root)
 
+    def _reference_context(project: Project) -> dict[str, object]:
+        """Referenzstimme samt Sprechtempo -- beides erklärt, wie schnell das
+        Ergebnis wird, und gehört deshalb sichtbar auf die Projektseite."""
+        voice = voices.get(project.voice) if voices.exists(project.voice) else None
+        rate = None
+        if voice and voice.transcript.strip() and voice.duration_s > 0:
+            rate = len(voice.transcript.strip()) / voice.duration_s
+        return {"voice": voice, "reference_rate": rate}
+
     def render_row(request: Request, project: Project, index: int) -> HTMLResponse:
         return templates.TemplateResponse(
             request, "_chunk_row.html", {"project": project, "chunk": project.chunks[index]}
@@ -111,22 +120,15 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     @app.get("/projects/{project_id}", response_class=HTMLResponse)
     def project_view(request: Request, project_id: str) -> HTMLResponse:
         project = load(project_id)
-        # Die Referenz gehört sichtbar auf die Seite: passt ihr Wortlaut nicht zur
-        # Aufnahme, ist das die häufigste Ursache für unverständliche Ausgabe.
-        voice = voices.get(project.voice) if voices.exists(project.voice) else None
-        rate = None
-        if voice and voice.transcript.strip() and voice.duration_s > 0:
-            rate = len(voice.transcript.strip()) / voice.duration_s
         return templates.TemplateResponse(
             request,
             "project.html",
             {
                 "project": project,
                 "engine": engine_info(project.engine),
-                "voice": voice,
-                "reference_rate": rate,
                 "running": runner.is_running(project_id),
                 "threshold": settings.cer_threshold,
+                **_reference_context(project),
             },
         )
 
@@ -159,6 +161,43 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
             request, "_chunk_table.html", {"project": project, "threshold": settings.cer_threshold}
         )
 
+    @app.post("/projects/{project_id}/options", response_class=HTMLResponse)
+    async def set_options(request: Request, project_id: str) -> HTMLResponse:
+        """Regler der Engine verstellen.
+
+        Vorhandene Sätze bleiben stehen. So lässt sich eine Einstellung an einem
+        einzelnen Satz abhören, bevor ein ganzes Kapitel dafür neu läuft.
+        """
+        project = load(project_id)
+        if runner.is_running(project_id):
+            raise HTTPException(409, "Es läuft gerade ein Renderlauf")
+
+        info = engine_info(project.engine)
+        formular = await request.form()
+        roh = {o.key: formular.get(o.key) for o in info.options if formular.get(o.key) is not None}
+        # Zusammenführen statt ersetzen: eine Teilangabe soll die übrigen Regler
+        # stehen lassen, nicht stillschweigend auf den Standard zurückwerfen.
+        project.engine_options = {**project.engine_options, **info.clean_options(roh)}
+        project.save()
+        return templates.TemplateResponse(
+            request,
+            "_settings.html",
+            {"project": project, "engine": info, **_reference_context(project)},
+        )
+
+    @app.post("/projects/{project_id}/rerender", response_class=HTMLResponse)
+    def rerender_all(request: Request, project_id: str) -> HTMLResponse:
+        """Alle Sätze zum Neurendern vormerken -- ohne sie schon zu erzeugen."""
+        project = load(project_id)
+        if runner.is_running(project_id):
+            raise HTTPException(409, "Es läuft gerade ein Renderlauf")
+        for chunk in project.chunks:
+            project.reroll(chunk.index)
+        project.save()
+        return templates.TemplateResponse(
+            request, "_status.html", {"project": project, "running": False}
+        )
+
     # -- Einzelne Chunks --------------------------------------------------
 
     def _resynthesize(project: Project, index: int) -> None:
@@ -174,7 +213,7 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
                 project,
                 [project.chunks[index]],
                 voices,
-                lambda: create_engine(project.engine, settings),
+                lambda: create_engine(project.engine, settings, project.engine_options),
             )
         except FileNotFoundError as exc:
             raise HTTPException(

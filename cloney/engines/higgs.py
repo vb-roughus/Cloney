@@ -24,7 +24,7 @@ import numpy as np
 import soundfile as sf
 
 from cloney.core.audio import to_mono
-from cloney.engines.base import EngineError, EngineInfo, VoiceRef
+from cloney.engines.base import EngineError, EngineInfo, EngineOption, VoiceRef
 
 #: Inline-Steuertoken von Higgs v3. Tags außerhalb dieser Menge entfernt die
 #: Pipeline vor der Synthese.
@@ -74,6 +74,27 @@ HIGGS_INFO = EngineInfo(
     description=(
         "Higgs Audio v3 (4B) über lokalen SGLang-Omni-Server. Versteht Inline-Tags. "
         "Braucht in bf16 rund 11 GB VRAM -- auf 8-GB-Karten nicht lauffähig."
+    ),
+    options=(
+        EngineOption(
+            key="temperature",
+            label="Temperatur",
+            minimum=0.1,
+            maximum=1.5,
+            step=0.05,
+            default=0.8,
+            help="Niedriger klingt gleichmäßiger, höher lebendiger und unruhiger.",
+        ),
+        EngineOption(
+            key="top_k",
+            label="Top-K",
+            minimum=1,
+            maximum=100,
+            step=1,
+            default=50,
+            integer=True,
+            help="Wie viele Kandidaten je Schritt in Frage kommen.",
+        ),
     ),
 )
 

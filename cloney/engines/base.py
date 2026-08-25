@@ -24,6 +24,29 @@ class EngineError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class EngineOption:
+    """Ein Regler, den eine Engine anbietet.
+
+    Welche Stellschrauben es gibt, ist von Engine zu Engine verschieden. Statt
+    das in der Oberfläche als Sonderfall zu führen, beschreibt jede Engine ihre
+    Regler selbst -- die Oberfläche zeigt einfach, was da ist.
+    """
+
+    key: str
+    label: str
+    minimum: float
+    maximum: float
+    step: float
+    default: float
+    help: str = ""
+    integer: bool = False
+
+    def clamp(self, value: float) -> float:
+        value = max(self.minimum, min(self.maximum, float(value)))
+        return float(int(round(value))) if self.integer else value
+
+
+@dataclass(frozen=True)
 class EngineInfo:
     name: str
     #: Lizenz der Modellgewichte -- wird in der UI angezeigt, weil sie darüber
@@ -41,6 +64,26 @@ class EngineInfo:
     max_generation_seconds: float | None = None
     #: Länge, auf die die Engine die Referenz zurechtschneidet.
     max_reference_seconds: float | None = None
+    #: Regler, die diese Engine anbietet.
+    options: tuple[EngineOption, ...] = ()
+
+    def option(self, key: str) -> EngineOption | None:
+        return next((o for o in self.options if o.key == key), None)
+
+    def clean_options(self, values: dict[str, float] | None) -> dict[str, float]:
+        """Nimmt nur bekannte Regler an und hält sie in ihren Grenzen."""
+        if not values:
+            return {}
+        gereinigt: dict[str, float] = {}
+        for key, value in values.items():
+            regler = self.option(key)
+            if regler is None:
+                continue
+            try:
+                gereinigt[key] = regler.clamp(float(value))
+            except (TypeError, ValueError):
+                continue
+        return gereinigt
 
     def chunk_budget_seconds(self, reference_seconds: float, fallback: float) -> float:
         """Wie lang ein Chunk höchstens sein darf, damit die Engine ihn am Stück erzeugt.
