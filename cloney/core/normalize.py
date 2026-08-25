@@ -20,8 +20,18 @@ from num2words import num2words
 # --------------------------------------------------------------------------
 
 MONTHS = {
-    1: "Januar", 2: "Februar", 3: "März", 4: "April", 5: "Mai", 6: "Juni",
-    7: "Juli", 8: "August", 9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
+    1: "Januar",
+    2: "Februar",
+    3: "März",
+    4: "April",
+    5: "Mai",
+    6: "Juni",
+    7: "Juli",
+    8: "August",
+    9: "September",
+    10: "Oktober",
+    11: "November",
+    12: "Dezember",
 }
 
 MONTH_NAMES = frozenset(MONTHS.values())
@@ -29,17 +39,28 @@ MONTH_NAMES = frozenset(MONTHS.values())
 #: Abkürzung -> Ausschreibung. Punkt gehört zum Schlüssel, damit die
 #: Satzsegmentierung dieselbe Tabelle nutzen kann.
 ABBREVIATIONS: dict[str, str] = {
-    "z.B.": "zum Beispiel", "z. B.": "zum Beispiel",
-    "d.h.": "das heißt", "d. h.": "das heißt",
-    "u.a.": "unter anderem", "u. a.": "unter anderem",
-    "u.U.": "unter Umständen", "u. U.": "unter Umständen",
-    "i.d.R.": "in der Regel", "i. d. R.": "in der Regel",
-    "z.T.": "zum Teil", "z. T.": "zum Teil",
-    "v.a.": "vor allem", "v. a.": "vor allem",
-    "o.ä.": "oder ähnliches", "o. ä.": "oder ähnliches",
-    "u.ä.": "und ähnliches", "u. ä.": "und ähnliches",
-    "s.o.": "siehe oben", "s.u.": "siehe unten",
-    "usw.": "und so weiter", "u.s.w.": "und so weiter",
+    "z.B.": "zum Beispiel",
+    "z. B.": "zum Beispiel",
+    "d.h.": "das heißt",
+    "d. h.": "das heißt",
+    "u.a.": "unter anderem",
+    "u. a.": "unter anderem",
+    "u.U.": "unter Umständen",
+    "u. U.": "unter Umständen",
+    "i.d.R.": "in der Regel",
+    "i. d. R.": "in der Regel",
+    "z.T.": "zum Teil",
+    "z. T.": "zum Teil",
+    "v.a.": "vor allem",
+    "v. a.": "vor allem",
+    "o.ä.": "oder ähnliches",
+    "o. ä.": "oder ähnliches",
+    "u.ä.": "und ähnliches",
+    "u. ä.": "und ähnliches",
+    "s.o.": "siehe oben",
+    "s.u.": "siehe unten",
+    "usw.": "und so weiter",
+    "u.s.w.": "und so weiter",
     "etc.": "et cetera",
     "bzw.": "beziehungsweise",
     "ca.": "circa",
@@ -82,25 +103,37 @@ ABBREVIATION_TOKENS = frozenset(k for k in ABBREVIATIONS if k.endswith("."))
 
 #: Einheiten hinter einer Zahl. Singular/Plural getrennt, weil "1 Meter"/"2 Meter"
 #: im Deutschen gleich, "1 Sekunde"/"2 Sekunden" aber verschieden ist.
-UNITS: dict[str, tuple[str, str]] = {
-    "km": ("Kilometer", "Kilometer"),
-    "m": ("Meter", "Meter"),
-    "cm": ("Zentimeter", "Zentimeter"),
-    "mm": ("Millimeter", "Millimeter"),
-    "kg": ("Kilogramm", "Kilogramm"),
-    "g": ("Gramm", "Gramm"),
-    "t": ("Tonne", "Tonnen"),
-    "l": ("Liter", "Liter"),
-    "ml": ("Milliliter", "Milliliter"),
-    "h": ("Stunde", "Stunden"),
-    "min": ("Minute", "Minuten"),
-    "sek": ("Sekunde", "Sekunden"),
-    "kW": ("Kilowatt", "Kilowatt"),
-    "kWh": ("Kilowattstunde", "Kilowattstunden"),
-    "MB": ("Megabyte", "Megabyte"),
-    "GB": ("Gigabyte", "Gigabyte"),
-    "TB": ("Terabyte", "Terabyte"),
+UNITS: dict[str, tuple[str, str, str]] = {
+    # Kürzel -> (Singular, Plural, unbestimmter Artikel)
+    "km": ("Kilometer", "Kilometer", "ein"),
+    "m": ("Meter", "Meter", "ein"),
+    "cm": ("Zentimeter", "Zentimeter", "ein"),
+    "mm": ("Millimeter", "Millimeter", "ein"),
+    "kg": ("Kilogramm", "Kilogramm", "ein"),
+    "g": ("Gramm", "Gramm", "ein"),
+    "t": ("Tonne", "Tonnen", "eine"),
+    "l": ("Liter", "Liter", "ein"),
+    "ml": ("Milliliter", "Milliliter", "ein"),
+    "h": ("Stunde", "Stunden", "eine"),
+    "min": ("Minute", "Minuten", "eine"),
+    "sek": ("Sekunde", "Sekunden", "eine"),
+    "kW": ("Kilowatt", "Kilowatt", "ein"),
+    "kWh": ("Kilowattstunde", "Kilowattstunden", "eine"),
+    "MB": ("Megabyte", "Megabyte", "ein"),
+    "GB": ("Gigabyte", "Gigabyte", "ein"),
+    "TB": ("Terabyte", "Terabyte", "ein"),
 }
+
+#: Substantive, vor denen die Eins "eine" heißt. Bewusst klein gehalten: die
+#: Liste deckt Zeit- und Mengenwörter ab, bei allem anderen fällt die Regel auf
+#: "ein" zurück -- ein Genusfehler ist immer noch weit besser als "eins Minute".
+FEMININE_NOUNS = frozenset(
+    {
+        "Minute", "Sekunde", "Stunde", "Woche", "Tonne", "Million", "Milliarde",
+        "Person", "Seite", "Nacht", "Frage", "Antwort", "Möglichkeit",
+        "Stimme", "Aufnahme", "Datei", "Zeile",
+    }
+)
 
 CURRENCIES: dict[str, tuple[str, str, str]] = {
     # Symbol -> (Singular, Plural, Untereinheit-Plural)
@@ -129,17 +162,67 @@ SYMBOLS = {
 #: Ein Ordinalzahl-Punkt nach diesen Wörtern verlangt die Dativ-/Genitiv-Endung
 #: ("am 3. Mai" -> "am dritten Mai").
 _OBLIQUE_TRIGGERS = frozenset(
-    """am im vom zum beim dem des einem eines den einen zur seit nach mit
-    aus bei ab bis ihrem seinem meinem unserem eurem ihres seines""".split()
+    [
+        "am",
+        "im",
+        "vom",
+        "zum",
+        "beim",
+        "dem",
+        "des",
+        "einem",
+        "eines",
+        "den",
+        "einen",
+        "zur",
+        "seit",
+        "nach",
+        "mit",
+        "aus",
+        "bei",
+        "ab",
+        "bis",
+        "ihrem",
+        "seinem",
+        "meinem",
+        "unserem",
+        "eurem",
+        "ihres",
+        "seines",
+    ]
 )
 
 #: Signalwörter, die ein vierstelliges 11xx-19xx als Jahreszahl kennzeichnen.
 #: Ohne solches Signal wird konservativ als Kardinalzahl gelesen -- eine etwas
 #: steife Lesung ist besser als eine falsche.
 _YEAR_TRIGGERS = frozenset(
-    """im in seit ab bis von vor nach um jahr jahre jahren jahrgang anno
-    sommer winter herbst frühling frühjahr geboren gestorben gegründet erschienen
-    veröffentlicht datiert""".split()
+    [
+        "im",
+        "in",
+        "seit",
+        "ab",
+        "bis",
+        "von",
+        "vor",
+        "nach",
+        "um",
+        "jahr",
+        "jahre",
+        "jahren",
+        "jahrgang",
+        "anno",
+        "sommer",
+        "winter",
+        "herbst",
+        "frühling",
+        "frühjahr",
+        "geboren",
+        "gestorben",
+        "gegründet",
+        "erschienen",
+        "veröffentlicht",
+        "datiert",
+    ]
 ) | {m.lower() for m in MONTH_NAMES}
 
 
@@ -180,10 +263,10 @@ def _int_from_german(s: str) -> int:
     return int(s.replace(".", "").replace(" ", "").replace(" ", ""))
 
 
-def _amount(value: int, singular: str, plural: str) -> str:
-    """Zahlwort + Einheit mit korrektem Numerus. 1 wird zu 'ein', nicht 'eins'."""
+def _amount(value: int, singular: str, plural: str, article: str = "ein") -> str:
+    """Zahlwort + Einheit mit korrektem Numerus. 1 wird zum Artikel, nicht zu 'eins'."""
     if value == 1:
-        return f"ein {singular}"
+        return f"{article} {singular}"
     return f"{cardinal(value)} {plural}"
 
 
@@ -227,9 +310,7 @@ def _expand_dates(text: str) -> str:
             yr += 2000 if yr < 50 else 1900
         return f"{ordinal(day, oblique)} {MONTHS[month]} {year(yr)}"
 
-    text = re.sub(
-        rf"\b(?P<d>\d{{1,2}})\.\s?(?P<m>\d{{1,2}})\.\s?(?P<y>\d{{2,4}})\b", full, text
-    )
+    text = re.sub(r"\b(?P<d>\d{1,2})\.\s?(?P<m>\d{1,2})\.\s?(?P<y>\d{2,4})\b", full, text)
 
     def day_month(m: re.Match[str]) -> str:
         day, month = int(m.group("d")), int(m.group("m"))
@@ -267,13 +348,9 @@ def _expand_currency(text: str) -> str:
         return head
 
     # Betrag vor dem Symbol: "1.250,50 €"
-    text = re.sub(
-        rf"(?P<int>{_NUM})(?:,(?P<frac>\d{{1,2}}))?\s*(?P<sym>{syms})", repl, text
-    )
+    text = re.sub(rf"(?P<int>{_NUM})(?:,(?P<frac>\d{{1,2}}))?\s*(?P<sym>{syms})", repl, text)
     # Symbol vor dem Betrag: "€ 1.250,50"
-    text = re.sub(
-        rf"(?P<sym>{syms})\s*(?P<int>{_NUM})(?:,(?P<frac>\d{{1,2}}))?", repl, text
-    )
+    text = re.sub(rf"(?P<sym>{syms})\s*(?P<int>{_NUM})(?:,(?P<frac>\d{{1,2}}))?", repl, text)
     return text
 
 
@@ -301,15 +378,13 @@ def _expand_units(text: str) -> str:
     units = "|".join(re.escape(u) for u in sorted(UNITS, key=len, reverse=True))
 
     def repl(m: re.Match[str]) -> str:
-        singular, plural = UNITS[m.group("u")]
+        singular, plural, article = UNITS[m.group("u")]
         if m.group("frac"):
             whole = _int_from_german(m.group("int"))
             return f"{cardinal(whole)} Komma {_digits(m.group('frac'))} {plural}"
-        return _amount(_int_from_german(m.group("int")), singular, plural)
+        return _amount(_int_from_german(m.group("int")), singular, plural, article)
 
-    return re.sub(
-        rf"\b(?P<int>{_NUM})(?:,(?P<frac>\d+))?\s?(?P<u>{units})\b", repl, text
-    )
+    return re.sub(rf"\b(?P<int>{_NUM})(?:,(?P<frac>\d+))?\s?(?P<u>{units})\b", repl, text)
 
 
 def _expand_symbols(text: str) -> str:
@@ -389,6 +464,18 @@ def _expand_years(text: str) -> str:
     return "".join(out)
 
 
+def _expand_one_before_noun(text: str) -> str:
+    """'1 Minute' -> 'eine Minute'. Die Ziffer 1 als 'eins' zu lesen ist vor einem
+    Substantiv immer falsch; das Genus raten wir über eine kurze Liste."""
+
+    def repl(m: re.Match[str]) -> str:
+        noun = m.group(1)
+        article = "eine" if noun in FEMININE_NOUNS else "ein"
+        return f"{article} {noun}"
+
+    return re.sub(r"\b1\s+([A-ZÄÖÜ][\wäöüß]*)", repl, text)
+
+
 def _expand_decimals(text: str) -> str:
     def repl(m: re.Match[str]) -> str:
         whole = _int_from_german(m.group(1))
@@ -433,6 +520,7 @@ _PIPELINE = (
     _expand_abbreviations,
     _expand_ordinals,
     _expand_years,
+    _expand_one_before_noun,
     _expand_decimals,
     _expand_cardinals,
     _collapse_whitespace,

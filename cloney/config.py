@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     higgs_base_url: str = "http://localhost:8000/v1"
     higgs_model: str = "higgs-audio-v3-tts"
     higgs_timeout_s: float = 300.0
+    # "path": Serverseitiger Dateipfad (sgl-omni läuft lokal). "base64": Audio inline.
+    higgs_reference_mode: str = "path"
+    higgs_temperature: float = 0.8
+    higgs_top_k: int = 50
+    higgs_max_new_tokens: int = 1024
 
     # --- ASR (faster-whisper) --------------------------------------------
     asr_model: str = "large-v3-turbo"
