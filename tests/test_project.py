@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from cloney.config import Settings
 from cloney.core.project import ChunkStatus, Project, derive_seed
+from cloney.engines.dummy import DummyEngine
+from cloney.engines.f5_german import F5_INFO
 
 TEXT = "Erster Satz hier.\n\nZweiter Absatz mit Inhalt. Und noch ein Satz dazu."
 
@@ -11,8 +13,7 @@ def _create(settings: Settings, target_seconds: float = 3.0) -> Project:
         name="Testprojekt",
         text=TEXT,
         voice="test-stimme",
-        engine="dummy",
-        sample_rate=24000,
+        engine=DummyEngine.info,
         projects_dir=settings.projects_dir,
         target_seconds=target_seconds,
     )
@@ -66,3 +67,49 @@ def test_fortschritt_und_median(settings: Settings) -> None:
 def test_liste_ist_nach_datum_sortiert(settings: Settings) -> None:
     _create(settings)
     assert len(Project.list_all(settings.projects_dir)) == 1
+
+
+def test_engine_grenze_verkleinert_die_chunks(settings: Settings) -> None:
+    """Hat eine Engine ein Budget je Generierung, muss die Chunk-Planung darunter
+    bleiben -- sonst teilt das Modell selbst auf und erzeugt Nähte im Chunk, die
+    sich nicht mehr einzeln nachbessern lassen."""
+    text = " ".join(f"Dies ist der Satz Nummer {i} in einem längeren Absatz." for i in range(40))
+    common = {
+        "name": "Budget",
+        "text": text,
+        "voice": "test-stimme",
+        "projects_dir": settings.projects_dir,
+        "chars_per_second": 14.0,
+        "target_seconds": 20.0,
+    }
+
+    ohne_grenze = Project.create(engine=DummyEngine.info, reference_seconds=9.0, **common)
+    mit_grenze = Project.create(engine=F5_INFO, reference_seconds=9.0, **common)
+
+    assert ohne_grenze.target_chunk_seconds == 20.0
+    # 22 s Gesamtbudget minus 9 s Referenz.
+    assert mit_grenze.target_chunk_seconds == 13.0
+    assert len(mit_grenze.chunks) > len(ohne_grenze.chunks)
+    assert all(len(c.normalized_text) <= 13.0 * 14.0 for c in mit_grenze.chunks)
+
+
+def test_lange_referenz_schrumpft_das_budget_weiter(settings: Settings) -> None:
+    kurz = Project.create(
+        name="Kurz",
+        text="Ein Satz hier.",
+        voice="test-stimme",
+        engine=F5_INFO,
+        projects_dir=settings.projects_dir,
+        reference_seconds=6.0,
+        target_seconds=20.0,
+    )
+    lang = Project.create(
+        name="Lang",
+        text="Ein Satz hier.",
+        voice="test-stimme",
+        engine=F5_INFO,
+        projects_dir=settings.projects_dir,
+        reference_seconds=12.0,
+        target_seconds=20.0,
+    )
+    assert kurz.target_chunk_seconds > lang.target_chunk_seconds

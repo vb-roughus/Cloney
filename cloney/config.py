@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # --- Referenz-Audio-Gate ---------------------------------------------
     ref_min_seconds: float = 5.0
-    ref_max_seconds: float = 20.0
+    ref_max_seconds: float = 12.0
 
     # --- Higgs Audio v3 über sgl-omni ------------------------------------
     higgs_base_url: str = "http://localhost:8000/v1"
@@ -46,6 +46,24 @@ class Settings(BaseSettings):
     higgs_temperature: float = 0.8
     higgs_top_k: int = 50
     higgs_max_new_tokens: int = 1024
+
+    # --- F5-TTS mit deutschem Finetune -----------------------------------
+    # Die Dateinamen unterscheiden sich zwischen den Finetunes. Passen sie nicht,
+    # nennt die Fehlermeldung der Engine die zu setzenden Variablen.
+    f5_repo_id: str = "aihpi/F5-TTS-German"
+    f5_model_config: str = "F5TTS_Base"
+    # Leer = im Repo nachsehen und selbst wählen.
+    f5_ckpt_filename: str = ""
+    f5_vocab_filename: str = ""
+    # Lokale Dateien haben Vorrang vor dem Download.
+    f5_ckpt_path: str = ""
+    f5_vocab_path: str = ""
+    f5_device: str = "auto"
+    # nfe_step steuert Qualität gegen Rechenzeit: 32 ist der Standard, 16 ist
+    # spürbar schneller und für Korrekturläufe meist ausreichend.
+    f5_nfe_step: int = 32
+    f5_cfg_strength: float = 2.0
+    f5_speed: float = 1.0
 
     # --- ASR (faster-whisper) --------------------------------------------
     asr_model: str = "large-v3-turbo"

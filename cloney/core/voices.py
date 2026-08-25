@@ -38,7 +38,7 @@ def inspect_reference(
     audio: np.ndarray,
     sample_rate: int,
     min_seconds: float = 5.0,
-    max_seconds: float = 20.0,
+    max_seconds: float = 12.0,
 ) -> VoiceCheck:
     duration = duration_seconds(audio, sample_rate)
     peak = peak_dbfs(audio)
@@ -52,8 +52,9 @@ def inspect_reference(
         )
     if duration > max_seconds:
         warnings.append(
-            f"{duration:.1f}s Referenz. Über {max_seconds:.0f}s bringt keinen Gewinn "
-            "und kostet bei jedem Chunk Rechenzeit."
+            f"{duration:.1f}s Referenz. Über {max_seconds:.0f}s bringt keinen Gewinn -- "
+            "F5-TTS kürzt selbst auf 12s, und jede Sekunde Referenz verkürzt zugleich, "
+            "was pro Chunk erzeugt werden kann."
         )
     if peak > -0.5:
         warnings.append("Aufnahme übersteuert (Peak nahe 0 dBFS). Verzerrungen werden mitgeklont.")
@@ -93,7 +94,7 @@ class VoiceStore:
         audio_path: Path,
         transcript: str = "",
         min_seconds: float = 5.0,
-        max_seconds: float = 20.0,
+        max_seconds: float = 12.0,
     ) -> tuple[VoiceRef, VoiceCheck]:
         audio, sample_rate = read_wav(audio_path)
         check = inspect_reference(audio, sample_rate, min_seconds, max_seconds)
@@ -130,6 +131,7 @@ class VoiceStore:
             name=meta["name"],
             audio_path=directory / _REFERENCE,
             transcript=meta.get("transcript", ""),
+            duration_s=float(meta.get("duration_s", 0.0)),
         )
 
     def list_all(self) -> list[VoiceRef]:
