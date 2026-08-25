@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  # Auf main, damit der Stand des Hauptbranch belegt ist -- und auf Pull
+  # Requests. Nicht auf jeden Branch-Push, sonst läuft jeder PR doppelt.
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Abhängigkeiten installieren
+        run: uv sync --extra dev
+
+      # Die gesamte Suite läuft gegen DummyEngine und DummyASR -- ohne GPU,
+      # ohne Modelldownload, ohne Netzzugriff.
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Formatierung
+        run: uv run ruff format --check .

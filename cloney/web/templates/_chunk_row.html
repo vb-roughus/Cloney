@@ -1,0 +1,38 @@
+<tr id="chunk-{{ chunk.index }}" class="chunk {{ status_class(chunk.status) }}">
+  <td class="num">{{ chunk.index + 1 }}</td>
+  <td><span class="badge {{ status_class(chunk.status) }}">{{ status_label(chunk.status) }}</span>
+    {% if chunk.attempts %}<br><span class="muted">{{ chunk.attempts }}. Neuversuch</span>{% endif %}
+  </td>
+  <td class="num">
+    {% if chunk.cer is not none %}{{ "%.1f"|format(chunk.cer * 100) }}&nbsp;%
+    {% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td>
+  <td class="text">
+    <form hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/text"
+          hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML">
+      <textarea name="raw_text" rows="4">{{ chunk.raw_text }}</textarea>
+      <div class="spoken">Gesprochen: {{ chunk.normalized_text }}</div>
+      {% if chunk.asr_text %}
+        <div class="heard">Gehört: {{ chunk.asr_text }}</div>
+      {% endif %}
+      {% if chunk.error %}<div class="error">{{ chunk.error }}</div>{% endif %}
+      <button class="small" type="submit">Text übernehmen und neu rendern</button>
+    </form>
+  </td>
+  <td>
+    {% if chunk.audio_file %}
+      <audio controls preload="none"
+             src="/projects/{{ project.id }}/chunks/{{ chunk.index }}/audio"></audio>
+    {% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td>
+  <td class="rowactions">
+    <button class="small"
+            hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/reroll"
+            hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML">Neu würfeln</button>
+    {% if chunk.status.value == "needs_review" %}
+      <button class="small secondary"
+              hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/accept"
+              hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML">Trotzdem behalten</button>
+    {% endif %}
+  </td>
+</tr>

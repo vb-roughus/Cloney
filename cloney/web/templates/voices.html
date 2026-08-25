@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Stimmen &mdash; Cloney{% endblock %}
+{% block content %}
+<h1>Referenzstimmen</h1>
+<p class="muted">
+  Eine schlechte Referenzaufnahme ist die häufigste Ursache für einen schlechten Klon.
+  Sie wird deshalb beim Anlegen geprüft &mdash; nicht erst, wenn ein Kapitel gerendert ist.
+</p>
+
+{% if check %}
+<div class="card {% if check.warnings %}warn{% else %}ok{% endif %}">
+  <strong>Prüfung der Aufnahme</strong>
+  <ul>
+    <li>Länge {{ "%.1f"|format(check.duration_s) }} s bei {{ check.sample_rate }} Hz</li>
+    <li>Spitzenpegel {{ "%.1f"|format(check.peak_dbfs) }} dBFS</li>
+    <li>Sprachanteil {{ "%.0f"|format(check.speech_ratio * 100) }} %</li>
+  </ul>
+  {% if check.warnings %}
+    <ul class="warnings">{% for w in check.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  {% else %}<p>Keine Auffälligkeiten.</p>{% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="/voices" enctype="multipart/form-data" class="card">
+  <label>Name <input type="text" name="name" required placeholder="erzaehlstimme"></label>
+  <label>Referenzaufnahme (WAV, 6&ndash;15 s sauber gesprochen)
+    <input type="file" name="audio" accept="audio/*" required></label>
+  <label>Transkript der Aufnahme (verbessert die Klonqualität deutlich)
+    <textarea name="transcript" rows="2"></textarea></label>
+  <button type="submit">Stimme anlegen</button>
+</form>
+
+{% if voices %}
+<table class="projects">
+  <tr><th>Name</th><th>Transkript</th></tr>
+  {% for v in voices %}
+  <tr><td><strong>{{ v.name }}</strong></td>
+      <td class="muted">{{ v.transcript or "— kein Transkript hinterlegt —" }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Noch keine Stimmen angelegt.</p>{% endif %}
+{% endblock %}

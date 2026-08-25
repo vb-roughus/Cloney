@@ -1,0 +1,88 @@
+:root {
+  --bg: #fbfaf8; --panel: #ffffff; --ink: #1c1b19; --muted: #6b6862;
+  --line: #e2ded7; --accent: #2f6f4f; --warn: #9a6b12; --fail: #a33a2a;
+  --ok-bg: #eef5f0; --warn-bg: #fdf6e6; --fail-bg: #fbeeec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16151a; --panel: #1e1d23; --ink: #eceaf0; --muted: #9b97a3;
+    --line: #33313b; --accent: #74c39a; --warn: #dcae54; --fail: #e0796a;
+    --ok-bg: #1c2a23; --warn-bg: #2b2517; --fail-bg: #2c1c1a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header {
+  display: flex; align-items: baseline; gap: 1.5rem;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.brand { font-weight: 650; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
+nav a { margin-right: 1rem; color: var(--muted); text-decoration: none; }
+nav a:hover { color: var(--accent); }
+main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+h1 { font-size: 1.4rem; margin: 0 0 .3rem; }
+h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
+.muted { color: var(--muted); font-size: .88rem; }
+.error { color: var(--fail); font-size: .85rem; }
+.warn-text { color: var(--warn); }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 1rem; margin: 1rem 0;
+}
+.card.warn { border-color: var(--warn); background: var(--warn-bg); }
+.card.ok { border-color: var(--accent); background: var(--ok-bg); }
+label { display: block; margin: .6rem 0; font-size: .9rem; color: var(--muted); }
+.row { display: flex; gap: 1rem; }
+.row label { flex: 1; }
+input, select, textarea {
+  display: block; width: 100%; margin-top: .25rem; padding: .5rem;
+  font: inherit; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 5px;
+}
+textarea { resize: vertical; font-family: inherit; }
+button, .button {
+  display: inline-block; padding: .5rem .9rem; margin-top: .5rem;
+  font: inherit; font-weight: 550; color: #fff; background: var(--accent);
+  border: 1px solid transparent; border-radius: 5px; cursor: pointer; text-decoration: none;
+}
+button:hover, .button:hover { filter: brightness(1.08); }
+button.secondary, .button.secondary {
+  background: transparent; color: var(--accent); border-color: var(--line);
+}
+button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
+
+.badge {
+  display: inline-block; padding: .1rem .5rem; border-radius: 999px;
+  font-size: .78rem; font-weight: 600; border: 1px solid var(--line);
+}
+.badge.ok { color: var(--accent); background: var(--ok-bg); border-color: var(--accent); }
+.badge.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+.badge.fail { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); }
+.badge.pending { color: var(--muted); }
+
+.status .statline { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+.status .actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.status audio { width: 100%; margin-top: .75rem; }
+
+table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
+th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line);
+         vertical-align: top; }
+th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.projects a, .engines a { color: var(--accent); }
+
+.chunks { display: block; overflow-x: auto; }
+.chunks td.text { min-width: 24rem; }
+.chunks textarea { font-size: .9rem; }
+.chunks audio { width: 13rem; }
+.chunk.warn { background: var(--warn-bg); }
+.chunk.fail { background: var(--fail-bg); }
+.spoken, .heard { font-size: .82rem; margin-top: .3rem; color: var(--muted); }
+.heard { border-left: 2px solid var(--line); padding-left: .5rem; }
+.rowactions { display: flex; flex-direction: column; gap: .3rem; }
+.warnings { color: var(--warn); }
+.notice { padding: .75rem 1rem; background: var(--warn-bg); border-radius: 6px; }

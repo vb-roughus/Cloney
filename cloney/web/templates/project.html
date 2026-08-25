@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} &mdash; Cloney{% endblock %}
+{% block content %}
+<h1>{{ project.name }}</h1>
+<p class="muted">
+  Stimme <strong>{{ project.voice }}</strong> &middot;
+  Engine <strong>{{ project.engine }}</strong> &middot;
+  {{ engine.license }}
+</p>
+
+<div id="status"
+     hx-get="/projects/{{ project.id }}/status"
+     hx-trigger="{% if running %}load delay:1s, {% endif %}every 2s"
+     hx-swap="outerHTML">
+  {% include "_status.html" %}
+</div>
+
+<h2>Sätze</h2>
+<p class="muted">
+  Schwelle für die Fehlerrate: {{ "%.0f"|format(threshold * 100) }}&nbsp;%.
+  Darüber wird ein Satz zur Durchsicht markiert.
+</p>
+<div id="chunks">{% include "_chunk_table.html" %}</div>
+{% endblock %}

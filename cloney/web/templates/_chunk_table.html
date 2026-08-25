@@ -1,0 +1,8 @@
+<table class="chunks">
+  <thead>
+    <tr><th>#</th><th>Status</th><th>Fehlerrate</th><th>Text</th><th>Audio</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for chunk in project.chunks %}{% include "_chunk_row.html" %}{% endfor %}
+  </tbody>
+</table>
