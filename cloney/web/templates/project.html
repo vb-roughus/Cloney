@@ -1,7 +1,33 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} &mdash; Cloney{% endblock %}
 {% block content %}
-<h1>{{ project.name }}</h1>
+<div id="projektkopf" class="projektkopf">
+  <h1>{{ project.name }}</h1>
+  <details class="verwalten">
+    <summary class="muted">Projekt verwalten</summary>
+    <div class="card">
+      <form hx-post="/projects/{{ project.id }}/rename" hx-target="#projektkopf h1"
+            hx-swap="outerHTML" hx-disabled-elt="find button" hx-indicator="find button">
+        <label>Name
+          <input type="text" name="name" value="{{ project.name }}" required></label>
+        <button class="small" type="submit">{% include "_spinner.html" %}Umbenennen</button>
+      </form>
+      <div class="actions">
+        <form method="post" action="/projects/{{ project.id }}/duplicate">
+          <button class="small secondary" type="submit">Als Kopie anlegen</button>
+        </form>
+        <form method="post" action="/projects/{{ project.id }}/delete"
+              onsubmit="return confirm('Projekt {{ project.name }} samt erzeugtem Ton löschen?')">
+          <button class="small gefahr" type="submit">Projekt löschen</button>
+        </form>
+      </div>
+      <p class="muted">
+        Die Kopie übernimmt Text, Stimme, Engine und Reglerstellung, aber keinen Ton
+        &mdash; der Weg, eine andere Einstellung zu hören, ohne das Vorhandene zu verlieren.
+      </p>
+    </div>
+  </details>
+</div>
 
 {% include "_settings.html" %}
 

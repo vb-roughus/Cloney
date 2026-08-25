@@ -9,6 +9,7 @@ Langform-Produktion sonst scheitert.
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -49,10 +50,17 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     voices = VoiceStore(settings.voices_dir)
 
     def load(project_id: str) -> Project:
-        root = settings.projects_dir / project_id
+        try:
+            root = Project.resolve(settings.projects_dir, project_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         if not (root / "project.json").exists():
             raise HTTPException(404, f"Projekt '{project_id}' gibt es nicht")
         return Project.load(root)
+
+    def guard_idle(project_id: str) -> None:
+        if runner.is_running(project_id):
+            raise HTTPException(409, "Es läuft gerade ein Renderlauf")
 
     def _reference_context(project: Project) -> dict[str, object]:
         """Referenzstimme samt Sprechtempo -- beides erklärt, wie schnell das
@@ -161,6 +169,39 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
             request, "_chunk_table.html", {"project": project, "threshold": settings.cer_threshold}
         )
 
+    @app.post("/projects/{project_id}/rename", response_class=HTMLResponse)
+    def rename_project(request: Request, project_id: str, name: str = Form(...)) -> HTMLResponse:
+        project = load(project_id)
+        if not name.strip():
+            raise HTTPException(400, "Der Name darf nicht leer sein")
+        project.rename(name)
+        return HTMLResponse(f"<h1>{escape(project.name)}</h1>")
+
+    @app.post("/projects/{project_id}/delete")
+    def delete_project(project_id: str) -> RedirectResponse:
+        project = load(project_id)
+        guard_idle(project_id)
+        project.delete()
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/projects/{project_id}/duplicate")
+    def duplicate_project(project_id: str) -> RedirectResponse:
+        """Gleiche Vorlage, neues Projekt -- der gefahrlose Weg, eine andere
+        Reglerstellung zu hören, ohne das Vorhandene zu verlieren."""
+        project = load(project_id)
+        kopie = project.duplicate(f"{project.name} (Kopie)", settings.projects_dir)
+        return RedirectResponse(f"/projects/{kopie.id}", status_code=303)
+
+    @app.post("/projects/{project_id}/discard", response_class=HTMLResponse)
+    def discard_all(request: Request, project_id: str) -> HTMLResponse:
+        """Erzeugten Ton verwerfen, Seeds behalten."""
+        project = load(project_id)
+        guard_idle(project_id)
+        project.discard_all_audio()
+        return templates.TemplateResponse(
+            request, "_status.html", {"project": project, "running": False}
+        )
+
     @app.post("/projects/{project_id}/options", response_class=HTMLResponse)
     async def set_options(request: Request, project_id: str) -> HTMLResponse:
         """Regler der Engine verstellen.
@@ -169,8 +210,7 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
         einzelnen Satz abhören, bevor ein ganzes Kapitel dafür neu läuft.
         """
         project = load(project_id)
-        if runner.is_running(project_id):
-            raise HTTPException(409, "Es läuft gerade ein Renderlauf")
+        guard_idle(project_id)
 
         info = engine_info(project.engine)
         formular = await request.form()
@@ -189,8 +229,7 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     def rerender_all(request: Request, project_id: str) -> HTMLResponse:
         """Alle Sätze zum Neurendern vormerken -- ohne sie schon zu erzeugen."""
         project = load(project_id)
-        if runner.is_running(project_id):
-            raise HTTPException(409, "Es läuft gerade ein Renderlauf")
+        guard_idle(project_id)
         for chunk in project.chunks:
             project.reroll(chunk.index)
         project.save()
@@ -250,6 +289,16 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
         _resynthesize(project, index)
         return render_row(request, project, index)
 
+    @app.post("/projects/{project_id}/chunks/{index}/discard", response_class=HTMLResponse)
+    def discard_chunk(request: Request, project_id: str, index: int) -> HTMLResponse:
+        """Ton eines Satzes verwerfen, Seed behalten -- so lässt sich die Wirkung
+        einer Reglerstellung beurteilen, ohne dass zugleich der Zufall wechselt."""
+        project = load(project_id)
+        guard_idle(project_id)
+        project.discard_audio(index)
+        project.save()
+        return render_row(request, project, index)
+
     @app.post("/projects/{project_id}/chunks/{index}/accept", response_class=HTMLResponse)
     def accept(request: Request, project_id: str, index: int) -> HTMLResponse:
         """Markierten Chunk trotz erhöhter Fehlerrate durchwinken."""
@@ -276,6 +325,42 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
         )
 
     # -- Stimmen -----------------------------------------------------------
+
+    @app.post("/voices/{name}/transcript", response_class=HTMLResponse)
+    def set_transcript(request: Request, name: str, transcript: str = Form("")) -> HTMLResponse:
+        """Wortlaut ändern und die Aufnahme neu beurteilen.
+
+        Das Sprechtempo ergibt sich aus Transkript und Dauer -- ein geänderter
+        Wortlaut ändert also den Befund, ohne dass die Aufnahme angefasst wurde.
+        """
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        voices.set_transcript(name, transcript)
+        check = voices.recheck(name)
+        return templates.TemplateResponse(
+            request, "voices.html", {"voices": voices.list_all(), "check": check, "geprueft": name}
+        )
+
+    @app.post("/voices/{name}/delete")
+    def delete_voice(name: str) -> RedirectResponse:
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        benutzt = [p.name for p in Project.list_all(settings.projects_dir) if p.voice == name]
+        if benutzt:
+            raise HTTPException(
+                409,
+                f"'{name}' wird noch verwendet von: {', '.join(benutzt[:5])}"
+                + (" und weiteren" if len(benutzt) > 5 else "")
+                + ". Diese Projekte zuerst löschen.",
+            )
+        voices.delete(name)
+        return RedirectResponse("/voices", status_code=303)
+
+    @app.get("/voices/{name}/audio")
+    def voice_audio(name: str) -> FileResponse:
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        return FileResponse(voices.get(name).audio_path, media_type="audio/wav")
 
     @app.get("/voices", response_class=HTMLResponse)
     def voice_list(request: Request) -> HTMLResponse:

@@ -15,6 +15,8 @@ from cloney.pipeline import ProgressEvent, run_project
 app = typer.Typer(help="Lokales Voice Cloning für deutsche Langform-Texte.", no_args_is_help=True)
 voices_app = typer.Typer(help="Referenzstimmen verwalten.", no_args_is_help=True)
 app.add_typer(voices_app, name="voices")
+projects_app = typer.Typer(help="Projekte verwalten.", no_args_is_help=True)
+app.add_typer(projects_app, name="projects")
 
 
 def _asr_factory(settings: Settings, enabled: bool):  # noqa: ANN202
@@ -114,6 +116,105 @@ def voice_list() -> None:
     for voice in found:
         note = voice.transcript or "kein Transkript hinterlegt"
         typer.echo(f"{voice.name:20} {note}")
+
+
+@voices_app.command("remove")
+def voice_remove(
+    name: str = typer.Argument(..., help="Name der Stimme."),
+    force: bool = typer.Option(False, "--force", help="Auch löschen, wenn Projekte sie nutzen."),
+) -> None:
+    """Stimme löschen."""
+    settings = get_settings()
+    store = VoiceStore(settings.voices_dir)
+    if not store.exists(name):
+        typer.secho(f"Stimme '{name}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    benutzt = [p.name for p in Project.list_all(settings.projects_dir) if p.voice == name]
+    if benutzt and not force:
+        # Ohne diesen Halt bliebe ein Projekt mit einem Verweis ins Leere zurück.
+        typer.secho(
+            f"'{name}' wird noch verwendet von: {', '.join(benutzt)}.\n"
+            "Diese Projekte zuerst löschen -- oder --force verwenden.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(1)
+
+    store.delete(name)
+    typer.echo(f"'{name}' gelöscht.")
+
+
+@voices_app.command("transcript")
+def voice_transcript(
+    name: str = typer.Argument(..., help="Name der Stimme."),
+    text: str = typer.Option("", help="Neuer Wortlaut. Ohne Angabe: aktuellen zeigen."),
+) -> None:
+    """Wortlaut der Referenzaufnahme zeigen oder ändern."""
+    settings = get_settings()
+    store = VoiceStore(settings.voices_dir)
+    if not store.exists(name):
+        typer.secho(f"Stimme '{name}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    if not text:
+        typer.echo(store.get(name).transcript or "(kein Wortlaut hinterlegt)")
+        return
+
+    store.set_transcript(name, text)
+    pruefung = store.recheck(name)
+    if pruefung.chars_per_second:
+        typer.echo(f"Gespeichert. {pruefung.chars_per_second:.1f} Zeichen/s (Deutsch: etwa 14)")
+    for warnung in pruefung.warnings:
+        typer.secho(f"  Achtung: {warnung}", fg=typer.colors.YELLOW)
+
+
+@projects_app.command("list")
+def project_list() -> None:
+    """Projekte auflisten."""
+    settings = get_settings()
+    gefunden = Project.list_all(settings.projects_dir)
+    if not gefunden:
+        typer.echo("Noch keine Projekte.")
+        return
+    for project in gefunden:
+        fertig, gesamt = project.progress
+        typer.echo(f"{project.id}  {fertig}/{gesamt}  {project.engine:7} {project.name}")
+
+
+@projects_app.command("remove")
+def project_remove(
+    project_id: str = typer.Argument(..., help="Projekt-Kennung."),
+) -> None:
+    """Projekt samt erzeugtem Ton löschen."""
+    settings = get_settings()
+    try:
+        root = Project.resolve(settings.projects_dir, project_id)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    if not (root / "project.json").exists():
+        typer.secho(f"Projekt '{project_id}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    project = Project.load(root)
+    project.delete()
+    typer.echo(f"'{project.name}' gelöscht.")
+
+
+@projects_app.command("discard")
+def project_discard(
+    project_id: str = typer.Argument(..., help="Projekt-Kennung."),
+) -> None:
+    """Erzeugten Ton verwerfen, Seeds behalten."""
+    settings = get_settings()
+    root = settings.projects_dir / project_id
+    if not (root / "project.json").exists():
+        typer.secho(f"Projekt '{project_id}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    project = Project.load(root)
+    betroffen = project.discard_all_audio()
+    typer.echo(f"{betroffen} Sätze zurückgesetzt. Die Seeds bleiben, nur der Ton ist weg.")
 
 
 @app.command()
