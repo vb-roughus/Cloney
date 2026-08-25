@@ -46,6 +46,8 @@ class Chunk(BaseModel):
     attempts: int = 0
     engine: str | None = None
     error: str | None = None
+    #: Sekunden Referenz-Vorspann, die am Anfang entfernt wurden.
+    trimmed_bleed_s: float | None = None
 
     @property
     def needs_synthesis(self) -> bool:

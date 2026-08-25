@@ -68,6 +68,25 @@ class VoiceCheck:
     chars_per_second: float | None = None
 
 
+def ends_abruptly(audio: np.ndarray, sample_rate: int, tail_ms: int = 120) -> bool:
+    """Endet die Aufnahme mitten im Klang statt auszuklingen?
+
+    F5-TTS hängt an den Referenztext stets ein Satzende samt Pause an, gibt der
+    Aufnahme aber nur 50 ms Stille. Bricht sie zusätzlich mitten im Wort ab,
+    passen Text und Klang am Ende nicht zusammen -- das Modell dehnt dann den
+    Referenzteil, und ein Rest davon ist am Anfang des Ergebnisses zu hören.
+    """
+    tail = int(sample_rate * tail_ms / 1000)
+    if audio.size < 2 * tail:
+        return False
+    gesamt = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+    ende = float(np.sqrt(np.mean(audio[-tail:].astype(np.float64) ** 2)))
+    if gesamt <= 0:
+        return False
+    # Ein natürliches Ausklingen liegt deutlich unter dem Mittel der Aufnahme.
+    return ende > 0.5 * gesamt
+
+
 def inspect_reference(
     audio: np.ndarray,
     sample_rate: int,
@@ -128,6 +147,14 @@ def inspect_reference(
                 f"{speech_seconds:.1f}s Sprache ({rate:.1f} Zeichen/s). Enthält er mehr, als "
                 "in der Aufnahme gesprochen wird?"
             )
+
+    if ends_abruptly(audio, sample_rate):
+        warnings.append(
+            "Die Aufnahme endet abrupt statt auszuklingen. F5-TTS erwartet am Ende "
+            "eine kurze Pause; fehlt sie, kann ein Stück der Referenz am Anfang des "
+            "erzeugten Tons stehen bleiben. Am besten nach dem letzten Wort noch "
+            "einen Moment weiterlaufen lassen."
+        )
 
     blocking = duration < 1.0 or ratio < 0.2
     return VoiceCheck(

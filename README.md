@@ -316,6 +316,34 @@ Die Reglerstellung steht im Projekt-Manifest — ein Lauf bleibt damit auch
 nachträglich reproduzierbar. Welche Regler es gibt, bestimmt die Engine selbst;
 die Oberfläche zeigt, was da ist.
 
+### Wenn am Anfang ein Stück der Referenz zu hören ist
+
+F5-TTS erzeugt Referenz und neuen Text in einem Stück und trennt sie danach an
+einer berechneten Stelle:
+
+```python
+generated = generated[:, ref_audio_len:, :]
+```
+
+An den Referenztext hängt es dabei stets ein Satzende samt Pause an, gibt der
+Aufnahme aber nur 50 ms Stille. Endet die Aufnahme abrupt statt auszuklingen,
+passen Text und Klang am Ende nicht zusammen — das Modell dehnt den Referenzteil,
+und ein Rest landet hinter der Schnittstelle.
+
+Cloney geht das von zwei Seiten an. Beim Anlegen einer Stimme wird gewarnt, wenn
+die Aufnahme mitten im Klang abbricht; nach dem letzten Wort einen Moment
+weiterlaufen zu lassen behebt die Ursache.
+
+Bleibt trotzdem etwas stehen, schneidet die Qualitätskontrolle es weg. Nach
+Lautstärke ginge das nicht — der Vorspann ist Sprache. Über die Rückschrift
+schon: sie sagt, ab welchem Wort der gewünschte Text beginnt, und die Wortzeiten
+sagen, wann. Geschnitten wird nur, was sich sicher zuordnen lässt; im Zweifel
+bleibt der Ton unangetastet. Was entfernt wurde, steht im Manifest und in der
+Satzliste. Abschaltbar über `CLONEY_TRIM_REFERENCE_BLEED=false`.
+
+Dafür muss die Qualitätskontrolle laufen — ohne `faster-whisper` gibt es keine
+Rückschrift und damit keine Erkennung.
+
 ### Warum die Chunk-Länge von der Engine abhängt
 
 F5-TTS teilt zu lange Eingaben selbst auf und blendet die Teile ineinander. Das

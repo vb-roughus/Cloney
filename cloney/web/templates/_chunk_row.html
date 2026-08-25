@@ -3,6 +3,10 @@
   <td>
     <span class="badge {{ status_class(chunk.status) }}">{{ status_label(chunk.status) }}</span>
     {% if chunk.attempts %}<br><span class="muted">{{ chunk.attempts }}. Neuversuch</span>{% endif %}
+    {% if chunk.trimmed_bleed_s %}
+      <br><span class="muted" title="Ein Stück der Referenz stand am Anfang und wurde entfernt">
+        &minus;{{ "%.2f"|format(chunk.trimmed_bleed_s) }}&nbsp;s Vorspann</span>
+    {% endif %}
   </td>
   <td class="num">
     {% if chunk.cer is not none %}{{ "%.1f"|format(chunk.cer * 100) }}&nbsp;%
