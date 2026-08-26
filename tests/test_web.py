@@ -81,7 +81,8 @@ def test_chunk_neu_wuerfeln_aendert_den_seed(settings: Settings, voice_store: Vo
 
     after = Project.load(settings.projects_dir / project_id).chunks[0]
     assert after.seed != before
-    assert after.status == ChunkStatus.SYNTHESIZED
+    # Gemessen wird gleich mit, der Satz bleibt also nicht ungeprüft stehen.
+    assert after.status == ChunkStatus.OK
 
 
 def test_chunk_text_aendern_normalisiert_neu(settings: Settings, voice_store: VoiceStore) -> None:
@@ -461,3 +462,32 @@ def test_referenzaufnahme_ist_anhoerbar(settings: Settings, voice_store: VoiceSt
     response = _client(settings).get("/voices/test-stimme/audio")
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
+
+
+def test_einzelnes_neurendern_misst_auch(settings: Settings, voice_store: VoiceStore) -> None:
+    """Sonst bliebe der Satz ohne Fehlerrate stehen und der Referenz-Vorspann
+    ungeschnitten -- das Abhören einer Reglerstellung ergäbe also ein anderes
+    Ergebnis als der vollständige Lauf."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    client.post(f"/projects/{project_id}/chunks/0/reroll")
+    chunk = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert chunk.cer is not None
+    assert chunk.status == ChunkStatus.OK
+
+
+def test_ohne_spracherkennung_bleibt_der_ton_trotzdem(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ohne ASR gibt es keine Messung -- der erzeugte Ton ist deswegen aber
+    nicht verloren."""
+    client = TestClient(create_app(settings, asr_factory=None))
+    project_id = _create_project(client)
+
+    response = client.post(f"/projects/{project_id}/chunks/0/reroll")
+    assert response.status_code == 200
+    chunk = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert chunk.audio_file is not None

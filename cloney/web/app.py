@@ -22,7 +22,7 @@ from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
-from cloney.pipeline import synthesize_chunks
+from cloney.pipeline import quality_check, synthesize_chunks
 from cloney.web.jobs import JobRunner
 
 _HERE = Path(__file__).parent
@@ -248,9 +248,14 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     # -- Einzelne Chunks --------------------------------------------------
 
     def _resynthesize(project: Project, index: int) -> None:
-        """Einen einzelnen Chunk neu erzeugen.
+        """Einen einzelnen Chunk neu erzeugen und gleich messen.
 
-        Schlägt das fehl -- fehlende Stimme, Modell nicht ladbar, Server weg --,
+        Die Messung gehört dazu: Ohne sie bliebe der Satz ohne Fehlerrate stehen,
+        und der Referenz-Vorspann würde nicht abgeschnitten -- gerade beim
+        Abhören einer Reglerstellung, wo einzelne Sätze neu erzeugt werden, wäre
+        das Ergebnis also ein anderes als im vollständigen Lauf.
+
+        Schlägt etwas fehl -- fehlende Stimme, Modell nicht ladbar, Server weg --,
         dann als HTTP-Fehler mit dem Grund im Text. Sonst bliebe im Browser ein
         nacktes 'Internal Server Error' übrig, und der eigentliche Hinweis stünde
         nur im Serverlog.
@@ -276,6 +281,14 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
             # Die Pipeline schreibt Fehler ins Manifest, statt sie zu werfen --
             # hier soll der Klick aber sichtbar quittiert werden.
             raise HTTPException(400, chunk.error or "Der Chunk konnte nicht erzeugt werden.")
+
+        try:
+            quality_check(project, settings, asr_factory)
+        except (EngineError, ValueError, RuntimeError) as exc:
+            # Der Ton steht bereits; nur die Messung fehlt. Das ist kein Grund,
+            # den Klick als gescheitert zu melden.
+            chunk.error = f"Erzeugt, aber nicht gemessen: {exc}"
+            project.save()
 
     @app.post("/projects/{project_id}/chunks/{index}/reroll", response_class=HTMLResponse)
     def reroll(request: Request, project_id: str, index: int) -> HTMLResponse:
