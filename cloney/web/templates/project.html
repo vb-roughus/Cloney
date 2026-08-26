@@ -37,7 +37,9 @@
 <p class="muted">
   Schwelle für die Fehlerrate: {{ "%.0f"|format(threshold * 100) }}&nbsp;%.
   Darüber wird ein Satz zur Durchsicht markiert.
-  Einzelne Sätze neu zu rendern lädt das Modell erneut &mdash; das dauert beim ersten Mal.
+  Einzelne Sätze neu zu rendern lädt Modell und Spracherkennung erneut &mdash; das dauert
+  beim ersten Mal. Gemessen wird dabei mit, damit ein einzeln erzeugter Satz genauso
+  behandelt wird wie im vollständigen Lauf.
 </p>
 <div id="chunks">{% include "_chunk_table.html" %}</div>
 {% endblock %}
