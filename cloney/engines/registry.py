@@ -41,7 +41,9 @@ def _make_f5(settings: Settings, options: Options) -> TTSEngine:
 
 
 _FACTORIES: dict[str, Callable[[Settings, Options], TTSEngine]] = {
-    "dummy": lambda _settings, _options: DummyEngine(),
+    "dummy": lambda _settings, options: DummyEngine(
+        speed=options.get("speed", 1.0), pitch=options.get("pitch", 0.0)
+    ),
     "higgs": _make_higgs,
     "f5-de": _make_f5,
 }

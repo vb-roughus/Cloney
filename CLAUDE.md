@@ -22,6 +22,12 @@ seinen Zweck:
    gegen das Ergebnis des Vorgängers. Daraus folgen Reproduzierbarkeit, Resume
    und das einzelne Neuwürfeln eines Satzes.
 
+   Der Vergleichslauf (`cloney/core/compare.py`) zieht daraus die Konsequenz:
+   alle Varianten teilen sich die aus der Vergleichskennung abgeleiteten Seeds
+   und laufen ohne Wiederholungsversuche. Wer daran rührt, misst wieder Regler
+   und Zufall zugleich -- und die Tabelle beantwortet nicht mehr die gestellte
+   Frage.
+
 Dazu zwei Regeln, die aus der VRAM-Beschränkung folgen:
 
 - Es liegt **nie mehr als ein großes Modell gleichzeitig** im Speicher. Modelle

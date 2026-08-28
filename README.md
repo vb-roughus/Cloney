@@ -223,6 +223,9 @@ cloney projects remove <kennung>
 cloney voices transcript <name> --text "Der Wortlaut der Aufnahme."
 cloney voices remove <name>
 
+# Reglerstellungen gegeneinander messen statt raten
+cloney compare --text probe.txt --voice erzaehlstimme -g speed=0.8,1.0,1.2
+
 # Weboberfläche mit dem Satz-Editor
 cloney web
 ```
@@ -344,6 +347,59 @@ Wert unter den guten Sätzen ablesen und die Schwelle knapp darunter setzen.
 
 Installation: `pip install -e ".[similarity]"`.
 
+### Der Vergleichslauf: aus Raten wird Messen
+
+Welche Reglerstellung zu einer Stimme passt, steht in keiner Dokumentation. Ohne
+Hilfsmittel heißt das: einen Wert raten, ein Kapitel rendern, hören, wieder raten.
+Ein Vergleichslauf rendert stattdessen dieselbe kurze Textprobe einmal je
+Einstellung und stellt die Ergebnisse nebeneinander.
+
+```bash
+cloney compare --text probe.txt --voice erzaehlstimme \
+  -g speed=0.8,1.0,1.2 -g nfe_step=16,32
+```
+
+Die Ausgabe (die Zahlen hier sind ein Beispiel, keine Messung):
+
+```
+Variante                          CER   Stimme    Dauer        Tempo
+--------------------------------------------------------------------
+Sprechtempo 0.8 · Schritte 16   4.1%     0.71    12.4s  9.8 Zeichen/s
+Sprechtempo 0.8 · Schritte 32   1.9%     0.88    12.3s  9.9 Zeichen/s
+Sprechtempo 1 · Schritte 16     3.8%     0.74     9.9s 12.3 Zeichen/s
+Sprechtempo 1 · Schritte 32     1.2%*    0.89*    9.8s 12.4 Zeichen/s
+Sprechtempo 1.2 · Schritte 16   6.4%     0.66     8.2s 14.9 Zeichen/s
+Sprechtempo 1.2 · Schritte 32   2.0%     0.85     8.1s 15.1 Zeichen/s
+```
+
+In der Weboberfläche steht dieselbe Tabelle unter **Vergleiche**, mit einem
+Abspieler je Zeile — die Zahlen engen die Auswahl ein, entschieden wird am Ohr.
+
+Drei Entscheidungen machen das zu einer Messung statt zu einer Sammlung von
+Eindrücken:
+
+**Alle Varianten teilen sich dieselben Seeds.** Sie werden aus der Kennung des
+Vergleichs abgeleitet, nicht aus der des Projekts. Sonst unterschieden sich zwei
+Zeilen in zwei Dingen zugleich — Regler und Zufall — und die Tabelle beantwortete
+nicht mehr die gestellte Frage. Aus demselben Grund läuft ein Vergleich ohne
+Wiederholungsversuche: ein neuer Seed nach einem auffälligen Satz würde genau das
+verwischen, was gemessen werden soll.
+
+**Jede Variante ist ein vollwertiges Projekt** und durchläuft dieselbe Pipeline
+wie ein Hörbuch. Gemessen wird damit, was später auch tatsächlich passiert; es
+gibt keinen zweiten, abweichenden Renderweg, der auseinanderlaufen könnte. Die
+Variantenprojekte liegen im Ordner des Vergleichs und fluten die Projektliste
+nicht.
+
+**Markiert wird je Spalte, nicht als Gesamtnote.** Wie eine halbe Prozent
+Fehlerrate gegen zwei Hundertstel Ähnlichkeit aufzuwiegen wäre, kann niemand
+belegen — eine gewichtete Punktzahl täuschte eine Objektivität vor, die es nicht
+gibt. Bei Gleichstand wird niemand markiert.
+
+Die Probe kurz halten: sie wird je Variante einmal vollständig gerendert. Ein
+Kreuzprodukt ist auf zwölf Varianten gedeckelt, damit aus drei gut gemeinten
+Achsen kein Lauf über Stunden wird.
+
 ### Wenn am Anfang ein Stück der Referenz zu hören ist
 
 F5-TTS erzeugt Referenz und neuen Text in einem Stück und trennt sie danach an
@@ -437,13 +493,14 @@ Modell zu laden.
 ## Stand
 
 Fertig: deutsche Normalisierung, Segmentierung, Projekt-Manifest mit
-Wiederaufnahme, Phasenmodell, Qualitätskontrolle mit Retry-Schleife, Zusammenbau
-mit Lautheitsangleichung, CLI und Weboberfläche mit Satz-Editor.
+Wiederaufnahme, Phasenmodell, Qualitätskontrolle mit Retry-Schleife,
+Stimmähnlichkeit, Vergleichslauf, Zusammenbau mit Lautheitsangleichung, CLI und
+Weboberfläche mit Satz-Editor.
 
 Als Nächstes: LLM-gestützte Textvorbereitung für das, was Regeln nicht können
-(Fremdwörter, Eigennamen), der Emotions-Director, und ein Benchmark-Harness, das
-`higgs` und `f5-de` auf einem deutschen Testsatz vergleicht statt sie nach Gefühl
-auszuwählen.
+(Fremdwörter, Eigennamen), und der Emotions-Director. Der Vergleichslauf
+vergleicht bislang Reglerstellungen einer Engine; ihn über mehrere Engines
+laufen zu lassen, ist der nächste Schritt zum Benchmark-Harness.
 
 Das Anfrageschema der Higgs-Engine ist gegen die öffentliche Dokumentation
 gebaut, aber nicht gegen einen laufenden Server verifiziert; die Engine gibt den

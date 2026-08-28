@@ -87,6 +87,13 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 .warnings { color: var(--warn); }
 .notice { padding: .75rem 1rem; background: var(--warn-bg); border-radius: 6px; }
 
+/* --- Vergleichslauf ------------------------------------------------------ */
+table.vergleich { display: block; overflow-x: auto; }
+table.vergleich td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.vergleich audio { width: 13rem; }
+table.vergleich tr.fail { background: var(--fail-bg); }
+#raster label { margin-bottom: .6rem; }
+
 /* --- Rückmeldung -------------------------------------------------------- */
 
 /* htmx blendet Elemente mit dieser Klasse ein, solange die Anfrage läuft. */

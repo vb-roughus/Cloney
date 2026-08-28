@@ -18,12 +18,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from cloney.config import Settings, get_settings
+from cloney.core.compare import MAX_VARIANTS, Comparison
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
 from cloney.pipeline import quality_check, synthesize_chunks
-from cloney.web.jobs import JobRunner
+from cloney.web.jobs import ComparisonRunner, JobRunner
 
 _HERE = Path(__file__).parent
 
@@ -50,6 +51,7 @@ def create_app(
     templates.env.globals["status_class"] = lambda s: STATUS_LABEL[s][1]
 
     runner = JobRunner(settings)
+    vergleiche = ComparisonRunner(settings)
     voices = VoiceStore(settings.voices_dir)
 
     def load(project_id: str) -> Project:
@@ -384,6 +386,151 @@ def create_app(
         if not voices.exists(name):
             raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
         return FileResponse(voices.get(name).audio_path, media_type="audio/wav")
+
+    # -- Vergleichsläufe --------------------------------------------------
+
+    def load_comparison(comparison_id: str) -> Comparison:
+        try:
+            root = Comparison.resolve(settings.comparisons_dir, comparison_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not (root / "comparison.json").exists():
+            raise HTTPException(404, f"Vergleich '{comparison_id}' gibt es nicht")
+        return Comparison.load(root)
+
+    def _grid(formular, info) -> dict[str, list[float]]:  # noqa: ANN001
+        """'0.8, 1.0 1.2' zu Zahlen -- je Regler eine Achse.
+
+        Unlesbares wird übergangen statt abgelehnt: ein Tippfehler in einer von
+        drei Achsen soll nicht das ganze Formular zurückweisen.
+        """
+        achsen: dict[str, list[float]] = {}
+        for option in info.options:
+            roh = str(formular.get(f"werte_{option.key}") or "")
+            werte = []
+            for stueck in roh.replace(",", " ").split():
+                try:
+                    werte.append(float(stueck))
+                except ValueError:
+                    continue
+            if werte:
+                achsen[option.key] = werte
+        return achsen
+
+    @app.get("/comparisons", response_class=HTMLResponse)
+    def comparison_index(request: Request, engine: str = "") -> HTMLResponse:
+        gewaehlt = engine or settings.engine
+        return templates.TemplateResponse(
+            request,
+            "comparisons.html",
+            {
+                "comparisons": Comparison.list_all(settings.comparisons_dir),
+                "voices": voices.list_all(),
+                "engines": available_engines(),
+                "default_engine": gewaehlt,
+                "engine": engine_info(gewaehlt),
+                "max_variants": MAX_VARIANTS,
+            },
+        )
+
+    @app.get("/comparisons/fields", response_class=HTMLResponse)
+    def comparison_fields(request: Request, engine: str) -> HTMLResponse:
+        """Die Achsen des Rasters hängen an der Engine -- beim Wechsel neu laden."""
+        return templates.TemplateResponse(
+            request, "_grid_fields.html", {"engine": engine_info(engine)}
+        )
+
+    @app.post("/comparisons")
+    async def create_comparison(request: Request) -> RedirectResponse:
+        formular = await request.form()
+        text = str(formular.get("text") or "")
+        voice = str(formular.get("voice") or "")
+        engine = str(formular.get("engine") or "")
+        if not text.strip():
+            raise HTTPException(400, "Die Textprobe ist leer")
+        if not voices.exists(voice):
+            raise HTTPException(400, f"Stimme '{voice}' gibt es nicht")
+
+        info = engine_info(engine)
+        reference = voices.get(voice)
+        if info.requires_ref_text and not reference.transcript.strip():
+            raise HTTPException(
+                400,
+                f"Die Engine '{engine}' braucht den Wortlaut der Referenzaufnahme, "
+                f"'{voice}' hat aber keinen hinterlegt.",
+            )
+
+        try:
+            comparison = Comparison.create(
+                name=str(formular.get("name") or "").strip() or "Vergleich",
+                text=text,
+                voice=voice,
+                engine=info,
+                grid=_grid(formular, info),
+                comparisons_dir=settings.comparisons_dir,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse(f"/comparisons/{comparison.id}", status_code=303)
+
+    @app.get("/comparisons/{comparison_id}", response_class=HTMLResponse)
+    def comparison_view(request: Request, comparison_id: str) -> HTMLResponse:
+        comparison = load_comparison(comparison_id)
+        return templates.TemplateResponse(
+            request,
+            "comparison.html",
+            {
+                "comparison": comparison,
+                "engine": engine_info(comparison.engine),
+                "running": vergleiche.is_running(comparison_id),
+            },
+        )
+
+    @app.post("/comparisons/{comparison_id}/run", response_class=HTMLResponse)
+    def start_comparison(request: Request, comparison_id: str) -> HTMLResponse:
+        comparison = load_comparison(comparison_id)
+        vergleiche.start(comparison.root, asr_factory, embedder_factory)
+        return templates.TemplateResponse(
+            request,
+            "_comparison_table.html",
+            {"comparison": comparison, "engine": engine_info(comparison.engine), "running": True},
+        )
+
+    @app.get("/comparisons/{comparison_id}/table", response_class=HTMLResponse)
+    def comparison_table(request: Request, comparison_id: str) -> HTMLResponse:
+        comparison = load_comparison(comparison_id)
+        job = vergleiche.get(comparison_id)
+        return templates.TemplateResponse(
+            request,
+            "_comparison_table.html",
+            {
+                "comparison": comparison,
+                "engine": engine_info(comparison.engine),
+                "running": vergleiche.is_running(comparison_id),
+                "job": job.snapshot() if job else None,
+            },
+        )
+
+    @app.get("/comparisons/{comparison_id}/variants/{slug}/audio")
+    def variant_audio(comparison_id: str, slug: str) -> FileResponse:
+        comparison = load_comparison(comparison_id)
+        try:
+            project = comparison.variant_project(slug)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if not project.output_path.exists():
+            raise HTTPException(404, "Für diese Variante gibt es noch keinen Ton")
+        return FileResponse(project.output_path, media_type="audio/wav")
+
+    @app.post("/comparisons/{comparison_id}/delete")
+    def delete_comparison(comparison_id: str) -> RedirectResponse:
+        comparison = load_comparison(comparison_id)
+        if vergleiche.is_running(comparison_id):
+            raise HTTPException(409, "Es läuft gerade ein Vergleich")
+        comparison.delete()
+        return RedirectResponse("/comparisons", status_code=303)
+
+    # -- Stimmen ----------------------------------------------------------
 
     @app.get("/voices", response_class=HTMLResponse)
     def voice_list(request: Request) -> HTMLResponse:
