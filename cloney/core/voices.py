@@ -15,12 +15,25 @@ from pathlib import Path
 
 import numpy as np
 
-from cloney.core.audio import duration_seconds, peak_dbfs, read_wav, trim_silence, write_wav
+from cloney.core.audio import (
+    AudioInfo,
+    describe_audio,
+    duration_seconds,
+    peak_dbfs,
+    read_wav,
+    trim_silence,
+)
 from cloney.engines.base import VoiceRef
 
 _SLUG = re.compile(r"[^a-z0-9]+")
 _META = "voice.json"
-_REFERENCE = "reference.wav"
+#: Basisname der Aufnahme. Die Endung kommt von der hochgeladenen Datei, denn
+#: die wird unverändert übernommen -- siehe VoiceStore.add.
+_REFERENCE_STEM = "reference"
+#: Vor der unveränderten Ablage lag hier immer eine umgewandelte WAV-Datei.
+#: Ältere Stimmen tragen den Namen weiter.
+_ALTE_REFERENZ = "reference.wav"
+_ERLAUBTE_ENDUNG = re.compile(r"^\.[a-z0-9]{1,5}$")
 
 
 #: Übliches deutsches Sprechtempo in Zeichen je Sekunde.
@@ -66,6 +79,9 @@ class VoiceCheck:
     speech_ratio: float
     #: Zeichen je Sekunde aus Transkriptlänge und Dauer. None ohne Transkript.
     chars_per_second: float | None = None
+    #: Kanäle und Auflösung der Datei, so wie sie abgelegt wird.
+    channels: int = 1
+    subtype: str = ""
 
 
 def ends_abruptly(audio: np.ndarray, sample_rate: int, tail_ms: int = 120) -> bool:
@@ -93,6 +109,8 @@ def inspect_reference(
     min_seconds: float = 5.0,
     max_seconds: float = 12.0,
     transcript: str = "",
+    channels: int = 1,
+    subtype: str = "",
 ) -> VoiceCheck:
     duration = duration_seconds(audio, sample_rate)
     peak = peak_dbfs(audio)
@@ -165,6 +183,8 @@ def inspect_reference(
         peak_dbfs=peak,
         speech_ratio=ratio,
         chars_per_second=rate,
+        channels=channels,
+        subtype=subtype,
     )
 
 
@@ -186,18 +206,46 @@ class VoiceStore:
         min_seconds: float = 5.0,
         max_seconds: float = 12.0,
     ) -> tuple[VoiceRef, VoiceCheck]:
+        """Aufnahme prüfen und **unverändert** ablegen.
+
+        Gelesen wird nur zum Prüfen; abgelegt wird die Datei so, wie sie
+        hereinkommt. Vorher wurde sie nach Mono gemischt und auf 16 Bit
+        gebracht -- die Referenz im Speicher klang danach schlechter als das
+        Original, ohne dass irgendwer davon etwas gehabt hätte: F5-TTS mischt
+        und tastet ohnehin selbst um, und zwar besser aus dem Original als aus
+        einer bereits verkleinerten Fassung. Wer die Aufnahme in der Oberfläche
+        anhört, hört jetzt seine eigene Datei.
+        """
         audio, sample_rate = read_wav(audio_path)
-        check = inspect_reference(audio, sample_rate, min_seconds, max_seconds, transcript)
+        datei = describe_audio(audio_path)
+        check = inspect_reference(
+            audio,
+            sample_rate,
+            min_seconds,
+            max_seconds,
+            transcript,
+            channels=datei.channels,
+            subtype=datei.subtype,
+        )
 
         directory = self.path(name)
         directory.mkdir(parents=True, exist_ok=True)
-        write_wav(directory / _REFERENCE, audio, sample_rate)
+        # Eine frühere Aufnahme kann eine andere Endung haben und bliebe sonst
+        # als zweite Datei liegen.
+        for vorhanden in directory.glob(f"{_REFERENCE_STEM}.*"):
+            vorhanden.unlink()
+        ziel = directory / f"{_REFERENCE_STEM}{_endung(audio_path)}"
+        shutil.copyfile(audio_path, ziel)
+
         (directory / _META).write_text(
             json.dumps(
                 {
                     "name": name,
                     "transcript": transcript,
+                    "file": ziel.name,
                     "sample_rate": sample_rate,
+                    "channels": datei.channels,
+                    "subtype": datei.subtype,
                     "duration_s": round(check.duration_s, 2),
                     "warnings": check.warnings,
                 },
@@ -241,7 +289,14 @@ class VoiceStore:
         """
         stimme = self.get(name)
         audio, sample_rate = read_wav(stimme.audio_path)
-        pruefung = inspect_reference(audio, sample_rate, transcript=stimme.transcript)
+        datei = describe_audio(stimme.audio_path)
+        pruefung = inspect_reference(
+            audio,
+            sample_rate,
+            transcript=stimme.transcript,
+            channels=datei.channels,
+            subtype=datei.subtype,
+        )
         self.set_metadata(name, warnings=pruefung.warnings)
         return pruefung
 
@@ -258,15 +313,43 @@ class VoiceStore:
         meta = json.loads((directory / _META).read_text(encoding="utf-8"))
         return VoiceRef(
             name=meta["name"],
-            audio_path=directory / _REFERENCE,
+            audio_path=self._reference_path(directory, meta),
             transcript=meta.get("transcript", ""),
             duration_s=float(meta.get("duration_s", 0.0)),
         )
+
+    @staticmethod
+    def _reference_path(directory: Path, meta: dict) -> Path:
+        """Wo die Aufnahme liegt -- auch bei Stimmen von vor der Formatfreiheit.
+
+        Die legten immer eine 'reference.wav' an. Der Eintrag in den Metadaten
+        fehlt dort, deshalb der Rückfall.
+        """
+        datei = str(meta.get("file") or "")
+        if datei and (directory / datei).exists():
+            return directory / datei
+        vorhanden = sorted(directory.glob(f"{_REFERENCE_STEM}.*"))
+        return vorhanden[0] if vorhanden else directory / _ALTE_REFERENZ
+
+    def format(self, name: str) -> AudioInfo:
+        """Was tatsächlich auf Platte liegt. Für die Anzeige in der Oberfläche."""
+        return describe_audio(self.get(name).audio_path)
 
     def list_all(self) -> list[VoiceRef]:
         if not self.root.exists():
             return []
         return [self.get(d.name) for d in sorted(self.root.iterdir()) if (d / _META).exists()]
+
+
+def _endung(path: Path) -> str:
+    """Endung der Quelldatei, auf ein harmloses Maß beschränkt.
+
+    Der Name kommt bei einem Upload vom Browser und damit vom Benutzer. Alles,
+    was nicht wie eine gewöhnliche Endung aussieht, wird zu '.wav' -- der Inhalt
+    ist ohnehin schon erfolgreich gelesen worden, es geht allein um den Namen.
+    """
+    endung = path.suffix.lower()
+    return endung if _ERLAUBTE_ENDUNG.match(endung) else ".wav"
 
 
 def _slug(name: str) -> str:

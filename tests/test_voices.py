@@ -139,3 +139,103 @@ def test_ausklingende_aufnahme_ist_in_ordnung() -> None:
     mit_ausklang = np.concatenate([_speech(8.0), silence(0.5, SR)])
     assert not ends_abruptly(mit_ausklang, SR)
     assert not any("endet abrupt" in w for w in inspect_reference(mit_ausklang, SR).warnings)
+
+
+# -- Die Aufnahme bleibt, wie sie ist ---------------------------------------
+
+
+def _stereo_24bit(tmp_path, sekunden: float = 8.0, rate: int = 48000):  # noqa: ANN001, ANN202
+    """Eine Quelle, die nichts mit Cloneys Innenleben gemein hat: Stereo, 48 kHz,
+    24 Bit -- also alles, was frühere Fassungen wegkonvertiert haben."""
+    import soundfile as sf
+
+    t = np.arange(int(sekunden * rate), dtype=np.float32) / rate
+    huelle = 0.5 + 0.5 * np.sin(2 * np.pi * 3.0 * t)
+    links = 0.3 * huelle * np.sin(2 * np.pi * 180 * t)
+    pfad = tmp_path / "quelle.wav"
+    sf.write(pfad, np.stack([links, np.roll(links, 200) * 0.9], axis=1), rate, subtype="PCM_24")
+    return pfad
+
+
+def test_referenz_wird_bitgenau_abgelegt(tmp_path) -> None:  # noqa: ANN001
+    """Vorher wurde die Aufnahme nach Mono gemischt und auf 16 Bit gebracht.
+    Die Referenz im Speicher klang danach schlechter als das Original -- ohne
+    dass irgendwer davon etwas gehabt hätte."""
+    from cloney.core.voices import VoiceStore
+
+    quelle = _stereo_24bit(tmp_path)
+    store = VoiceStore(tmp_path / "voices")
+    _, check = store.add("anna", quelle, transcript="Der Wortlaut dieser Aufnahme steht hier.")
+
+    abgelegt = store.get("anna").audio_path
+    assert abgelegt.read_bytes() == quelle.read_bytes()
+    assert store.format("anna").channels == 2
+    assert store.format("anna").subtype == "PCM_24"
+    assert store.format("anna").sample_rate == 48000
+    # Die Prüfung nennt, was tatsächlich liegt -- nicht, was sie gelesen hat.
+    assert (check.channels, check.subtype) == (2, "PCM_24")
+
+
+def test_endung_der_quelle_bleibt_erhalten(tmp_path) -> None:  # noqa: ANN001
+    import soundfile as sf
+
+    from cloney.core.voices import VoiceStore
+
+    t = np.arange(8 * 44100, dtype=np.float32) / 44100
+    sf.write(tmp_path / "quelle.flac", 0.3 * np.sin(2 * np.pi * 160 * t), 44100, subtype="PCM_24")
+
+    store = VoiceStore(tmp_path / "voices")
+    store.add("anna", tmp_path / "quelle.flac", transcript="Der Wortlaut dieser Aufnahme.")
+    assert store.get("anna").audio_path.name == "reference.flac"
+
+
+def test_ersetzen_mit_anderem_format_laesst_keine_leiche(tmp_path) -> None:  # noqa: ANN001
+    """Sonst lägen zwei Aufnahmen im Ordner und die Auswahl entschiede das Alphabet."""
+    import soundfile as sf
+
+    from cloney.core.voices import VoiceStore
+
+    t = np.arange(8 * 44100, dtype=np.float32) / 44100
+    sf.write(tmp_path / "quelle.flac", 0.3 * np.sin(2 * np.pi * 160 * t), 44100)
+    store = VoiceStore(tmp_path / "voices")
+    store.add("anna", tmp_path / "quelle.flac", transcript="Der Wortlaut dieser Aufnahme.")
+    store.add("anna", _stereo_24bit(tmp_path), transcript="Der Wortlaut dieser Aufnahme.")
+
+    dateien = sorted(p.name for p in (tmp_path / "voices" / "anna").iterdir())
+    assert dateien == ["reference.wav", "voice.json"]
+
+
+def test_seltsame_endung_wird_zu_wav(tmp_path) -> None:  # noqa: ANN001
+    """Der Dateiname kommt beim Hochladen vom Browser und damit vom Benutzer."""
+    import shutil
+
+    from cloney.core.voices import VoiceStore
+
+    quelle = _stereo_24bit(tmp_path)
+    boese = tmp_path / "aufnahme.wav.../../etc"
+    boese.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(quelle, boese)
+
+    store = VoiceStore(tmp_path / "voices")
+    store.add("anna", boese, transcript="Der Wortlaut dieser Aufnahme.")
+    assert store.get("anna").audio_path.name == "reference.wav"
+
+
+def test_stimme_von_vor_der_formatfreiheit_bleibt_lesbar(tmp_path) -> None:  # noqa: ANN001
+    """Ältere Stimmen tragen kein 'file' in den Metadaten und immer eine WAV."""
+    import json
+
+    from cloney.core.audio import write_wav
+    from cloney.core.voices import VoiceStore
+
+    ordner = tmp_path / "voices" / "alt"
+    ordner.mkdir(parents=True)
+    write_wav(ordner / "reference.wav", _speech(8.0), SR)
+    (ordner / "voice.json").write_text(
+        json.dumps({"name": "alt", "transcript": "Wortlaut.", "duration_s": 8.0}),
+        encoding="utf-8",
+    )
+
+    stimme = VoiceStore(tmp_path / "voices").get("alt")
+    assert stimme.audio_path.name == "reference.wav"
+    assert stimme.audio_path.exists()

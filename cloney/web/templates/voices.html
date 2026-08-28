@@ -11,7 +11,12 @@
 <div class="card {% if check.warnings %}warn{% else %}ok{% endif %}">
   <strong>Prüfung{% if geprueft %} von „{{ geprueft }}"{% endif %}</strong>
   <ul>
-    <li>Länge {{ "%.1f"|format(check.duration_s) }} s bei {{ check.sample_rate }} Hz</li>
+    <li>Länge {{ "%.1f"|format(check.duration_s) }} s</li>
+    <li>Format {{ check.sample_rate }} Hz,
+      {% if check.channels == 1 %}Mono{% elif check.channels == 2 %}Stereo
+      {% else %}{{ check.channels }} Kanäle{% endif %}{% if check.subtype %},
+      {{ check.subtype }}{% endif %}
+      <span class="muted">&mdash; unverändert gespeichert</span></li>
     <li>Spitzenpegel {{ "%.1f"|format(check.peak_dbfs) }} dBFS</li>
     <li>Sprachanteil {{ "%.0f"|format(check.speech_ratio * 100) }} %</li>
     {% if check.chars_per_second %}
@@ -34,6 +39,8 @@
     <div class="statline">
       <strong>{{ v.name }}</strong>
       <span class="muted">{{ "%.1f"|format(v.duration_s) }} s</span>
+      {% set datei = formate.get(v.name) %}
+      {% if datei %}<span class="muted">{{ datei.beschreibung() }}</span>{% endif %}
       {% if v.transcript and v.duration_s %}
         {% set rate = v.transcript|length / v.duration_s %}
         <span class="muted">rund {{ "%.0f"|format(rate) }} Zeichen/s</span>
@@ -59,11 +66,36 @@
   {% endfor %}
 {% else %}<p class="muted">Noch keine Stimmen angelegt.</p>{% endif %}
 
+<details class="card">
+  <summary>Warum das Ergebnis trotzdem nicht so klingt wie die Aufnahme</summary>
+  <p class="muted">
+    Die Referenz bleibt unangetastet: sie wird gelesen, um sie zu prüfen, und ansonsten
+    Byte für Byte abgelegt. Was Sie oben anhören, ist Ihre eigene Datei.
+  </p>
+  <p class="muted">
+    Die erzeugte Spur kann sie dennoch nicht erreichen. F5-TTS ist ein 24-kHz-Modell:
+    der Vocoder liefert 24000 Samples je Sekunde in Mono, und mehr gibt es nicht
+    herzustellen. Aus einer 48-kHz-Aufnahme wird also eine Spur mit der halben
+    Bandbreite &mdash; alles über 12&nbsp;kHz fehlt. Das ist keine Einstellung, die sich
+    hochdrehen ließe, sondern die Auflösung, in der das Modell rechnet. Ein anderes
+    Modell mit höherer Ausgaberate wäre der einzige Weg dorthin; die Referenz liegt
+    dafür im Original bereit.
+  </p>
+  <p class="muted">
+    Innerhalb dieser Grenze gibt Cloney nichts her: Chunks und fertige Spur werden mit
+    24 Bit geschrieben, und die Lautheitsangleichung nimmt einen Satz lieber ein
+    Dezibel zurück, als seine Spitzen abzuschneiden.
+  </p>
+</details>
+
 <h2>Stimme anlegen</h2>
 <form method="post" action="/voices" enctype="multipart/form-data" class="card">
   <label>Name <input type="text" name="name" required placeholder="erzaehlstimme"></label>
-  <label>Referenzaufnahme (WAV, 6&ndash;12 s sauber gesprochen)
-    <input type="file" name="audio" accept="audio/*" required></label>
+  <label>Referenzaufnahme (6&ndash;12 s sauber gesprochen)
+    <input type="file" name="audio" accept="audio/*" required>
+    <span class="muted">Die Datei wird unverändert übernommen &mdash; Samplerate, Kanäle
+      und Auflösung bleiben, wie sie sind. WAV, FLAC und alles Weitere, was die
+      Audio-Bibliothek lesen kann.</span></label>
   <label>Transkript &mdash; der <strong>Wortlaut</strong> des Gesprochenen
     <textarea name="transcript" rows="2"
       placeholder="Wort für Wort, was in der Aufnahme gesagt wird."></textarea></label>

@@ -84,7 +84,9 @@ def list_engines() -> None:
 
 @voices_app.command("add")
 def voice_add(
-    audio: Path = typer.Option(..., exists=True, help="Referenzaufnahme (WAV)."),
+    audio: Path = typer.Option(
+        ..., exists=True, help="Referenzaufnahme. Wird unverändert übernommen."
+    ),
     name: str = typer.Option(..., help="Name der Stimme."),
     transcript: str = typer.Option("", help="Wortlaut der Aufnahme."),
     auto_transcript: bool = typer.Option(
@@ -109,9 +111,14 @@ def voice_add(
     _, check = store.add(
         name, audio, transcript, settings.ref_min_seconds, settings.ref_max_seconds
     )
+    kanaele = {1: "Mono", 2: "Stereo"}.get(check.channels, f"{check.channels} Kanäle")
     typer.echo(
-        f"'{name}' angelegt: {check.duration_s:.1f}s bei {check.sample_rate} Hz, "
+        f"'{name}' angelegt: {check.duration_s:.1f}s, "
         f"Spitze {check.peak_dbfs:.1f} dBFS, Sprachanteil {check.speech_ratio:.0%}"
+    )
+    typer.echo(
+        f"  Unverändert abgelegt: {check.sample_rate} Hz, {kanaele}"
+        f"{', ' + check.subtype if check.subtype else ''}"
     )
     if check.chars_per_second:
         from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, suggested_speed
@@ -124,7 +131,8 @@ def voice_add(
         vorschlag = suggested_speed(check.chars_per_second)
         if vorschlag:
             typer.echo(
-                f"  F5-TTS übernimmt dieses Tempo. Für ruhigeres Zuhören: -o speed={vorschlag:g}"
+                "  Engines wie F5-TTS übernehmen dieses Tempo. "
+                f"Für ruhigeres Zuhören: -o speed={vorschlag:g}"
             )
     for warning in check.warnings:
         typer.secho(f"  Achtung: {warning}", fg=typer.colors.YELLOW)
@@ -140,9 +148,15 @@ def voice_list() -> None:
     if not found:
         typer.echo("Noch keine Stimmen angelegt.")
         return
+    from cloney.core.audio import describe_audio
+
     for voice in found:
         note = voice.transcript or "kein Transkript hinterlegt"
         typer.echo(f"{voice.name:20} {note}")
+        try:
+            typer.echo(f"{'':20} {describe_audio(voice.audio_path).beschreibung()}")
+        except Exception:  # noqa: BLE001 - eine unlesbare Datei darf die Liste nicht kippen
+            typer.secho(f"{'':20} Aufnahme nicht lesbar", fg=typer.colors.YELLOW)
 
 
 @voices_app.command("remove")
