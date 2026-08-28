@@ -1,32 +1,44 @@
 {% set done, total = project.progress %}
 {#
+  Die Statusleiste steht über den Reitern und bleibt immer sichtbar -- sie ist
+  das, was man während eines Laufs beobachtet.
+
   Die Abfrage-Attribute stehen nur da, solange etwas läuft. Ein leeres
   hx-trigger ist kein "kein Auslöser": htmx fällt dann auf seinen Standard
-  zurück, und der ist bei einem div der Klick. Die Karte hätte sich also bei
+  zurück, und der ist bei einem div der Klick. Die Leiste hätte sich also bei
   jedem Klick in ihr selbst neu geladen und dabei das Ergebnis der eigentlichen
   Anfrage überschrieben.
 #}
-<div id="status" class="card status" data-fertig="{{ 0 if running else 1 }}"
+<div id="status" class="statusleiste" data-fertig="{{ 0 if running else 1 }}"
      {% if running %}hx-get="/projects/{{ project.id }}/status"
      hx-trigger="every 1500ms" hx-swap="outerHTML"{% endif %}>
 
-  <div class="statline">
+  <div class="statzeile">
     <span class="badge {% if running %}pending{% elif project.is_complete %}ok{% else %}warn{% endif %}">
       {% if running %}<span class="spinner inline" aria-hidden="true"></span> läuft
       {% elif project.is_complete %}fertig{% else %}bereit{% endif %}
     </span>
-    <span>{{ done }} von {{ total }} Sätzen</span>
-    {% if project.median_cer() is not none %}
-      <span>Median-Fehlerrate {{ "%.1f"|format(project.median_cer() * 100) }}&nbsp;%</span>
-    {% endif %}
-    {% if project.median_similarity() is not none %}
-      <span title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch"
-        >Median-Stimme {{ "%.2f"|format(project.median_similarity()) }}</span>
-    {% elif project.similarity_note %}
-      <span class="muted">Stimme nicht gemessen</span>
-    {% endif %}
+    <span class="zaehler">{{ done }} von {{ total }} Sätzen</span>
     {% if project.flagged() %}
       <span class="warn-text">{{ project.flagged() | length }} zur Durchsicht</span>
+    {% endif %}
+
+    <span class="fueller"></span>
+
+    {% if running %}
+      <button disabled>Läuft &hellip;</button>
+    {% else %}
+      <button hx-post="/projects/{{ project.id }}/run"
+              hx-target="#status" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-indicator="this">
+        {% include "_spinner.html" %}
+        {% if done %}Offene Sätze rendern{% else %}Rendern starten{% endif %}
+      </button>
+      <button class="secondary" hx-get="/projects/{{ project.id }}/table"
+              hx-target="#chunks" hx-swap="innerHTML"
+              hx-disabled-elt="this" hx-indicator="this">
+        {% include "_spinner.html" %}Tabelle aktualisieren
+      </button>
     {% endif %}
   </div>
 
@@ -52,38 +64,10 @@
     <p class="joblog">Ohne Stimmähnlichkeit gerendert: {{ project.similarity_note }}</p>
   {% endif %}
 
-  <div class="actions">
-    {% if running %}
-      <button disabled>Läuft &hellip;</button>
-      <span class="muted">Der Fortschritt aktualisiert sich von selbst.</span>
-    {% else %}
-      <button hx-post="/projects/{{ project.id }}/run"
-              hx-target="#status" hx-swap="outerHTML"
-              hx-disabled-elt="this" hx-indicator="this">
-        {% include "_spinner.html" %}
-        {% if done %}Offene Sätze rendern{% else %}Rendern starten{% endif %}
-      </button>
-      <button class="secondary" hx-get="/projects/{{ project.id }}/table"
-              hx-target="#chunks" hx-swap="innerHTML"
-              hx-disabled-elt="this" hx-indicator="this">
-        {% include "_spinner.html" %}Tabelle aktualisieren
-      </button>
-    {% endif %}
-    {% if project.output_file %}
-      <a class="button secondary" href="/projects/{{ project.id }}/output">Fertige Spur laden</a>
-    {% endif %}
-    {% if not running and done %}
-      <button class="secondary gefahr"
-              hx-post="/projects/{{ project.id }}/discard"
-              hx-target="#status" hx-swap="outerHTML"
-              hx-disabled-elt="this" hx-indicator="this"
-              hx-confirm="Erzeugten Ton aller Sätze verwerfen? Die Seeds bleiben erhalten.">
-        {% include "_spinner.html" %}Ton verwerfen
-      </button>
-    {% endif %}
-  </div>
-
   {% if project.output_file %}
-    <audio controls preload="none" src="/projects/{{ project.id }}/output"></audio>
+    <div class="ergebnis">
+      <audio controls preload="none" src="/projects/{{ project.id }}/output"></audio>
+      <a class="button secondary small" href="/projects/{{ project.id }}/output">Laden</a>
+    </div>
   {% endif %}
 </div>

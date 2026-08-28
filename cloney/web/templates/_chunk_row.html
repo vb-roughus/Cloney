@@ -1,69 +1,78 @@
 <tr id="chunk-{{ chunk.index }}" class="chunk {{ status_class(chunk.status) }}">
-  <td class="num">{{ chunk.index + 1 }}</td>
-  <td>
+  <td class="meta">
+    <div class="nummer">{{ chunk.index + 1 }}</div>
     <span class="badge {{ status_class(chunk.status) }}">{{ status_label(chunk.status) }}</span>
-    {% if chunk.attempts %}<br><span class="muted">{{ chunk.attempts }}. Neuversuch</span>{% endif %}
+    <dl class="messwerte">
+      <div>
+        <dt>Fehlerrate</dt>
+        <dd>
+          {%- if chunk.cer is not none -%}{{ "%.1f"|format(chunk.cer * 100) }}&nbsp;%
+          {%- elif chunk.status.value == "synthesized" -%}
+            <span class="muted" title="Erzeugt, aber seit der Änderung nicht gemessen">ungeprüft</span>
+          {%- else -%}<span class="muted">&mdash;</span>{%- endif -%}
+        </dd>
+      </div>
+      <div>
+        <dt>Stimme</dt>
+        <dd title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch">
+          {%- if chunk.speaker_similarity is not none -%}
+            {{ "%.2f"|format(chunk.speaker_similarity) }}
+          {%- else -%}<span class="muted">&mdash;</span>{%- endif -%}
+        </dd>
+      </div>
+    </dl>
+    {% if chunk.attempts %}<p class="muted">{{ chunk.attempts }}. Neuversuch</p>{% endif %}
     {% if chunk.trimmed_bleed_s %}
-      <br><span class="muted" title="Ein Stück der Referenz stand am Anfang und wurde entfernt">
-        &minus;{{ "%.2f"|format(chunk.trimmed_bleed_s) }}&nbsp;s Vorspann</span>
+      <p class="muted" title="Ein Stück der Referenz stand am Anfang und wurde entfernt">
+        &minus;{{ "%.2f"|format(chunk.trimmed_bleed_s) }}&nbsp;s Vorspann</p>
     {% endif %}
   </td>
-  <td class="num">
-    {% if chunk.cer is not none %}{{ "%.1f"|format(chunk.cer * 100) }}&nbsp;%
-    {% elif chunk.status.value == "synthesized" %}
-      <span class="muted" title="Erzeugt, aber seit der Änderung nicht gemessen">ungeprüft</span>
-    {% else %}<span class="muted">&mdash;</span>{% endif %}
-  </td>
-  <td class="num">
-    {% if chunk.speaker_similarity is not none %}
-      <span title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch"
-            >{{ "%.2f"|format(chunk.speaker_similarity) }}</span>
-    {% else %}<span class="muted">&mdash;</span>{% endif %}
-  </td>
+
   <td class="text">
     <form hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/text"
           hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
           hx-disabled-elt="find button, find textarea"
           hx-indicator="#chunk-{{ chunk.index }}">
-      <textarea name="raw_text" rows="4">{{ chunk.raw_text }}</textarea>
+      <textarea name="raw_text" rows="3">{{ chunk.raw_text }}</textarea>
       <div class="spoken">Gesprochen: {{ chunk.normalized_text }}</div>
       {% if chunk.asr_text %}<div class="heard">Gehört: {{ chunk.asr_text }}</div>{% endif %}
       {% if chunk.error %}<div class="error">{{ chunk.error }}</div>{% endif %}
-      <button class="small" type="submit">
+      <button class="small secondary" type="submit">
         {% include "_spinner.html" %}Text übernehmen und neu rendern
       </button>
     </form>
   </td>
-  <td>
+
+  <td class="ton">
     {% if chunk.audio_file %}
       <audio controls preload="none"
              src="/projects/{{ project.id }}/chunks/{{ chunk.index }}/audio"></audio>
-    {% else %}<span class="muted">&mdash;</span>{% endif %}
-  </td>
-  <td class="rowactions">
-    <button class="small"
-            hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/reroll"
-            hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
-            hx-disabled-elt="this"
-            hx-indicator="#chunk-{{ chunk.index }}">
-      {% include "_spinner.html" %}Neu würfeln
-    </button>
-    {% if chunk.audio_file %}
-      <button class="small secondary"
-              hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/discard"
-              hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
-              hx-disabled-elt="this" hx-indicator="#chunk-{{ chunk.index }}"
-              title="Ton verwerfen, Seed behalten -- zeigt die Wirkung geänderter Regler">
-        {% include "_spinner.html" %}Ton verwerfen
-      </button>
     {% endif %}
-    {% if chunk.status.value == "needs_review" %}
-      <button class="small secondary"
-              hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/accept"
+    <div class="rowactions">
+      <button class="small"
+              hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/reroll"
               hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
-              hx-disabled-elt="this" hx-indicator="this">
-        {% include "_spinner.html" %}Trotzdem behalten
+              hx-disabled-elt="this"
+              hx-indicator="#chunk-{{ chunk.index }}">
+        {% include "_spinner.html" %}Neu würfeln
       </button>
-    {% endif %}
+      {% if chunk.audio_file %}
+        <button class="small secondary"
+                hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/discard"
+                hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
+                hx-disabled-elt="this" hx-indicator="#chunk-{{ chunk.index }}"
+                title="Ton verwerfen, Seed behalten -- zeigt die Wirkung geänderter Regler">
+          {% include "_spinner.html" %}Ton verwerfen
+        </button>
+      {% endif %}
+      {% if chunk.status.value == "needs_review" %}
+        <button class="small secondary"
+                hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/accept"
+                hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
+                hx-disabled-elt="this" hx-indicator="this">
+          {% include "_spinner.html" %}Trotzdem behalten
+        </button>
+      {% endif %}
+    </div>
   </td>
 </tr>

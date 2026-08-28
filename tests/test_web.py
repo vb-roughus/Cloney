@@ -660,3 +660,106 @@ def test_fehlende_stimmaehnlichkeit_ist_ein_hinweis_kein_fehler(
 
 def _kaputte_fabrik():  # noqa: ANN202
     raise RuntimeError("speechbrain ist nicht installiert")
+
+
+# -- Vorlage eines bestehenden Projekts ändern ------------------------------
+
+
+def _configure(client: TestClient, project_id: str, **werte: str):  # noqa: ANN202
+    daten = {"text": TEXT, "voice": "test-stimme", "engine": "dummy"}
+    daten.update(werte)
+    return client.post(f"/projects/{project_id}/configure", data=daten)
+
+
+def test_text_aendern_behaelt_den_ton_der_gleichen_saetze(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    antwort = _configure(client, project_id, text=TEXT + " Ein neuer Satz kommt dazu.")
+    assert antwort.status_code == 200
+    assert "Übernommen:" in antwort.text
+    # Nach dem Übernehmen steht der Reiter auf den Einstellungen, damit die
+    # Rückmeldung dort steht, wo die Änderung ausgelöst wurde.
+    kompakt = " ".join(antwort.text.split())
+    assert 'id="reiter-einstellungen" checked' in kompakt
+    assert 'id="reiter-saetze" checked' not in kompakt
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.source_text.endswith("Ein neuer Satz kommt dazu.")
+    assert any(c.status == ChunkStatus.OK for c in project.chunks)
+    assert any(c.status == ChunkStatus.PENDING for c in project.chunks)
+
+
+def test_stimmwechsel_ueber_die_oberflaeche(settings: Settings, voice_store: VoiceStore) -> None:
+    voice_store.add(
+        "zweite-stimme", voice_store.get("test-stimme").audio_path, transcript="Wortlaut."
+    )
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    _configure(client, project_id, voice="zweite-stimme")
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.voice == "zweite-stimme"
+    assert all(c.status == ChunkStatus.PENDING for c in project.chunks)
+
+
+def test_aendern_auf_unbekannte_stimme_wird_abgelehnt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    assert _configure(client, project_id, voice="gibtsnicht").status_code == 400
+
+
+def test_aendern_auf_leeren_text_wird_abgelehnt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    assert _configure(client, project_id, text="   ").status_code == 400
+
+
+def test_aendern_waehrend_eines_laufs_wird_abgelehnt(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sonst zöge der Umbau dem laufenden Renderer die Chunks unter den Füßen weg."""
+    from cloney.engines import registry
+
+    class Bedaechtig(DummyEngine):
+        def synthesize(self, text, voice, seed):  # noqa: ANN001, ANN202
+            time.sleep(0.4)
+            return super().synthesize(text, voice, seed)
+
+    monkeypatch.setitem(registry._FACTORIES, "dummy", lambda _s, _o: Bedaechtig())
+
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    try:
+        assert _configure(client, project_id).status_code == 409
+    finally:
+        _wait_for_run(client, project_id)
+
+
+def test_projektseite_zeigt_die_reiter_statt_verschachtelter_klappboxen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Reine CSS-Reiter: ohne Skript bleibt der gewählte Reiter stehen, auch
+    wenn htmx die Statusleiste darüber austauscht."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    seite = client.get(f"/projects/{project_id}").text
+
+    for reiter in ("reiter-saetze", "reiter-einstellungen", "reiter-projekt"):
+        assert f'id="{reiter}"' in seite
+        assert f'for="{reiter}"' in seite
+    # Die Vorlage ist von der Projektseite aus änderbar, nicht nur beim Anlegen.
+    assert f'action="/projects/{project_id}/configure"' in seite
+    assert 'name="text"' in seite

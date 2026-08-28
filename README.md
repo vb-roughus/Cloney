@@ -238,17 +238,50 @@ Für die Higgs-Engine muss der Modellserver laufen:
 sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000
 ```
 
-## Der Satz-Editor
+## Die Projektseite
 
-Die tragende Ansicht der Weboberfläche ist eine Zeile pro Satz mit Status,
-Fehlerrate, der Rückschrift der Spracherkennung und einem eigenen Abspieler.
-Von dort lässt sich ein einzelner Satz neu würfeln oder umformulieren, ohne das
-ganze Kapitel neu zu rendern. Genau an diesem Arbeitsschritt scheitert eine
-Langform-Produktion sonst.
+Oben der Kopf mit den Kennzahlen, darunter eine Statusleiste, die beim Scrollen
+stehen bleibt -- sie ist das, was man während eines Laufs beobachtet. Darunter
+drei Reiter:
+
+**Sätze** ist die tragende Ansicht: eine Zeile pro Satz mit Status, Fehlerrate,
+Stimmähnlichkeit, der Rückschrift der Spracherkennung und einem eigenen
+Abspieler. Von dort lässt sich ein einzelner Satz neu würfeln oder umformulieren,
+ohne das ganze Kapitel neu zu rendern. Genau an diesem Arbeitsschritt scheitert
+eine Langform-Produktion sonst.
 
 Sichtbar sind pro Satz drei Fassungen: der Rohtext, die daraus erzeugte
 Sprechfassung und das, was die Spracherkennung tatsächlich gehört hat. Weichen
 die letzten beiden voneinander ab, ist das der konkrete Hinweis, wo es hakt.
+
+**Einstellungen** trägt alles, was den Klang bestimmt -- und dieselben Angaben
+wie beim Anlegen: Text, Stimme, Engine, dazu die Regler und die Kennwerte der
+Referenzaufnahme. Ein bestehendes Projekt lässt sich damit ändern, statt es neu
+anlegen zu müssen.
+
+**Projekt** sammelt Umbenennen, Kopie, Ton verwerfen und Löschen an einer
+Stelle, weg von den Dingen, die man ständig braucht.
+
+Die Reiter sind reines CSS über versteckte Radioknöpfe. Ohne Skript heißt: der
+gewählte Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber
+austauscht.
+
+### Text, Stimme oder Engine nachträglich ändern
+
+Ein anderer Text heißt neu segmentieren, und damit wandern die Chunk-Grenzen.
+Trotzdem soll ein Tippfehler in Satz drei nicht die Arbeit an Satz siebzehn
+kosten: Sätze, deren **Sprechfassung** wörtlich gleich bleibt, behalten Ton,
+Seed und Messwerte. Verglichen wird die normalisierte Fassung, nicht der
+Rohtext -- wer nur `3.` zu `dritten` ändert, hört dasselbe und soll nicht neu
+rendern müssen.
+
+Ein Wechsel von Stimme oder Engine verwirft dagegen allen Ton. Vorhandene Sätze
+stammten dann von einem anderen Sprecher oder Modell, und sie stehen zu lassen
+ergäbe eine Spur aus zwei Stimmen.
+
+Die fertige Spur bleibt nur, wenn sich am Satzbestand nichts geändert hat --
+sonst wäre sie eine Lüge. Dass sie ein unverändertes Übernehmen übersteht, macht
+das Formular gefahrlos wiederholbar.
 
 ## Engines
 

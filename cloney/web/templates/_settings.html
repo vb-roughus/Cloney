@@ -1,30 +1,70 @@
-{# Was den Klang bestimmt -- an einer Stelle, verstellbar ohne Neustart. #}
-<details id="einstellungen" class="card einstellungen" {% if project.engine_options %}open{% endif %}>
-  <summary>Womit gerendert wird</summary>
+{# Was den Klang bestimmt -- an einer Stelle, ohne Umweg über eine Aufklappbox. #}
+<div id="einstellungen">
 
-  <table class="kv">
-    <tr><th>Engine</th><td>{{ project.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
-    <tr><th>Stimme</th><td>{{ project.voice }}</td></tr>
-    {% if voice %}
-    <tr><th>Referenz</th>
-      <td>{{ "%.1f"|format(voice.duration_s) }}&nbsp;s
-        {% if reference_rate %}
-          &middot; <strong>{{ "%.1f"|format(reference_rate) }} Zeichen/s</strong>
-          <span class="muted">&mdash; übliches Sprechtempo im Deutschen liegt zwischen
-            {{ "%.0f"|format(typical_rate[0]) }} und {{ "%.0f"|format(typical_rate[1]) }};
-            darüber ist zügig, aber nicht falsch.</span>
-        {% endif %}
-      </td></tr>
-    <tr><th>Referenztext</th>
-      <td>{% if voice.transcript %}<span class="spoken">{{ voice.transcript }}</span>
-          {% else %}<span class="warn-text">nicht hinterlegt</span>{% endif %}
-        <br><a href="/voices">Stimmen verwalten</a></td></tr>
-    {% endif %}
-    <tr><th>Chunk-Länge</th><td>bis {{ "%.0f"|format(project.target_chunk_seconds) }}&nbsp;s</td></tr>
-  </table>
+  <div class="card">
+    <h3>Vorlage</h3>
+    <p class="muted">
+      Sätze, deren Sprechfassung wörtlich gleich bleibt, behalten Ton, Seed und Messwerte
+      &mdash; ein Tippfehler in Satz drei kostet also nicht die Arbeit an Satz siebzehn.
+      Ein Wechsel von Stimme oder Engine verwirft dagegen allen Ton: er stammte von einem
+      anderen Sprecher.
+    </p>
+    <form method="post" action="/projects/{{ project.id }}/configure">
+      <label>Text
+        <textarea name="text" rows="12" required>{{ project.source_text }}</textarea>
+      </label>
+      <div class="row">
+        <label>Stimme
+          <select name="voice">
+            {% for v in voices %}
+              <option value="{{ v.name }}"
+                {% if v.name == project.voice %}selected{% endif %}>{{ v.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Engine
+          <select name="engine">
+            {% for e in engines %}
+              <option value="{{ e.name }}"
+                {% if e.name == project.engine %}selected{% endif %}>{{ e.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <button type="submit">Vorlage übernehmen</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Referenz</h3>
+    <table class="kv">
+      <tr><th>Engine</th>
+        <td>{{ project.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
+      {% if voice %}
+      <tr><th>Aufnahme</th>
+        <td>{{ "%.1f"|format(voice.duration_s) }}&nbsp;s
+          {% if reference_rate %}
+            &middot; <strong>{{ "%.1f"|format(reference_rate) }} Zeichen/s</strong>
+            <span class="muted">&mdash; übliches Sprechtempo im Deutschen liegt zwischen
+              {{ "%.0f"|format(typical_rate[0]) }} und {{ "%.0f"|format(typical_rate[1]) }};
+              darüber ist zügig, aber nicht falsch.</span>
+          {% endif %}
+        </td></tr>
+      <tr><th>Wortlaut</th>
+        <td>{% if voice.transcript %}<span class="spoken">{{ voice.transcript }}</span>
+            {% else %}<span class="warn-text">nicht hinterlegt</span>{% endif %}
+          <br><a href="/voices">Stimmen verwalten</a></td></tr>
+      {% else %}
+      <tr><th>Aufnahme</th>
+        <td class="warn-text">Die Stimme '{{ project.voice }}' ist nicht mehr vorhanden.</td></tr>
+      {% endif %}
+      <tr><th>Chunk-Länge</th>
+        <td>bis {{ "%.0f"|format(project.target_chunk_seconds) }}&nbsp;s</td></tr>
+    </table>
+  </div>
 
   {% if engine.options %}
-  <form hx-post="/projects/{{ project.id }}/options"
+  <form class="card" hx-post="/projects/{{ project.id }}/options"
         hx-target="#einstellungen" hx-swap="outerHTML"
         hx-disabled-elt="find button" hx-indicator="find button">
     <h3>Regler</h3>
@@ -44,8 +84,8 @@
     {% endfor %}
     {% if speed_suggestion %}
       <p class="hinweis">
-        Die Referenz spricht mit {{ "%.1f"|format(reference_rate) }} Zeichen/s. F5-TTS
-        übernimmt dieses Tempo. Für ruhigeres Zuhören entspräche das einem Sprechtempo
+        Die Referenz spricht mit {{ "%.1f"|format(reference_rate) }} Zeichen/s, und
+        {{ project.engine }} übernimmt dieses Tempo. Für ruhigeres Zuhören entspräche das einem Sprechtempo
         von <strong>{{ "%.2f"|format(speed_suggestion) }}</strong>.
         <button type="button" class="small secondary"
                 onclick="var r = document.querySelector('input[name=speed]');
@@ -53,7 +93,7 @@
                          r.dispatchEvent(new Event('input'));">Wert eintragen</button>
       </p>
     {% endif %}
-    <div class="actions">
+    <div class="aktionen">
       <button type="submit">{% include "_spinner.html" %}Regler übernehmen</button>
       <button type="button" class="secondary"
               hx-post="/projects/{{ project.id }}/rerender"
@@ -65,8 +105,8 @@
     </div>
     <p class="muted">
       Übernehmen ändert nichts am vorhandenen Ton. Um eine Einstellung zu hören,
-      einen einzelnen Satz unten neu würfeln &mdash; erst wenn sie sitzt, alles neu rendern.
+      unter „Sätze" einen einzelnen neu würfeln &mdash; erst wenn sie sitzt, alles neu rendern.
     </p>
   </form>
   {% endif %}
-</details>
+</div>
