@@ -22,6 +22,8 @@
     {% if project.median_similarity() is not none %}
       <span title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch"
         >Median-Stimme {{ "%.2f"|format(project.median_similarity()) }}</span>
+    {% elif project.similarity_note %}
+      <span class="muted">Stimme nicht gemessen</span>
     {% endif %}
     {% if project.flagged() %}
       <span class="warn-text">{{ project.flagged() | length }} zur Durchsicht</span>
@@ -42,6 +44,13 @@
       Wird vorbereitet. Beim ersten Satz lädt das Modell, das dauert einen Moment.</p>
   {% endif %}
   {% if job and job.error %}<p class="error">{{ job.error }}</p>{% endif %}
+  {#
+    Die Stimmähnlichkeit ist eine Messung an fertigem Ton, keine Voraussetzung
+    für ihn. Fehlt sie, ist das ein Hinweis und kein Fehler -- die Spur ist da.
+  #}
+  {% if project.similarity_note and project.median_similarity() is none %}
+    <p class="joblog">Ohne Stimmähnlichkeit gerendert: {{ project.similarity_note }}</p>
+  {% endif %}
 
   <div class="actions">
     {% if running %}

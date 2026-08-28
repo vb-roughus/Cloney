@@ -8,6 +8,8 @@ Es ist auf 16 kHz trainiert; abweichende Raten werden vorher umgetastet.
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 
 #: ECAPA-TDNN ist auf einkanaligem Ton mit dieser Rate trainiert.
@@ -21,8 +23,13 @@ class EcapaEmbedder:
         try:
             from speechbrain.inference.speaker import EncoderClassifier
         except ImportError as exc:
+            # Mit dem Pfad des laufenden Interpreters, damit der Befehl auch ohne
+            # aktivierte Umgebung stimmt -- ein blankes "pip install" landet dort
+            # sonst im falschen Python.
             raise RuntimeError(
-                'speechbrain ist nicht installiert. Installation: pip install -e ".[similarity]"'
+                "speechbrain ist nicht installiert, die Stimmähnlichkeit bleibt "
+                "ungemessen. Nachinstallieren im Cloney-Ordner mit:\n"
+                f'  "{sys.executable}" -m pip install -e ".[similarity]"'
             ) from exc
 
         optionen: dict[str, object] = {}

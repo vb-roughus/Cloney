@@ -640,3 +640,23 @@ def test_vergleich_taucht_nicht_in_der_projektliste_auf(
     client = _client(settings)
     _create_comparison(client)
     assert "Noch keine Projekte" in client.get("/").text
+
+
+def test_fehlende_stimmaehnlichkeit_ist_ein_hinweis_kein_fehler(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Statuskarte muss erklären, warum die Spalte leer bleibt -- und die
+    fertige Spur trotzdem anbieten."""
+    client = TestClient(create_app(settings, DummyASR, embedder_factory=_kaputte_fabrik))
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    seite = client.get(f"/projects/{project_id}").text
+    assert "Ohne Stimmähnlichkeit gerendert" in seite
+    assert "speechbrain" in seite
+    assert client.get(f"/projects/{project_id}/output").status_code == 200
+
+
+def _kaputte_fabrik():  # noqa: ANN202
+    raise RuntimeError("speechbrain ist nicht installiert")

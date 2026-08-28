@@ -192,6 +192,13 @@ def check_speaker_similarity(
     Markiert wird nur, wenn eine Schwelle gesetzt ist. Welchen Wert ein guter
     Klon erreicht, hängt an Modell und Aufnahme; ohne eigene Messung wäre jede
     Vorgabe geraten und erzeugte Fehlalarme.
+
+    **Diese Phase darf niemals einen Lauf zum Scheitern bringen.** Sie ist eine
+    Messung an fertigem Ton, keine Voraussetzung für ihn. Fehlt das Paket, ist
+    das Modell nicht ladbar oder die Referenz verschwunden, dann wird der
+    Vergleich übersprungen und der Grund im Manifest vermerkt -- der Zusammenbau
+    läuft weiter. Alles andere hieße: eine freiwillige Zusatzzahl vernichtet ein
+    fertig gerendertes Kapitel.
     """
     if embedder_factory is None:
         return
@@ -199,11 +206,28 @@ def check_speaker_similarity(
     if not zu_pruefen:
         return
 
+    try:
+        _measure_similarity(project, settings, voice_store, embedder_factory, zu_pruefen, on_event)
+    except Exception as exc:  # noqa: BLE001 - der Grund gehört ins Manifest, nicht in den Abbruch
+        project.similarity_note = str(exc)[:300]
+        project.save()
+        on_event(ProgressEvent("similarity", f"Stimmvergleich übersprungen: {exc}"))
+
+
+def _measure_similarity(
+    project: Project,
+    settings: Settings,
+    voice_store: VoiceStore,
+    embedder_factory: EmbedderFactory,
+    zu_pruefen: list[Chunk],
+    on_event: ProgressCallback,
+) -> None:
     voice = voice_store.get(project.voice)
     with model_slot(embedder_factory) as embedder:
         on_event(ProgressEvent("similarity", "Stimmvergleich geladen", 0, len(zu_pruefen)))
         referenz_audio, referenz_rate = read_wav(voice.audio_path)
         referenz = embedder.embed(referenz_audio, referenz_rate)
+        project.similarity_note = None
 
         for done, chunk in enumerate(zu_pruefen, start=1):
             audio, sample_rate = read_wav(project.chunk_path(chunk.index))

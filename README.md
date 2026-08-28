@@ -122,12 +122,14 @@ Von Hand geht es genauso:
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-pip install -e ".[dev,asr,f5]"
+pip install -e ".[dev,asr,f5,similarity]"
 cp .env.example .env
 ```
 
 Die Extras sind einzeln wählbar: `asr` bringt faster-whisper für die
-Qualitätskontrolle, `f5` das deutsche F5-TTS-Modell. Ohne beide läuft der Kern.
+Qualitätskontrolle, `f5` das deutsche F5-TTS-Modell, `similarity` das
+ECAPA-Modell für die Stimmähnlichkeit. Ohne sie läuft der Kern -- fehlt eines,
+entfällt die zugehörige Messung, nicht der Lauf.
 
 ### Der Befehl `cloney`
 
@@ -339,13 +341,17 @@ Spracherkennung). 1,00 heißt identisch.
 Satz 1 wäre nach der Fehlerrate allein unauffällig — die Ähnlichkeit zeigt, dass
 er aus der Rolle fällt.
 
+Fehlt `speechbrain`, wird der Vergleich übersprungen und der Grund im
+Manifest vermerkt; gerendert und zusammengebaut wird trotzdem. Eine freiwillige
+Zusatzzahl darf kein fertiges Kapitel kosten.
+
 **Markiert wird erst mit gesetzter Schwelle.** `CLONEY_SIMILARITY_THRESHOLD` steht
 auf 0, es wird also nur gemessen und angezeigt. Welchen Wert ein guter Klon
 erreicht, hängt an Modell und Aufnahme; eine ungeprüfte Vorgabe erzeugte
 Fehlalarme und lenkte vom Wesentlichen ab. Nach ein paar Läufen den niedrigsten
 Wert unter den guten Sätzen ablesen und die Schwelle knapp darunter setzen.
 
-Installation: `pip install -e ".[similarity]"`.
+Installation: `pip install -e ".[similarity]"` -- der Installer bringt sie mit.
 
 ### Der Vergleichslauf: aus Raten wird Messen
 

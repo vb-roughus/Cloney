@@ -73,6 +73,10 @@ class Project(BaseModel):
     engine_options: dict[str, float] = Field(default_factory=dict)
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
+    #: Warum die Stimmähnlichkeit nicht gemessen wurde. Steht im Manifest und
+    #: nicht nur im Joblog, sonst stünde nach einem Neustart eine leere Spalte
+    #: ohne Erklärung da.
+    similarity_note: str | None = None
     #: Ordner des Projekts. Nicht Teil des Manifests -- er ergibt sich aus dem Ort.
     root: Path = Field(default=Path("."), exclude=True)
 
