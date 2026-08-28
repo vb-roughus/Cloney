@@ -22,14 +22,16 @@ from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import assemble, read_wav, write_wav
 from cloney.core.bleed import find_content_start
-from cloney.core.metrics import cer
+from cloney.core.metrics import cer, cosine_similarity
 from cloney.core.project import Chunk, ChunkStatus, Project
 from cloney.core.voices import VoiceStore
 from cloney.engines.base import TTSEngine, strip_unsupported_tags
+from cloney.speaker.base import SpeakerEmbedder
 from cloney.vram import model_slot
 
 EngineFactory = Callable[[], TTSEngine]
 ASRFactory = Callable[[], ASREngine]
+EmbedderFactory = Callable[[], SpeakerEmbedder]
 
 
 @dataclass(frozen=True)
@@ -169,6 +171,52 @@ def _trim_reference_bleed(
     return " ".join(w.text for w in transcript.words[vorspann_woerter:])
 
 
+def check_speaker_similarity(
+    project: Project,
+    settings: Settings,
+    voice_store: VoiceStore,
+    embedder_factory: EmbedderFactory | None,
+    on_event: ProgressCallback = _noop,
+) -> None:
+    """Phase SIMILARITY. Klingt das Ergebnis noch nach der Referenzstimme?
+
+    Die Fehlerrate prüft die Wörter, nicht die Stimme -- ein Chunk kann
+    fehlerfrei sein und nach jemand anderem klingen. Verglichen werden deshalb
+    die Stimmeinbettungen von Referenz und Ergebnis.
+
+    Markiert wird nur, wenn eine Schwelle gesetzt ist. Welchen Wert ein guter
+    Klon erreicht, hängt an Modell und Aufnahme; ohne eigene Messung wäre jede
+    Vorgabe geraten und erzeugte Fehlalarme.
+    """
+    if embedder_factory is None:
+        return
+    zu_pruefen = [c for c in project.chunks if project.chunk_path(c.index).exists()]
+    if not zu_pruefen:
+        return
+
+    voice = voice_store.get(project.voice)
+    with model_slot(embedder_factory) as embedder:
+        on_event(ProgressEvent("similarity", "Stimmvergleich geladen", 0, len(zu_pruefen)))
+        referenz_audio, referenz_rate = read_wav(voice.audio_path)
+        referenz = embedder.embed(referenz_audio, referenz_rate)
+
+        for done, chunk in enumerate(zu_pruefen, start=1):
+            audio, sample_rate = read_wav(project.chunk_path(chunk.index))
+            wert = cosine_similarity(referenz, embedder.embed(audio, sample_rate))
+            chunk.speaker_similarity = round(wert, 4)
+            if settings.similarity_threshold > 0 and wert < settings.similarity_threshold:
+                chunk.status = ChunkStatus.NEEDS_REVIEW
+            project.save()
+            on_event(
+                ProgressEvent(
+                    "similarity",
+                    f"Chunk {chunk.index}: Ähnlichkeit {wert:.2f}",
+                    done,
+                    len(zu_pruefen),
+                )
+            )
+
+
 def assemble_output(
     project: Project,
     settings: Settings,
@@ -214,6 +262,7 @@ def run_project(
     engine_factory: EngineFactory,
     asr_factory: ASRFactory | None = None,
     on_event: ProgressCallback = _noop,
+    embedder_factory: EmbedderFactory | None = None,
 ) -> Project:
     """Führt den Lauf bis zum fertigen WAV. Bereits erledigte Chunks bleiben unberührt."""
     for attempt in range(settings.max_retries + 1):
@@ -241,6 +290,9 @@ def run_project(
             project.reroll(chunk.index)
         project.save()
         on_event(ProgressEvent("retry", f"{len(flagged)} Chunks werden neu gewürfelt"))
+
+    if settings.check_speaker_similarity:
+        check_speaker_similarity(project, settings, voice_store, embedder_factory, on_event)
 
     assemble_output(project, settings, on_event)
     return project

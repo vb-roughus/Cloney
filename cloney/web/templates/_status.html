@@ -19,6 +19,10 @@
     {% if project.median_cer() is not none %}
       <span>Median-Fehlerrate {{ "%.1f"|format(project.median_cer() * 100) }}&nbsp;%</span>
     {% endif %}
+    {% if project.median_similarity() is not none %}
+      <span title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch"
+        >Median-Stimme {{ "%.2f"|format(project.median_similarity()) }}</span>
+    {% endif %}
     {% if project.flagged() %}
       <span class="warn-text">{{ project.flagged() | length }} zur Durchsicht</span>
     {% endif %}

@@ -14,6 +14,12 @@
       <span class="muted" title="Erzeugt, aber seit der Änderung nicht gemessen">ungeprüft</span>
     {% else %}<span class="muted">&mdash;</span>{% endif %}
   </td>
+  <td class="num">
+    {% if chunk.speaker_similarity is not none %}
+      <span title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch"
+            >{{ "%.2f"|format(chunk.speaker_similarity) }}</span>
+    {% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td>
   <td class="text">
     <form hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/text"
           hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"

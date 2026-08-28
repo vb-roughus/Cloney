@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+import numpy as np
+
 _PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 
@@ -59,3 +61,17 @@ def wer(reference: str, hypothesis: str) -> float:
     if not ref:
         return 0.0 if not hyp else 1.0
     return _levenshtein(ref, hyp) / len(ref)
+
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Ähnlichkeit zweier Stimmeinbettungen. 1.0 = gleich, 0.0 = ohne Bezug.
+
+    Verglichen wird die Richtung der Vektoren, nicht ihre Länge -- die hängt an
+    Lautstärke und Dauer und sagt über die Stimme nichts aus.
+    """
+    if a.size == 0 or b.size == 0 or a.shape != b.shape:
+        return 0.0
+    norm = float(np.linalg.norm(a) * np.linalg.norm(b))
+    if norm == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / norm)

@@ -12,6 +12,7 @@ import hashlib
 import os
 import re
 import shutil
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -48,6 +49,8 @@ class Chunk(BaseModel):
     error: str | None = None
     #: Sekunden Referenz-Vorspann, die am Anfang entfernt wurden.
     trimmed_bleed_s: float | None = None
+    #: Ähnlichkeit zur Referenzstimme, 1.0 = identisch. None = nicht gemessen.
+    speaker_similarity: float | None = None
 
     @property
     def needs_synthesis(self) -> bool:
@@ -202,11 +205,10 @@ class Project(BaseModel):
         return done, len(self.chunks)
 
     def median_cer(self) -> float | None:
-        values = sorted(c.cer for c in self.chunks if c.cer is not None)
-        if not values:
-            return None
-        mid = len(values) // 2
-        return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+        return _median(c.cer for c in self.chunks)
+
+    def median_similarity(self) -> float | None:
+        return _median(c.speaker_similarity for c in self.chunks)
 
     def delete(self) -> None:
         """Projekt samt erzeugtem Ton entfernen."""
@@ -283,6 +285,16 @@ class Project(BaseModel):
         chunk.raw_text = raw_text
         chunk.normalized_text = normalize_german(raw_text)
         return self.reroll(index)
+
+
+def _median(werte: Iterable[float | None]) -> float | None:
+    vorhanden = sorted(w for w in werte if w is not None)
+    if not vorhanden:
+        return None
+    mitte = len(vorhanden) // 2
+    if len(vorhanden) % 2:
+        return vorhanden[mitte]
+    return (vorhanden[mitte - 1] + vorhanden[mitte]) / 2
 
 
 def _engine_info(name: str) -> EngineInfo:

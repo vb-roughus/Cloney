@@ -36,7 +36,9 @@ STATUS_LABEL = {
 }
 
 
-def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  # noqa: ANN001
+def create_app(
+    settings: Settings | None = None, asr_factory=None, embedder_factory=None
+) -> FastAPI:  # noqa: ANN001
     settings = settings or get_settings()
     settings.ensure_dirs()
 
@@ -151,7 +153,7 @@ def create_app(settings: Settings | None = None, asr_factory=None) -> FastAPI:  
     @app.post("/projects/{project_id}/run", response_class=HTMLResponse)
     def start_run(request: Request, project_id: str) -> HTMLResponse:
         project = load(project_id)
-        runner.start(project.root, asr_factory)
+        runner.start(project.root, asr_factory, embedder_factory)
         return templates.TemplateResponse(
             request, "_status.html", {"project": project, "running": True}
         )
