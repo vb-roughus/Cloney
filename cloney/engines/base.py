@@ -66,6 +66,11 @@ class EngineInfo:
     max_reference_seconds: float | None = None
     #: Regler, die diese Engine anbietet.
     options: tuple[EngineOption, ...] = ()
+    #: Leitet die Engine ihr Sprechtempo aus der Referenzaufnahme ab? Dann ist
+    #: ein zügig gesprochenes Vorbild der Grund für zügige Ausgabe, und die
+    #: Oberfläche kann den passenden Reglerwert vorrechnen. Wieder ein
+    #: Unterschied als Datum statt als Sonderfall in der Oberfläche.
+    derives_tempo_from_reference: bool = False
 
     def option(self, key: str) -> EngineOption | None:
         return next((o for o in self.options if o.key == key), None)

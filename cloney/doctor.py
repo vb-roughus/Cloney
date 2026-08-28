@@ -264,6 +264,35 @@ def check_asr(report: Report, settings: Settings) -> None:
     report.add("Spracherkennung", "ok", f"faster-whisper vorhanden, Modell {settings.asr_model}")
 
 
+def check_similarity(report: Report, settings: Settings) -> None:
+    """Die zweite Kennzahl neben der Fehlerrate.
+
+    Fehlt das Paket, wird der Vergleich übersprungen und die Spur trotzdem
+    fertig -- deshalb ein Hinweis und keine Fehlermeldung.
+    """
+    if not settings.check_speaker_similarity:
+        report.add("Stimmähnlichkeit", "ok", "abgeschaltet (CLONEY_CHECK_SPEAKER_SIMILARITY)")
+        return
+    try:
+        import speechbrain  # noqa: F401
+    except ImportError:
+        report.add(
+            "Stimmähnlichkeit",
+            "warn",
+            "speechbrain nicht installiert -- gerendert wird trotzdem, nur ohne die "
+            "Ähnlichkeit zur Referenzstimme",
+            f'"{sys.executable}" -m pip install -e ".[similarity]"',
+        )
+        return
+    schwelle = settings.similarity_threshold
+    hinweis = (
+        f"Schwelle {schwelle:.2f}"
+        if schwelle > 0
+        else "ohne Schwelle -- es wird gemessen und angezeigt, aber nichts markiert"
+    )
+    report.add("Stimmähnlichkeit", "ok", f"speechbrain vorhanden, {hinweis}")
+
+
 def check_f5(report: Report, settings: Settings) -> None:
     try:
         import f5_tts  # noqa: F401
@@ -396,6 +425,7 @@ def run_checks(settings: Settings) -> Report:
     check_audio_loading(report)
     check_ffmpeg(report)
     check_asr(report, settings)
+    check_similarity(report, settings)
     check_f5(report, settings)
     check_higgs(report, settings)
     check_data_dir(report, settings)

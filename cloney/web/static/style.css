@@ -2,12 +2,16 @@
   --bg: #fbfaf8; --panel: #ffffff; --ink: #1c1b19; --muted: #6b6862;
   --line: #e2ded7; --accent: #2f6f4f; --warn: #9a6b12; --fail: #a33a2a;
   --ok-bg: #eef5f0; --warn-bg: #fdf6e6; --fail-bg: #fbeeec;
+  /* Schrift auf gefüllten Knöpfen. Im dunklen Schema ist der Akzent hell,
+     Weiß darauf wäre kaum zu lesen. */
+  --auf-akzent: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #16151a; --panel: #1e1d23; --ink: #eceaf0; --muted: #9b97a3;
     --line: #33313b; --accent: #74c39a; --warn: #dcae54; --fail: #e0796a;
     --ok-bg: #1c2a23; --warn-bg: #2b2517; --fail-bg: #2c1c1a;
+    --auf-akzent: #10201a;
   }
 }
 * { box-sizing: border-box; }
@@ -15,7 +19,7 @@ body {
   margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-header {
+body > header {
   display: flex; align-items: baseline; gap: 1.5rem;
   padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--panel);
 }
@@ -46,7 +50,7 @@ input, select, textarea {
 textarea { resize: vertical; font-family: inherit; }
 button, .button {
   display: inline-block; padding: .5rem .9rem; margin-top: .5rem;
-  font: inherit; font-weight: 550; color: #fff; background: var(--accent);
+  font: inherit; font-weight: 550; color: var(--auf-akzent); background: var(--accent);
   border: 1px solid transparent; border-radius: 5px; cursor: pointer; text-decoration: none;
 }
 button:hover, .button:hover { filter: brightness(1.08); }
@@ -64,9 +68,73 @@ button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
 .badge.fail { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); }
 .badge.pending { color: var(--muted); }
 
-.status .statline { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
-.status .actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-.status audio { width: 100%; margin-top: .75rem; }
+/* --- Seitenkopf und Statusleiste ---------------------------------------- */
+
+.seitenkopf {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem 1.1rem;
+  margin: .25rem 0 1rem;
+}
+.seitenkopf h1 { margin: 0; }
+.kennzahlen {
+  display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; margin: 0;
+  font-size: .88rem; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.kennzahlen span + span { position: relative; padding-left: 1.1rem; }
+.kennzahlen span + span::before {
+  content: ""; position: absolute; left: 0; top: .45em;
+  width: 3px; height: 3px; border-radius: 50%; background: var(--line);
+}
+
+.statusleiste {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: .8rem 1rem .9rem; margin-bottom: 1.25rem;
+  box-shadow: 0 1px 3px rgb(0 0 0 / .05);
+}
+.statzeile { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; }
+.statzeile .zaehler { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.statzeile .fueller { flex: 1 1 auto; }
+.statzeile button { margin-top: 0; }
+.ergebnis { display: flex; gap: .6rem; align-items: center; margin-top: .75rem; }
+.ergebnis audio { flex: 1; min-width: 0; }
+.ergebnis .button { margin-top: 0; }
+.aktionen { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.aktionen form { display: inline; }
+
+/* --- Reiter: reines CSS, damit ein htmx-Tausch daneben sie nicht zurücksetzt -- */
+
+.reiter > input[name="reiter"] {
+  /* Nicht display:none -- sonst wären die Reiter nicht mehr mit der Tastatur
+     erreichbar. */
+  position: absolute; width: 1px; height: 1px; margin: 0;
+  opacity: 0; pointer-events: none;
+}
+.reiterleiste {
+  display: flex; gap: .15rem; margin: 0 0 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.reiterleiste label {
+  margin: 0; padding: .5rem .9rem; cursor: pointer;
+  font-size: .93rem; font-weight: 550; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.reiterleiste label:hover { color: var(--ink); }
+.blatt { display: none; }
+.blatt > .card:first-child { margin-top: 0; }
+
+#reiter-saetze:checked ~ .reiterleiste label[for="reiter-saetze"],
+#reiter-einstellungen:checked ~ .reiterleiste label[for="reiter-einstellungen"],
+#reiter-projekt:checked ~ .reiterleiste label[for="reiter-projekt"] {
+  color: var(--ink); border-bottom-color: var(--accent);
+}
+#reiter-saetze:checked ~ #blatt-saetze,
+#reiter-einstellungen:checked ~ #blatt-einstellungen,
+#reiter-projekt:checked ~ #blatt-projekt { display: block; }
+#reiter-saetze:focus-visible ~ .reiterleiste label[for="reiter-saetze"],
+#reiter-einstellungen:focus-visible ~ .reiterleiste label[for="reiter-einstellungen"],
+#reiter-projekt:focus-visible ~ .reiterleiste label[for="reiter-projekt"] {
+  outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px 4px 0 0;
+}
 
 table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
 th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line);
@@ -75,19 +143,37 @@ th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: 
 td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .projects a, .engines a { color: var(--accent); }
 
-.chunks { display: block; overflow-x: auto; }
-.chunks td.text { min-width: 24rem; }
+/* --- Satz-Editor --------------------------------------------------------- */
+
+.chunks { table-layout: fixed; }
+.chunks .spalte-meta { width: 9.5rem; }
+.chunks .spalte-ton { width: 15rem; }
+.chunks td { padding-top: .9rem; padding-bottom: .9rem; }
 .chunks textarea { font-size: .9rem; }
-.chunks audio { width: 13rem; }
+.chunks audio { width: 100%; }
+.chunks td.meta .nummer {
+  font-size: 1.5rem; font-weight: 300; line-height: 1;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.chunks td.meta .badge { margin-top: .4rem; white-space: nowrap; }
+.chunks td.meta p { margin: .35rem 0 0; }
+.chunks td.text form { margin: 0; }
+.chunks td.text button { margin-top: .5rem; }
+.messwerte { margin: .6rem 0 0; font-size: .82rem; }
+.messwerte div { display: flex; justify-content: space-between; gap: .5rem; }
+.messwerte dt { color: var(--muted); }
+.messwerte dd { margin: 0; font-variant-numeric: tabular-nums; }
 .chunk.warn { background: var(--warn-bg); }
 .chunk.fail { background: var(--fail-bg); }
 .spoken, .heard { font-size: .82rem; margin-top: .3rem; color: var(--muted); }
 .heard { border-left: 2px solid var(--line); padding-left: .5rem; }
-.rowactions { display: flex; flex-direction: column; gap: .3rem; }
+.rowactions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.rowactions button { margin-top: 0; }
 .warnings { color: var(--warn); }
 .notice { padding: .75rem 1rem; background: var(--warn-bg); border-radius: 6px; }
 
 /* --- Vergleichslauf ------------------------------------------------------ */
+.statusleiste table.vergleich { margin-top: 1rem; }
 table.vergleich { display: block; overflow-x: auto; }
 table.vergleich td { font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.vergleich audio { width: 13rem; }
@@ -169,13 +255,11 @@ table.kv th {
   padding-right: 1.2rem; white-space: nowrap; vertical-align: top;
 }
 table.kv td { font-size: .9rem; }
-.einstellungen summary { cursor: pointer; font-weight: 550; }
 
 /* --- Regler der Engine --------------------------------------------------- */
 
-.einstellungen h3 {
-  margin: 1.2rem 0 .2rem; font-size: .95rem;
-}
+.card h3 { margin: 1.2rem 0 .2rem; font-size: .95rem; }
+.card > h3:first-child { margin-top: 0; }
 label.regler { margin: .9rem 0; }
 .reglerkopf {
   display: flex; justify-content: space-between; align-items: baseline;
@@ -192,10 +276,6 @@ label.regler .muted { display: block; font-size: .82rem; }
 
 /* --- Verwalten ---------------------------------------------------------- */
 
-.projektkopf h1 { margin-bottom: .1rem; }
-.verwalten summary { cursor: pointer; font-size: .85rem; }
-.verwalten .actions { margin-top: .8rem; }
-.verwalten form { display: inline; }
 button.gefahr {
   color: var(--fail); background: transparent; border-color: var(--fail);
 }

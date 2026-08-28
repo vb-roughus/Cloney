@@ -1,45 +1,107 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} &mdash; Cloney{% endblock %}
 {% block content %}
-<div id="projektkopf" class="projektkopf">
-  <h1>{{ project.name }}</h1>
-  <details class="verwalten">
-    <summary class="muted">Projekt verwalten</summary>
+
+{#
+  Flach statt verschachtelt: Kopf mit den Kennzahlen, darunter die Statusleiste,
+  die immer sichtbar bleibt, und erst dann die Reiter. Vorher lagen die
+  Einstellungen in einer Aufklappbox, die Verwaltung in einer zweiten daneben --
+  zwei Klicks bis zu Dingen, die man ständig braucht.
+
+  Die Reiter sind reines CSS über versteckte Radioknöpfe. Kein Skript heißt:
+  der Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber austauscht.
+#}
+<header class="seitenkopf">
+  <h1 id="projektname">{{ project.name }}</h1>
+  <p class="kennzahlen">
+    <span>{{ project.voice }}</span>
+    <span>{{ project.engine }}</span>
+    <span>{{ project.chunks | length }} Sätze</span>
+    {% if project.median_cer() is not none %}
+      <span>Fehlerrate {{ "%.1f"|format(project.median_cer() * 100) }}&nbsp;%</span>
+    {% endif %}
+    {% if project.median_similarity() is not none %}
+      <span title="Ähnlichkeit zur Referenzstimme, 1.00 = identisch"
+        >Stimme {{ "%.2f"|format(project.median_similarity()) }}</span>
+    {% endif %}
+  </p>
+</header>
+
+{% include "_status.html" %}
+
+{% if bericht %}
+  <p class="hinweis">
+    Übernommen: {{ bericht.behalten }}
+    {{ "Satz behält" if bericht.behalten == 1 else "Sätze behalten" }} den vorhandenen Ton,
+    {{ bericht.neu }} neu angelegt, {{ bericht.entfernt }} verworfen.
+  </p>
+{% endif %}
+
+<div class="reiter">
+  <input type="radio" name="reiter" id="reiter-saetze"
+         {% if aktiver_reiter != "einstellungen" %}checked{% endif %}>
+  <input type="radio" name="reiter" id="reiter-einstellungen"
+         {% if aktiver_reiter == "einstellungen" %}checked{% endif %}>
+  <input type="radio" name="reiter" id="reiter-projekt">
+
+  <nav class="reiterleiste">
+    <label for="reiter-saetze">Sätze</label>
+    <label for="reiter-einstellungen">Einstellungen</label>
+    <label for="reiter-projekt">Projekt</label>
+  </nav>
+
+  <section class="blatt" id="blatt-saetze">
+    <p class="muted">
+      Schwelle für die Fehlerrate: {{ "%.0f"|format(threshold * 100) }}&nbsp;%.
+      Darüber wird ein Satz zur Durchsicht markiert. Einzelne Sätze neu zu rendern lädt
+      Modell und Spracherkennung erneut &mdash; das dauert beim ersten Mal. Gemessen wird
+      dabei mit, damit ein einzeln erzeugter Satz genauso behandelt wird wie im
+      vollständigen Lauf.
+    </p>
+    <div id="chunks">{% include "_chunk_table.html" %}</div>
+  </section>
+
+  <section class="blatt" id="blatt-einstellungen">
+    {% include "_settings.html" %}
+  </section>
+
+  <section class="blatt" id="blatt-projekt">
     <div class="card">
-      <form hx-post="/projects/{{ project.id }}/rename" hx-target="#projektkopf h1"
+      <form hx-post="/projects/{{ project.id }}/rename" hx-target="#projektname"
             hx-swap="outerHTML" hx-disabled-elt="find button" hx-indicator="find button">
         <label>Name
           <input type="text" name="name" value="{{ project.name }}" required></label>
         <button class="small" type="submit">{% include "_spinner.html" %}Umbenennen</button>
       </form>
-      <div class="actions">
-        <form method="post" action="/projects/{{ project.id }}/duplicate">
-          <button class="small secondary" type="submit">Als Kopie anlegen</button>
-        </form>
+
+      <h3>Kopie</h3>
+      <p class="muted">
+        Übernimmt Text, Stimme, Engine und Reglerstellung, aber keinen Ton &mdash; der Weg,
+        eine andere Einstellung zu hören, ohne das Vorhandene zu verlieren.
+      </p>
+      <form method="post" action="/projects/{{ project.id }}/duplicate">
+        <button class="small secondary" type="submit">Als Kopie anlegen</button>
+      </form>
+
+      <h3>Verwerfen</h3>
+      <div class="aktionen">
+        <button class="small gefahr"
+                hx-post="/projects/{{ project.id }}/discard"
+                hx-target="#status" hx-swap="outerHTML"
+                hx-disabled-elt="this" hx-indicator="this"
+                hx-confirm="Erzeugten Ton aller Sätze verwerfen? Die Seeds bleiben erhalten.">
+          {% include "_spinner.html" %}Ton aller Sätze verwerfen
+        </button>
         <form method="post" action="/projects/{{ project.id }}/delete"
               onsubmit="return confirm('Projekt {{ project.name }} samt erzeugtem Ton löschen?')">
           <button class="small gefahr" type="submit">Projekt löschen</button>
         </form>
       </div>
       <p class="muted">
-        Die Kopie übernimmt Text, Stimme, Engine und Reglerstellung, aber keinen Ton
-        &mdash; der Weg, eine andere Einstellung zu hören, ohne das Vorhandene zu verlieren.
+        Ton verwerfen behält Text und Seeds &mdash; derselbe Satz ergibt danach mit
+        veränderten Reglern ein anderes Ergebnis, aber nicht durch einen anderen Zufall.
       </p>
     </div>
-  </details>
+  </section>
 </div>
-
-{% include "_settings.html" %}
-
-{% include "_status.html" %}
-
-<h2>Sätze</h2>
-<p class="muted">
-  Schwelle für die Fehlerrate: {{ "%.0f"|format(threshold * 100) }}&nbsp;%.
-  Darüber wird ein Satz zur Durchsicht markiert.
-  Einzelne Sätze neu zu rendern lädt Modell und Spracherkennung erneut &mdash; das dauert
-  beim ersten Mal. Gemessen wird dabei mit, damit ein einzeln erzeugter Satz genauso
-  behandelt wird wie im vollständigen Lauf.
-</p>
-<div id="chunks">{% include "_chunk_table.html" %}</div>
 {% endblock %}

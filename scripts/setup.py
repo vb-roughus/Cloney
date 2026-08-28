@@ -125,7 +125,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Cloney einrichten.")
     parser.add_argument("--torch-index", default=DEFAULT_TORCH_INDEX)
     parser.add_argument("--skip-torch", action="store_true", help="PyTorch nicht anfassen.")
-    parser.add_argument("--extras", default="asr,f5", help="Extras, kommagetrennt. Leer = keine.")
+    parser.add_argument(
+        "--extras",
+        default="asr,f5,similarity",
+        help="Extras, kommagetrennt. Leer = keine.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Nur zeigen, was liefe.")
     parser.add_argument(
         "--no-web", action="store_true", help="Die Oberfläche am Ende nicht starten."

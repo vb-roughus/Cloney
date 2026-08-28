@@ -73,6 +73,10 @@ class Project(BaseModel):
     engine_options: dict[str, float] = Field(default_factory=dict)
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
+    #: Warum die Stimmähnlichkeit nicht gemessen wurde. Steht im Manifest und
+    #: nicht nur im Joblog, sonst stünde nach einem Neustart eine leere Spalte
+    #: ohne Erklärung da.
+    similarity_note: str | None = None
     #: Ordner des Projekts. Nicht Teil des Manifests -- er ergibt sich aus dem Ort.
     root: Path = Field(default=Path("."), exclude=True)
 
@@ -98,14 +102,9 @@ class Project(BaseModel):
         root = projects_dir / project_id
         root.mkdir(parents=True, exist_ok=True)
 
-        # Engines wie F5-TTS erzeugen nur eine begrenzte Dauer am Stück und
-        # teilen längere Eingaben sonst selbst auf. Ein so entstandener Chunk
-        # enthielte Nähte, die sich nicht einzeln nachbessern lassen -- deshalb
-        # wird hier von vornherein kleiner geschnitten.
-        budget = engine.chunk_budget_seconds(reference_seconds, target_seconds)
-        if budget < target_seconds:
-            max_seconds = budget
-
+        budget, roh = _plan_chunks(
+            text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds
+        )
         chunks = [
             Chunk(
                 index=i,
@@ -114,7 +113,7 @@ class Project(BaseModel):
                 ends_paragraph=c.ends_paragraph,
                 seed=derive_seed(project_id, i, 0),
             )
-            for i, c in enumerate(build_chunks(text, chars_per_second, budget, max_seconds))
+            for i, c in enumerate(roh)
         ]
 
         project = cls(
@@ -210,6 +209,114 @@ class Project(BaseModel):
     def median_similarity(self) -> float | None:
         return _median(c.speaker_similarity for c in self.chunks)
 
+    def reconfigure(
+        self,
+        *,
+        text: str,
+        voice: str,
+        engine: EngineInfo,
+        reference_seconds: float = 0.0,
+        chars_per_second: float = 14.0,
+        target_seconds: float = 20.0,
+        max_seconds: float = 25.0,
+    ) -> dict[str, int]:
+        """Text, Stimme oder Engine eines bestehenden Projekts ändern.
+
+        Ein anderer Text heißt neu segmentieren, und damit wandern die
+        Chunk-Grenzen. Trotzdem soll ein Tippfehler in Satz drei nicht die
+        Arbeit an Satz siebzehn kosten: Chunks, deren Sprechfassung wörtlich
+        gleich bleibt, behalten Ton, Seed und Messwerte. Verglichen wird die
+        normalisierte Fassung, nicht der Rohtext -- wer nur die Schreibweise
+        einer Zahl ändert, hört dasselbe und soll nicht neu rendern müssen.
+
+        Stimme oder Engine gewechselt heißt dagegen: alles neu. Vorhandener Ton
+        stammt dann von einem anderen Sprecher oder Modell, und ihn stehen zu
+        lassen ergäbe eine Spur aus zwei Stimmen.
+
+        Gibt zurück, wie viele Sätze behalten, neu angelegt und verworfen wurden.
+        """
+        uebernehmbar = voice == self.voice and engine.name == self.engine
+        budget, roh = _plan_chunks(
+            text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds
+        )
+
+        frei: dict[str, list[Chunk]] = {}
+        if uebernehmbar:
+            for chunk in self.chunks:
+                if chunk.audio_file and self.chunk_path(chunk.index).exists():
+                    frei.setdefault(chunk.normalized_text, []).append(chunk)
+
+        neue: list[Chunk] = []
+        umzug: dict[int, int] = {}
+        for i, c in enumerate(roh):
+            passend = frei.get(c.normalized_text)
+            alt = passend.pop(0) if passend else None
+            if alt is None:
+                neue.append(
+                    Chunk(
+                        index=i,
+                        raw_text=c.raw_text,
+                        normalized_text=c.normalized_text,
+                        ends_paragraph=c.ends_paragraph,
+                        seed=derive_seed(self.id, i, 0),
+                    )
+                )
+                continue
+            uebernommen = alt.model_copy(
+                update={
+                    "index": i,
+                    "raw_text": c.raw_text,
+                    "ends_paragraph": c.ends_paragraph,
+                    "audio_file": self.chunk_path(i).name,
+                }
+            )
+            neue.append(uebernommen)
+            umzug[alt.index] = i
+
+        behalten = len(umzug)
+        entfernt = len(self.chunks) - behalten
+        self._move_chunk_audio(umzug)
+
+        self.source_text = text
+        self.voice = voice
+        self.engine = engine.name
+        self.sample_rate = engine.sample_rate
+        self.target_chunk_seconds = budget
+        # Regler, die die neue Engine nicht kennt, fallen weg statt still
+        # weiterzuwirken.
+        self.engine_options = engine.clean_options(self.engine_options)
+        vorher = len(self.chunks)
+        self.chunks = neue
+        # Die fertige Spur gehört zum alten Satzbestand. Sie bleibt nur, wenn
+        # sich an ihm nichts geändert hat -- sonst wäre sie eine Lüge. Dass sie
+        # ein unverändertes Übernehmen übersteht, macht das Formular gefahrlos
+        # wiederholbar.
+        if not (behalten == len(neue) == vorher):
+            self.output_path.unlink(missing_ok=True)
+            self.output_file = None
+        self.save()
+        return {"behalten": behalten, "neu": len(neue) - behalten, "entfernt": entfernt}
+
+    def _move_chunk_audio(self, umzug: dict[int, int]) -> None:
+        """Tondateien auf die neuen Nummern umhängen.
+
+        Der Umweg über Zwischennamen ist nötig, weil sich Quelle und Ziel
+        überlappen können: Chunk 3 wird zu 2, während 2 zu 1 wird.
+        """
+        zwischen: dict[int, Path] = {}
+        for alt_index in umzug:
+            quelle = self.chunk_path(alt_index)
+            ziel = self.chunks_dir / f"_umzug_{alt_index:04d}.wav"
+            quelle.replace(ziel)
+            zwischen[alt_index] = ziel
+
+        for chunk in self.chunks:
+            if chunk.index not in umzug.values():
+                self.chunk_path(chunk.index).unlink(missing_ok=True)
+
+        for alt_index, neu_index in umzug.items():
+            zwischen[alt_index].replace(self.chunk_path(neu_index))
+
     def delete(self) -> None:
         """Projekt samt erzeugtem Ton entfernen."""
         shutil.rmtree(self.root, ignore_errors=True)
@@ -285,6 +392,27 @@ class Project(BaseModel):
         chunk.raw_text = raw_text
         chunk.normalized_text = normalize_german(raw_text)
         return self.reroll(index)
+
+
+def _plan_chunks(
+    text: str,
+    engine: EngineInfo,
+    reference_seconds: float,
+    chars_per_second: float,
+    target_seconds: float,
+    max_seconds: float,
+) -> tuple[float, list]:
+    """Chunk-Budget und Rohschnitt -- gemeinsam für Anlegen und Ändern.
+
+    Engines wie F5-TTS erzeugen nur eine begrenzte Dauer am Stück und teilen
+    längere Eingaben sonst selbst auf. Ein so entstandener Chunk enthielte
+    Nähte, die sich nicht einzeln nachbessern lassen -- deshalb wird hier von
+    vornherein kleiner geschnitten.
+    """
+    budget = engine.chunk_budget_seconds(reference_seconds, target_seconds)
+    if budget < target_seconds:
+        max_seconds = budget
+    return budget, build_chunks(text, chars_per_second, budget, max_seconds)
 
 
 def _median(werte: Iterable[float | None]) -> float | None:

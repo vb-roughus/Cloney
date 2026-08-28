@@ -139,3 +139,59 @@ def test_ohne_schwelle_wird_nichts_markiert(settings: Settings, voice_store: Voi
 
     check_speaker_similarity(project, settings, voice_store, Fremd)
     assert project.chunks[0].status == ChunkStatus.NEEDS_REVIEW
+
+
+def test_fehlendes_paket_kostet_nicht_die_fertige_spur(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Ähnlichkeit ist eine Messung an fertigem Ton, keine Voraussetzung für ihn.
+
+    Vor dieser Absicherung riss ein fehlendes ``speechbrain`` den ganzen Lauf
+    mit -- und zwar vor dem Zusammenbau, sodass am Ende gar keine Spur dastand.
+    """
+    from cloney.asr.dummy import DummyASR
+    from cloney.core.project import Project
+    from cloney.engines.dummy import DummyEngine
+    from cloney.pipeline import run_project
+
+    def kein_paket() -> DummySpeakerEmbedder:
+        raise RuntimeError("speechbrain ist nicht installiert")
+
+    project = Project.create(
+        name="Ohne Paket",
+        text="Am 3. Mai 2024 begann alles.",
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        projects_dir=settings.projects_dir,
+    )
+    run_project(project, settings, voice_store, DummyEngine, DummyASR, embedder_factory=kein_paket)
+
+    assert project.is_complete
+    assert project.output_path.exists()
+    assert project.median_similarity() is None
+    # Der Grund steht im Manifest, nicht nur im Joblog: sonst stünde nach einem
+    # Neustart eine leere Spalte ohne Erklärung da.
+    assert "speechbrain" in Project.load(project.root).similarity_note
+
+
+def test_geglueckte_messung_raeumt_den_alten_hinweis_weg(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    from cloney.asr.dummy import DummyASR
+    from cloney.core.project import Project
+    from cloney.engines.dummy import DummyEngine
+    from cloney.pipeline import check_speaker_similarity, run_project
+
+    project = Project.create(
+        name="Nachgereicht",
+        text="Am 3. Mai 2024 begann alles.",
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        projects_dir=settings.projects_dir,
+    )
+    project.similarity_note = "speechbrain ist nicht installiert"
+    run_project(project, settings, voice_store, DummyEngine, DummyASR)
+
+    check_speaker_similarity(project, settings, voice_store, DummySpeakerEmbedder)
+    assert project.similarity_note is None
+    assert project.median_similarity() is not None

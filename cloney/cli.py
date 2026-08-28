@@ -350,6 +350,10 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
     aehnlichkeit = project.median_similarity()
     if aehnlichkeit is not None:
         typer.echo(f"Median-Stimmähnlichkeit: {aehnlichkeit:.2f} (1.00 = identisch)")
+    elif project.similarity_note:
+        typer.secho(
+            f"Ohne Stimmähnlichkeit gerendert: {project.similarity_note}", fg=typer.colors.YELLOW
+        )
     flagged = project.flagged()
     if flagged:
         indices = ", ".join(str(c.index + 1) for c in flagged)

@@ -1,7 +1,12 @@
+{#
+  Drei Spalten statt sieben: Kennzahlen links, der Text als tragende Mitte,
+  Ton und Handgriffe rechts. Vorher standen Fehlerrate, Ähnlichkeit, Text, Ton
+  und zwei Knopfspalten nebeneinander -- zusammen breiter als jeder Bildschirm,
+  sodass die Knöpfe rechts abgeschnitten wurden.
+#}
 <table class="chunks">
   <thead>
-    <tr><th>#</th><th>Status</th><th>Fehlerrate</th><th>Stimme</th>
-        <th>Text</th><th>Audio</th><th></th></tr>
+    <tr><th class="spalte-meta">Satz</th><th>Text</th><th class="spalte-ton">Ton</th></tr>
   </thead>
   <tbody>
     {% for chunk in project.chunks %}{% include "_chunk_row.html" %}{% endfor %}

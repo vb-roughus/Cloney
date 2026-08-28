@@ -54,6 +54,7 @@ F5_INFO = EngineInfo(
     ),
     max_generation_seconds=MAX_GENERATION_SECONDS,
     max_reference_seconds=MAX_REFERENCE_SECONDS,
+    derives_tempo_from_reference=True,
     options=(
         EngineOption(
             key="speed",

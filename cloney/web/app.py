@@ -77,9 +77,15 @@ def create_app(
         """
         voice = voices.get(project.voice) if voices.exists(project.voice) else None
         rate = voices.speaking_rate(project.voice) if voice else None
+        info = engine_info(project.engine)
         vorschlag = suggested_speed(rate)
-        # Nur anbieten, solange der Regler nicht schon von Hand gesetzt wurde.
-        if "speed" in project.engine_options or engine_info(project.engine).option("speed") is None:
+        # Nur anbieten, wenn die Engine ihr Tempo überhaupt aus der Referenz
+        # ableitet -- und solange der Regler nicht schon von Hand gesetzt wurde.
+        if (
+            not info.derives_tempo_from_reference
+            or "speed" in project.engine_options
+            or info.option("speed") is None
+        ):
             vorschlag = None
         return {"voice": voice, "reference_rate": rate, "speed_suggestion": vorschlag}
 
@@ -137,20 +143,67 @@ def create_app(
         )
         return RedirectResponse(f"/projects/{project.id}", status_code=303)
 
-    @app.get("/projects/{project_id}", response_class=HTMLResponse)
-    def project_view(request: Request, project_id: str) -> HTMLResponse:
-        project = load(project_id)
+    def project_page(request: Request, project: Project, **extra: object) -> HTMLResponse:
+        """Die ganze Projektseite. Eine Stelle, damit Ansicht und Umbau nicht
+        mit verschiedenen Zusammenstellungen enden."""
         return templates.TemplateResponse(
             request,
             "project.html",
             {
                 "project": project,
                 "engine": engine_info(project.engine),
-                "running": runner.is_running(project_id),
+                "running": runner.is_running(project.id),
                 "threshold": settings.cer_threshold,
+                "voices": voices.list_all(),
+                "engines": available_engines(),
                 **_reference_context(project),
+                **extra,
             },
         )
+
+    @app.get("/projects/{project_id}", response_class=HTMLResponse)
+    def project_view(request: Request, project_id: str) -> HTMLResponse:
+        return project_page(request, load(project_id))
+
+    @app.post("/projects/{project_id}/configure", response_class=HTMLResponse)
+    def configure(
+        request: Request,
+        project_id: str,
+        text: str = Form(...),
+        voice: str = Form(...),
+        engine: str = Form(...),
+    ) -> HTMLResponse:
+        """Text, Stimme oder Engine eines bestehenden Projekts ändern.
+
+        Dieselben Angaben wie beim Anlegen -- nur dass hier nicht alles neu
+        entsteht: Sätze, deren Sprechfassung gleich bleibt, behalten ihren Ton.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        if not text.strip():
+            raise HTTPException(400, "Der Text ist leer")
+        if not voices.exists(voice):
+            raise HTTPException(400, f"Stimme '{voice}' gibt es nicht")
+
+        info = engine_info(engine)
+        reference = voices.get(voice)
+        if info.requires_ref_text and not reference.transcript.strip():
+            raise HTTPException(
+                400,
+                f"Die Engine '{engine}' braucht den Wortlaut der Referenzaufnahme, "
+                f"'{voice}' hat aber keinen hinterlegt.",
+            )
+
+        bericht = project.reconfigure(
+            text=text,
+            voice=voice,
+            engine=info,
+            reference_seconds=reference.duration_s,
+            chars_per_second=settings.chars_per_second,
+            target_seconds=settings.target_chunk_seconds,
+            max_seconds=settings.max_chunk_seconds,
+        )
+        return project_page(request, project, bericht=bericht, aktiver_reiter="einstellungen")
 
     @app.post("/projects/{project_id}/run", response_class=HTMLResponse)
     def start_run(request: Request, project_id: str) -> HTMLResponse:
@@ -234,7 +287,13 @@ def create_app(
         return templates.TemplateResponse(
             request,
             "_settings.html",
-            {"project": project, "engine": info, **_reference_context(project)},
+            {
+                "project": project,
+                "engine": info,
+                "voices": voices.list_all(),
+                "engines": available_engines(),
+                **_reference_context(project),
+            },
         )
 
     @app.post("/projects/{project_id}/rerender", response_class=HTMLResponse)

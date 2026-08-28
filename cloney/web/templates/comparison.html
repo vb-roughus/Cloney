@@ -1,7 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ comparison.name }} &mdash; Cloney{% endblock %}
 {% block content %}
-<h1>{{ comparison.name }}</h1>
+<header class="seitenkopf">
+  <h1>{{ comparison.name }}</h1>
+  <p class="kennzahlen">
+    <span>{{ comparison.voice }}</span>
+    <span>{{ comparison.engine }}</span>
+    <span>{{ comparison.variants | length }} Varianten</span>
+    <span>{{ comparison.text | length }} Zeichen Probe</span>
+  </p>
+</header>
+
+{% include "_comparison_table.html" %}
 
 <details class="card">
   <summary>Was verglichen wird</summary>
@@ -16,6 +26,4 @@
     <button class="small gefahr" type="submit">Vergleich löschen</button>
   </form>
 </details>
-
-{% include "_comparison_table.html" %}
 {% endblock %}
