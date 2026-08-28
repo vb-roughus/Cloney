@@ -7,10 +7,11 @@ from pathlib import Path
 import typer
 
 from cloney.config import Settings, get_settings
+from cloney.core.compare import Comparison
 from cloney.core.project import Project
 from cloney.core.voices import VoiceStore
 from cloney.engines.registry import available_engines, create_engine, engine_info
-from cloney.pipeline import ProgressEvent, run_project
+from cloney.pipeline import ProgressEvent, run_comparison, run_project
 
 app = typer.Typer(help="Lokales Voice Cloning für deutsche Langform-Texte.", no_args_is_help=True)
 voices_app = typer.Typer(help="Referenzstimmen verwalten.", no_args_is_help=True)
@@ -357,6 +358,133 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
             "In der Web-Oberfläche einzeln nachbessern: cloney web",
             fg=typer.colors.YELLOW,
         )
+
+
+@app.command()
+def compare(
+    text: Path = typer.Option(..., exists=True, help="Kurze Textprobe."),
+    voice: str = typer.Option(..., help="Name der Referenzstimme."),
+    name: str = typer.Option("", help="Name des Vergleichs. Standard: Dateiname."),
+    engine: str = typer.Option("", help="Engine. Standard: aus der Konfiguration."),
+    grid: list[str] = typer.Option(
+        None,
+        "--grid",
+        "-g",
+        help="Achse des Rasters, etwa -g speed=0.8,1.0,1.2. Mehrfach möglich.",
+    ),
+    qc: bool = typer.Option(True, help="Qualitätskontrolle per Spracherkennung."),
+) -> None:
+    """Dieselbe Textprobe je Reglerstellung einmal rendern und gegenüberstellen.
+
+    Macht aus dem Raten an den Reglern eine Messung: gleiche Probe, gleiche
+    Seeds, nur die Einstellung ändert sich.
+    """
+    settings = get_settings()
+    settings.ensure_dirs()
+    engine_name = engine or settings.engine
+    info = engine_info(engine_name)
+
+    store = VoiceStore(settings.voices_dir)
+    if not store.exists(voice):
+        typer.secho(f"Stimme '{voice}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if info.requires_ref_text and not store.get(voice).transcript.strip():
+        typer.secho(
+            f"Die Engine '{engine_name}' braucht den Wortlaut der Referenzaufnahme, "
+            f"'{voice}' hat aber keinen.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    try:
+        comparison = Comparison.create(
+            name=name or text.stem,
+            text=text.read_text(encoding="utf-8"),
+            voice=voice,
+            engine=info,
+            grid=_parse_grid(grid, info),
+            comparisons_dir=settings.comparisons_dir,
+        )
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+
+    typer.echo(f"Vergleich {comparison.id} mit {len(comparison.variants)} Varianten:")
+    for variant in comparison.variants:
+        typer.echo(f"  {variant.label}")
+    typer.echo("")
+
+    run_comparison(
+        comparison,
+        settings,
+        store,
+        lambda options: create_engine(engine_name, settings, options),
+        _asr_factory(settings, qc),
+        _echo,
+        _embedder_factory(settings, qc),
+    )
+    _print_comparison(comparison)
+
+
+def _parse_grid(rohwerte: list[str] | None, info) -> dict[str, list[float]]:  # noqa: ANN001
+    """'-g speed=0.8,1.0' zu Achsen. Unbekannte Regler brechen ab, statt zu wirken,
+    als hätten sie etwas bewirkt."""
+    achsen: dict[str, list[float]] = {}
+    for eintrag in rohwerte or []:
+        key, _, rest = eintrag.partition("=")
+        key = key.strip()
+        if info.option(key) is None:
+            erlaubt = ", ".join(o.key for o in info.options) or "keine"
+            typer.secho(
+                f"'{key}' ist kein Regler von '{info.name}'. Verfügbar: {erlaubt}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        werte = []
+        for stueck in rest.replace(",", " ").split():
+            try:
+                werte.append(float(stueck))
+            except ValueError:
+                typer.secho(
+                    f"'{stueck}' ist keine Zahl (bei --grid {eintrag})", fg=typer.colors.RED
+                )
+                raise typer.Exit(1) from None
+        achsen.setdefault(key, []).extend(werte)
+    return achsen
+
+
+def _print_comparison(comparison: Comparison) -> None:
+    """Die Tabelle. Markiert wird je Spalte, nicht als Gesamtnote -- die
+    Gewichtung von Fehlerrate gegen Ähnlichkeit kann niemand belegen."""
+    bestes_cer = comparison.best_cer()
+    beste_stimme = comparison.best_similarity()
+
+    typer.echo("")
+    typer.echo(f"{'Variante':28} {'CER':>8} {'Stimme':>8} {'Dauer':>8} {'Tempo':>12}")
+    typer.echo("-" * 68)
+    for variant in comparison.variants:
+        if variant.error:
+            typer.secho(f"{variant.label[:28]:28} {variant.error[:38]}", fg=typer.colors.RED)
+            continue
+        tempo = comparison.chars_per_second(variant.slug)
+        zeile = (
+            f"{variant.label[:28]:28} "
+            f"{_zelle(variant.median_cer, '{:.1%}'):>8}"
+            f"{'*' if variant.slug in bestes_cer else ' '}"
+            f"{_zelle(variant.median_similarity, '{:.2f}'):>7}"
+            f"{'*' if variant.slug in beste_stimme else ' '}"
+            f"{_zelle(variant.duration_s, '{:.1f}s'):>8} "
+            f"{_zelle(tempo, '{:.1f} Zeichen/s'):>12}"
+        )
+        typer.echo(zeile)
+    typer.echo("")
+    typer.echo(
+        "* bester Wert der Spalte. Die Zahlen engen die Auswahl ein, entschieden wird am Ohr."
+    )
+
+
+def _zelle(wert: float | None, format_: str) -> str:
+    return format_.format(wert) if wert is not None else "--"
 
 
 #: Kurzer Text für den Selbsttest. Bewusst voller Ziffern, Symbole und

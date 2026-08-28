@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from cloney.asr.dummy import DummyASR
 from cloney.config import Settings
+from cloney.core.audio import duration_seconds, read_wav
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
+from cloney.engines.dummy import DummyEngine
 from cloney.web.app import create_app
 
 TEXT = "Am 3. Mai 2024 begann es.\n\nDr. Meier sagte z.B. nichts dazu. Dann war Ruhe."
@@ -292,11 +296,48 @@ def test_teilangabe_laesst_die_uebrigen_stehen(settings: Settings, voice_store: 
     assert project.engine_options == {"speed": 0.9, "nfe_step": 48.0}
 
 
-def test_engine_ohne_regler_zeigt_keine(settings: Settings, voice_store: VoiceStore) -> None:
+def test_engine_ohne_regler_zeigt_keine(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Alle mitgelieferten Engines bieten Regler an -- eine künftige muss es nicht.
+
+    Deshalb wird für diesen Fall eine reglerlose Engine untergeschoben, statt
+    ihn an einer Engine festzumachen, die ihn morgen nicht mehr abbildet.
+    """
+    from cloney.engines import registry
+
+    schlicht = replace(DummyEngine.info, options=())
+    monkeypatch.setitem(registry._INFOS, "dummy", schlicht)
+
     client = _client(settings)
     project_id = _create_project_with(client, "dummy")
     seite = client.get(f"/projects/{project_id}").text
     assert 'type="range"' not in seite
+
+
+def test_regler_der_dummy_engine_erreichen_die_engine(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der Weg einer Reglerstellung: Formular -> Manifest -> Engine -> Tonlänge."""
+    client = _client(settings)
+    project_id = _create_project_with(client, "dummy")
+
+    client.post(f"/projects/{project_id}/options", data={"speed": "1.5"})
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    schnell = Project.load(settings.projects_dir / project_id)
+    assert schnell.engine_options["speed"] == 1.5
+    audio, rate = read_wav(schnell.output_path)
+    kurz = duration_seconds(audio, rate)
+
+    langsam_id = _create_project_with(client, "dummy")
+    client.post(f"/projects/{langsam_id}/options", data={"speed": "0.5"})
+    client.post(f"/projects/{langsam_id}/run")
+    _wait_for_run(client, langsam_id)
+    audio, rate = read_wav(Project.load(settings.projects_dir / langsam_id).output_path)
+
+    assert duration_seconds(audio, rate) > kurz
 
 
 def test_engine_mit_reglern_zeigt_sie(settings: Settings, voice_store: VoiceStore) -> None:
@@ -491,3 +532,111 @@ def test_ohne_spracherkennung_bleibt_der_ton_trotzdem(
     assert response.status_code == 200
     chunk = Project.load(settings.projects_dir / project_id).chunks[0]
     assert chunk.audio_file is not None
+
+
+# -- Vergleichslauf ---------------------------------------------------------
+
+
+def _create_comparison(client: TestClient, **werte: str) -> str:
+    daten = {
+        "name": "Tempo",
+        "text": "Am 3. Mai 2024 begann es.",
+        "voice": "test-stimme",
+        "engine": "dummy",
+        "werte_speed": "0.8, 1.2",
+    }
+    daten.update(werte)
+    response = client.post("/comparisons", data=daten, follow_redirects=False)
+    assert response.status_code == 303, response.text
+    return response.headers["location"].rsplit("/", 1)[-1]
+
+
+def _wait_for_comparison(client: TestClient, comparison_id: str, timeout: float = 30.0) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        seite = client.get(f"/comparisons/{comparison_id}/table").text
+        if "läuft" not in seite:
+            return seite
+        time.sleep(0.1)
+    raise AssertionError("Vergleichslauf wurde nicht fertig")
+
+
+def test_vergleich_anlegen_und_rendern(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    comparison_id = _create_comparison(client)
+
+    seite = client.get(f"/comparisons/{comparison_id}")
+    assert seite.status_code == 200
+    assert "Sprechtempo 0.8" in seite.text
+    assert "Sprechtempo 1.2" in seite.text
+
+    client.post(f"/comparisons/{comparison_id}/run")
+    tabelle = _wait_for_comparison(client, comparison_id)
+
+    assert "2 von 2 Varianten" in tabelle
+    assert "Zeichen/s" in tabelle
+    for slug in ("sprechtempo-0-8", "sprechtempo-1-2"):
+        assert client.get(f"/comparisons/{comparison_id}/variants/{slug}/audio").status_code == 200
+
+
+def test_vergleich_ohne_raster_wird_abgelehnt(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    response = client.post(
+        "/comparisons",
+        data={"name": "Leer", "text": "Hallo.", "voice": "test-stimme", "engine": "dummy"},
+    )
+    assert response.status_code == 400
+
+
+def test_tippfehler_in_einer_achse_verwirft_nicht_das_formular(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Sonst käme für einen Zahlendreher in einer von drei Achsen das ganze
+    Formular zurück -- mitsamt der Arbeit, die drinsteckt."""
+    client = _client(settings)
+    comparison_id = _create_comparison(client, werte_speed="0.8, x, 1.2")
+    assert "Sprechtempo 0.8" in client.get(f"/comparisons/{comparison_id}").text
+
+
+def test_reglerfelder_folgen_der_engine(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    felder = client.get("/comparisons/fields", params={"engine": "f5-de"}).text
+    assert 'name="werte_nfe_step"' in felder
+    assert 'name="werte_pitch"' not in felder
+
+
+def test_ruhende_vergleichstabelle_hat_keinen_ausloeser(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    comparison_id = _create_comparison(client)
+    seite = client.get(f"/comparisons/{comparison_id}").text
+    assert 'hx-trigger=""' not in seite
+    assert "every 2000ms" not in seite
+
+
+def test_laufende_vergleichstabelle_fragt_nach(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    comparison_id = _create_comparison(client)
+    tabelle = client.post(f"/comparisons/{comparison_id}/run").text
+    assert "every 2000ms" in tabelle
+    _wait_for_comparison(client, comparison_id)
+
+
+def test_vergleich_loeschen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    comparison_id = _create_comparison(client)
+    client.post(f"/comparisons/{comparison_id}/delete", follow_redirects=False)
+    assert client.get(f"/comparisons/{comparison_id}").status_code == 404
+
+
+def test_unbekannter_vergleich_gibt_404(settings: Settings) -> None:
+    assert _client(settings).get("/comparisons/gibtsnicht").status_code == 404
+
+
+def test_vergleich_taucht_nicht_in_der_projektliste_auf(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    _create_comparison(client)
+    assert "Noch keine Projekte" in client.get("/").text

@@ -100,9 +100,14 @@ class Settings(BaseSettings):
     def voices_dir(self) -> Path:
         return self.data_dir / "voices"
 
+    @property
+    def comparisons_dir(self) -> Path:
+        return self.data_dir / "comparisons"
+
     def ensure_dirs(self) -> None:
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         self.voices_dir.mkdir(parents=True, exist_ok=True)
+        self.comparisons_dir.mkdir(parents=True, exist_ok=True)
 
 
 _settings: Settings | None = None

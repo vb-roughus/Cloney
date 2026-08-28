@@ -11,6 +11,10 @@ das gesamte Skript, nicht pro Chunk. Zwischen den Phasen wird freigegeben.
 
 Alle Modelle werden über Fabriken hereingereicht. Dadurch läuft dieselbe
 Pipeline in Tests gegen DummyEngine und DummyASR -- ohne GPU, ohne Netz.
+
+``run_comparison`` setzt darauf auf: es rendert dieselbe Textprobe je
+Reglerstellung einmal durch genau diesen Weg, damit der Vergleich misst, was im
+echten Lauf auch geschieht.
 """
 
 from __future__ import annotations
@@ -22,10 +26,11 @@ from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import assemble, read_wav, write_wav
 from cloney.core.bleed import find_content_start
+from cloney.core.compare import Comparison, Variant, VariantStatus
 from cloney.core.metrics import cer, cosine_similarity
 from cloney.core.project import Chunk, ChunkStatus, Project
 from cloney.core.voices import VoiceStore
-from cloney.engines.base import TTSEngine, strip_unsupported_tags
+from cloney.engines.base import EngineInfo, TTSEngine, strip_unsupported_tags
 from cloney.speaker.base import SpeakerEmbedder
 from cloney.vram import model_slot
 
@@ -296,3 +301,79 @@ def run_project(
 
     assemble_output(project, settings, on_event)
     return project
+
+
+def run_comparison(
+    comparison: Comparison,
+    settings: Settings,
+    voice_store: VoiceStore,
+    engine_factory: Callable[[dict[str, float]], TTSEngine],
+    asr_factory: ASRFactory | None = None,
+    on_event: ProgressCallback = _noop,
+    embedder_factory: EmbedderFactory | None = None,
+) -> Comparison:
+    """Rendert eine Textprobe je Reglerstellung einmal und misst jedes Ergebnis.
+
+    Jede Variante durchläuft dieselbe Pipeline wie ein Hörbuch -- gemessen wird
+    also, was später auch passiert. Zwei Abweichungen sind Absicht:
+
+    * **Keine Wiederholungsversuche.** Ein auffälliger Satz würde sonst mit
+      neuem Seed nachgerendert, und die Varianten unterschieden sich nicht mehr
+      allein in der Reglerstellung.
+    * **Eine gescheiterte Variante bricht den Vergleich nicht ab.** Sie bekommt
+      ihre Fehlermeldung in die Zeile; die übrigen Zahlen bleiben brauchbar.
+    """
+    messsettings = settings.model_copy(update={"max_retries": 0})
+    info = _engine_info(comparison.engine)
+    reference = voice_store.get(comparison.voice)
+    gesamt = len(comparison.variants)
+
+    for nummer, variant in enumerate(comparison.variants, start=1):
+        if variant.is_done:
+            continue
+        variant.status = VariantStatus.RUNNING
+        comparison.save()
+        on_event(ProgressEvent("compare", f"{variant.label}", nummer - 1, gesamt))
+
+        try:
+            project = comparison.prepare(variant.slug, info, reference.duration_s)
+            run_project(
+                project,
+                messsettings,
+                voice_store,
+                lambda opts=dict(variant.options): engine_factory(opts),
+                asr_factory,
+                on_event,
+                embedder_factory,
+            )
+            gemessen = comparison.record(variant.slug, project)
+            on_event(
+                ProgressEvent(
+                    "compare",
+                    f"{variant.label}: {_kurzfassung(gemessen)}",
+                    nummer,
+                    gesamt,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - der Fehler gehört in die Zeile, nicht ins Log
+            comparison.fail(variant.slug, str(exc))
+            on_event(ProgressEvent("compare", f"{variant.label}: {exc}", nummer, gesamt))
+
+    return comparison
+
+
+def _kurzfassung(variant: Variant) -> str:
+    teile = []
+    if variant.median_cer is not None:
+        teile.append(f"CER {variant.median_cer:.1%}")
+    if variant.median_similarity is not None:
+        teile.append(f"Stimme {variant.median_similarity:.2f}")
+    if variant.duration_s is not None:
+        teile.append(f"{variant.duration_s:.1f}s")
+    return ", ".join(teile) or "gerendert"
+
+
+def _engine_info(name: str) -> EngineInfo:
+    from cloney.engines.registry import engine_info
+
+    return engine_info(name)

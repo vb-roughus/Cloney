@@ -1,0 +1,94 @@
+{% set done, total = comparison.progress %}
+{% set bestes_cer = comparison.best_cer() %}
+{% set beste_stimme = comparison.best_similarity() %}
+{#
+  Wie bei der Statuskarte des Projekts: die Abfrage-Attribute stehen nur da,
+  solange etwas läuft. Ein leeres hx-trigger fiele auf den Standard zurück --
+  bei einem div ist das der Klick.
+#}
+<div id="vergleich" class="card status" data-fertig="{{ 0 if running else 1 }}"
+     {% if running %}hx-get="/comparisons/{{ comparison.id }}/table"
+     hx-trigger="every 2000ms" hx-swap="outerHTML"{% endif %}>
+
+  <div class="statline">
+    <span class="badge {% if running %}pending{% elif comparison.is_complete %}ok{% else %}warn{% endif %}">
+      {% if running %}<span class="spinner inline" aria-hidden="true"></span> läuft
+      {% elif comparison.is_complete %}fertig{% else %}bereit{% endif %}
+    </span>
+    <span>{{ done }} von {{ total }} Varianten</span>
+  </div>
+  <progress class="fortschritt" value="{{ done }}" max="{{ total or 1 }}">{{ done }} von {{ total }}</progress>
+
+  {% if job and job.message %}
+    <p class="joblog">
+      {% if running %}<span class="spinner inline" aria-hidden="true"></span>{% endif %}
+      {{ job.message }}</p>
+  {% elif running %}
+    <p class="joblog"><span class="spinner inline" aria-hidden="true"></span>
+      Wird vorbereitet. Bei der ersten Variante lädt das Modell, das dauert einen Moment.</p>
+  {% endif %}
+  {% if job and job.error %}<p class="error">{{ job.error }}</p>{% endif %}
+
+  <div class="actions">
+    {% if running %}
+      <button disabled>Läuft &hellip;</button>
+      <span class="muted">Die Tabelle füllt sich von selbst.</span>
+    {% else %}
+      <button hx-post="/comparisons/{{ comparison.id }}/run"
+              hx-target="#vergleich" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-indicator="this">
+        {% include "_spinner.html" %}
+        {% if done %}Offene Varianten rendern{% else %}Vergleich starten{% endif %}
+      </button>
+    {% endif %}
+  </div>
+
+  <table class="vergleich">
+    <tr>
+      <th>Variante</th><th>Regler</th><th>Fehlerrate</th><th>Stimme</th>
+      <th>Dauer</th><th>Tempo</th><th>Anhören</th>
+    </tr>
+    {% for v in comparison.variants %}
+    <tr class="{{ 'fail' if v.status.value == 'failed' }}">
+      <td><strong>{{ v.label }}</strong>
+        {% if v.status.value == 'running' %}
+          <br><span class="muted"><span class="spinner inline" aria-hidden="true"></span> rendert</span>
+        {% elif v.status.value == 'pending' %}<br><span class="muted">offen</span>{% endif %}
+      </td>
+      <td class="muted">{% for key, wert in v.options.items() %}{{ key }}={{ "%g"|format(wert) }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td>
+        {%- if v.median_cer is not none -%}
+          {{ "%.1f"|format(v.median_cer * 100) }}&nbsp;%
+          {% if v.slug in bestes_cer %}<span class="badge ok">beste</span>{% endif %}
+        {%- else -%}<span class="muted">&mdash;</span>{%- endif -%}
+      </td>
+      <td>
+        {%- if v.median_similarity is not none -%}
+          {{ "%.2f"|format(v.median_similarity) }}
+          {% if v.slug in beste_stimme %}<span class="badge ok">beste</span>{% endif %}
+        {%- else -%}<span class="muted">&mdash;</span>{%- endif -%}
+      </td>
+      <td>{% if v.duration_s %}{{ "%.1f"|format(v.duration_s) }}&nbsp;s{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+      <td>
+        {%- set tempo = comparison.chars_per_second(v.slug) -%}
+        {% if tempo %}{{ "%.1f"|format(tempo) }} Zeichen/s{% else %}<span class="muted">&mdash;</span>{% endif %}
+      </td>
+      <td>
+        {% if v.is_done %}
+          <audio controls preload="none"
+                 src="/comparisons/{{ comparison.id }}/variants/{{ v.slug }}/audio"></audio>
+        {% elif v.error %}<span class="error">{{ v.error }}</span>
+        {% else %}<span class="muted">&mdash;</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <p class="muted">
+    Markiert ist der Spitzenreiter je Spalte, nicht eine Gesamtnote: wie eine halbe Prozent
+    Fehlerrate gegen zwei Hundertstel Ähnlichkeit aufzuwiegen wäre, kann niemand belegen.
+    Die Zahlen engen die Auswahl ein &mdash; entschieden wird am Ohr.
+    Übliches Sprechtempo im Deutschen liegt zwischen
+    {{ "%.0f"|format(typical_rate[0]) }} und {{ "%.0f"|format(typical_rate[1]) }} Zeichen/s.
+  </p>
+</div>

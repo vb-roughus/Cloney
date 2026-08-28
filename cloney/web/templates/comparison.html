@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ comparison.name }} &mdash; Cloney{% endblock %}
+{% block content %}
+<h1>{{ comparison.name }}</h1>
+
+<details class="card">
+  <summary>Was verglichen wird</summary>
+  <table class="kv">
+    <tr><th>Stimme</th><td>{{ comparison.voice }}</td></tr>
+    <tr><th>Engine</th><td>{{ comparison.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
+    <tr><th>Textprobe</th><td><span class="spoken">{{ comparison.text }}</span></td></tr>
+    <tr><th>Zeichen</th><td>{{ comparison.text | length }}</td></tr>
+  </table>
+  <form method="post" action="/comparisons/{{ comparison.id }}/delete"
+        onsubmit="return confirm('Vergleich {{ comparison.name }} samt erzeugtem Ton löschen?')">
+    <button class="small gefahr" type="submit">Vergleich löschen</button>
+  </form>
+</details>
+
+{% include "_comparison_table.html" %}
+{% endblock %}

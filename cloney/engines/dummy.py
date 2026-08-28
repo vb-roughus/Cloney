@@ -18,7 +18,7 @@ import hashlib
 
 import numpy as np
 
-from cloney.engines.base import EngineInfo, VoiceRef
+from cloney.engines.base import EngineInfo, EngineOption, VoiceRef
 
 #: Kennung -> (Text, Seed). Prozessweit, damit ASR und Engine sich nicht kennen müssen.
 _REGISTRY: dict[str, tuple[str, int]] = {}
@@ -66,18 +66,47 @@ class DummyEngine:
         requires_ref_text=False,
         supported_tags=frozenset({"freundlich", "traurig", "schnell", "langsam"}),
         description="Synthetisches Testsignal ohne Modell. Für CI und Entwicklung ohne GPU.",
+        # Auch die Dummy-Engine hat Regler. Nicht als Spielerei: erst dadurch
+        # lässt sich der Weg einer Reglerstellung von der Oberfläche über das
+        # Manifest bis in die Engine prüfen -- und ein Vergleichslauf ohne GPU
+        # überhaupt testen.
+        options=(
+            EngineOption(
+                key="speed",
+                label="Sprechtempo",
+                minimum=0.5,
+                maximum=1.5,
+                step=0.05,
+                default=1.0,
+                help="Streckt oder staucht die Länge des Testsignals.",
+            ),
+            EngineOption(
+                key="pitch",
+                label="Grundton",
+                minimum=0,
+                maximum=100,
+                step=10,
+                default=0.0,
+                integer=True,
+                help="Hebt den Grundton in Hertz an.",
+            ),
+        ),
     )
+
+    def __init__(self, speed: float = 1.0, pitch: float = 0.0) -> None:
+        self.speed = speed
+        self.pitch = pitch
 
     def synthesize(self, text: str, voice: VoiceRef, seed: int) -> np.ndarray:
         sample_rate = self.info.sample_rate
-        seconds = max(0.5, len(text) / _CHARS_PER_SECOND)
+        seconds = max(0.5, len(text) / (_CHARS_PER_SECOND * self.speed))
         n = int(seconds * sample_rate)
 
         key = hashlib.sha1(f"{text}|{seed}|{voice.name}".encode()).hexdigest()
         rng = np.random.default_rng(int(key[:16], 16))
 
         t = np.arange(n, dtype=np.float32) / sample_rate
-        base = 110.0 + rng.uniform(0, 60)
+        base = 110.0 + rng.uniform(0, 60) + self.pitch
         signal = np.zeros(n, dtype=np.float32)
         for harmonic, weight in enumerate((1.0, 0.5, 0.25), start=1):
             signal += weight * np.sin(2 * np.pi * base * harmonic * t)

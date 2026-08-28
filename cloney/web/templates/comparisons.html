@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Vergleiche &mdash; Cloney{% endblock %}
+{% block content %}
+<h1>Vergleichslauf</h1>
+<p class="muted">
+  Welche Reglerstellung zu einer Stimme passt, lässt sich nicht ausrechnen &mdash; aber messen.
+  Ein Vergleich rendert dieselbe kurze Textprobe einmal je Einstellung und stellt die
+  Ergebnisse nebeneinander: Fehlerrate, Stimmähnlichkeit, Dauer und Tempo, dazu die Tonspuren.
+  Alle Varianten teilen sich dieselben Seeds, damit sich zwei Zeilen wirklich nur im Regler
+  unterscheiden und nicht zugleich im Zufall.
+</p>
+
+{% if not voices %}
+  <p class="notice">Noch keine Referenzstimme vorhanden.
+    <a href="/voices">Zuerst eine Stimme anlegen.</a></p>
+{% else %}
+<form method="post" action="/comparisons" class="card">
+  <label>Name
+    <input type="text" name="name" required placeholder="Tempo an Annas Stimme">
+  </label>
+  <div class="row">
+    <label>Stimme
+      <select name="voice">
+        {% for v in voices %}<option value="{{ v.name }}">{{ v.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Engine
+      <select name="engine" hx-get="/comparisons/fields" hx-target="#raster"
+              hx-swap="outerHTML" hx-trigger="change" hx-include="this">
+        {% for e in engines %}
+          <option value="{{ e.name }}" {% if e.name == default_engine %}selected{% endif %}>
+            {{ e.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <label>Textprobe
+    <textarea name="text" rows="4" required
+      placeholder="Zwei bis drei Sätze genügen."></textarea>
+    <span class="muted">
+      Kurz halten: die Probe wird je Variante einmal vollständig gerendert.
+      Ein paar Sätze mit Ziffern und Fremdwörtern sagen mehr als eine ganze Seite.
+    </span>
+  </label>
+
+  <h3>Raster</h3>
+  {% include "_grid_fields.html" %}
+
+  <button type="submit">Vergleich anlegen</button>
+  <p class="muted">
+    Angelegt wird das Kreuzprodukt aller angegebenen Werte, höchstens
+    {{ max_variants }} Varianten. Gerendert wird erst auf Knopfdruck.
+  </p>
+</form>
+{% endif %}
+
+<h2>Bisherige Vergleiche</h2>
+{% if comparisons %}
+<table class="projects">
+  <tr><th>Name</th><th>Stimme</th><th>Engine</th><th>Varianten</th><th>Angelegt</th></tr>
+  {% for c in comparisons %}
+  <tr>
+    <td><a href="/comparisons/{{ c.id }}">{{ c.name }}</a></td>
+    <td>{{ c.voice }}</td><td>{{ c.engine }}</td>
+    <td>{{ c.progress[0] }}/{{ c.progress[1] }}</td>
+    <td class="muted">{{ c.created_at }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Noch keine Vergleiche.</p>{% endif %}
+{% endblock %}
