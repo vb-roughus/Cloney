@@ -9,6 +9,7 @@ Langform-Produktion sonst scheitert.
 
 from __future__ import annotations
 
+import mimetypes
 from html import escape
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from cloney.config import Settings, get_settings
+from cloney.core.audio import describe_audio
 from cloney.core.compare import MAX_VARIANTS, Comparison
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
@@ -422,7 +424,7 @@ def create_app(
         voices.set_transcript(name, transcript)
         check = voices.recheck(name)
         return templates.TemplateResponse(
-            request, "voices.html", {"voices": voices.list_all(), "check": check, "geprueft": name}
+            request, "voices.html", _voice_context(check=check, geprueft=name)
         )
 
     @app.post("/voices/{name}/delete")
@@ -442,9 +444,19 @@ def create_app(
 
     @app.get("/voices/{name}/audio")
     def voice_audio(name: str) -> FileResponse:
+        """Die Aufnahme so ausliefern, wie sie hereinkam.
+
+        Der Medientyp ergibt sich aus der Endung: seit die Datei unverändert
+        abgelegt wird, ist sie nicht mehr zwingend eine WAV, und ein falsch
+        angegebener Typ hindert manche Browser am Abspielen.
+        """
         if not voices.exists(name):
             raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
-        return FileResponse(voices.get(name).audio_path, media_type="audio/wav")
+        pfad = voices.get(name).audio_path
+        # mimetypes nennt WAV je nach System 'audio/x-wav'. Der eingetragene
+        # Name ist 'audio/wav', und den verstehen alle Browser.
+        typ = "audio/wav" if pfad.suffix.lower() == ".wav" else mimetypes.guess_type(pfad.name)[0]
+        return FileResponse(pfad, media_type=typ or "application/octet-stream")
 
     # -- Vergleichsläufe --------------------------------------------------
 
@@ -591,11 +603,19 @@ def create_app(
 
     # -- Stimmen ----------------------------------------------------------
 
+    def _voice_context(**extra: object) -> dict[str, object]:
+        vorhandene = voices.list_all()
+        formate = {}
+        for stimme in vorhandene:
+            try:
+                formate[stimme.name] = describe_audio(stimme.audio_path)
+            except Exception:  # noqa: BLE001 - eine unlesbare Datei darf die Liste nicht kippen
+                continue
+        return {"voices": vorhandene, "formate": formate, "check": None, **extra}
+
     @app.get("/voices", response_class=HTMLResponse)
     def voice_list(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(
-            request, "voices.html", {"voices": voices.list_all(), "check": None}
-        )
+        return templates.TemplateResponse(request, "voices.html", _voice_context())
 
     @app.post("/voices", response_class=HTMLResponse)
     async def add_voice(
@@ -622,9 +642,7 @@ def create_app(
         finally:
             temp.unlink(missing_ok=True)
 
-        return templates.TemplateResponse(
-            request, "voices.html", {"voices": voices.list_all(), "check": check}
-        )
+        return templates.TemplateResponse(request, "voices.html", _voice_context(check=check))
 
     return app
 

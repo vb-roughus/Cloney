@@ -439,6 +439,37 @@ Die Probe kurz halten: sie wird je Variante einmal vollständig gerendert. Ein
 Kreuzprodukt ist auf zwölf Varianten gedeckelt, damit aus drei gut gemeinten
 Achsen kein Lauf über Stunden wird.
 
+### Was mit der Tonqualität passiert -- und wo die Grenze liegt
+
+**Die Referenzaufnahme bleibt unangetastet.** Sie wird gelesen, um sie zu prüfen,
+und ansonsten Byte für Byte abgelegt: Samplerate, Kanäle und Auflösung wie in der
+Quelle, samt Dateiendung. Was in der Oberfläche abgespielt wird, ist die eigene
+Datei. Ältere Fassungen von Cloney haben sie nach Mono gemischt und auf 16 Bit
+gebracht -- die Referenz im Speicher klang danach schlechter als das Original,
+ohne dass irgendwer davon etwas gehabt hätte: F5-TTS mischt und tastet ohnehin
+selbst um, und zwar besser aus dem Original als aus einer bereits verkleinerten
+Fassung.
+
+**Die erzeugte Spur kann die Aufnahme trotzdem nicht erreichen.** F5-TTS ist ein
+24-kHz-Modell: der Vocoder liefert 24000 Samples je Sekunde in Mono, und mehr
+gibt es nicht herzustellen. Aus einer 48-kHz-Aufnahme wird eine Spur mit der
+halben Bandbreite -- alles über 12 kHz fehlt. Das ist keine Einstellung, die
+sich hochdrehen ließe, sondern die Auflösung, in der das Modell rechnet. Der
+einzige Weg dorthin wäre ein Modell mit höherer Ausgaberate; die Referenz liegt
+dafür im Original bereit.
+
+Innerhalb dieser Grenze wird nichts verschenkt:
+
+- Chunks und fertige Spur werden mit **24 Bit** geschrieben. Ein Chunk wird
+  geschrieben, für den Zusammenbau wieder gelesen, angeglichen und erneut
+  geschrieben; bei 16 Bit quantisiert das zweimal. Hörbar ist das kaum,
+  vermeidbar aber umsonst.
+- Die Lautheitsangleichung nimmt einen Satz lieber **ein Dezibel zurück, als
+  seine Spitzen abzuschneiden**. Sprache hat einen hohen Scheitelfaktor; die
+  Anhebung auf -16 LUFS kann die lautesten Stellen über die Vollaussteuerung
+  heben. Vorher wurde dort hart abgeschnitten -- hörbare Verzerrung. Jetzt gilt
+  eine Grenze von -1 dBFS, und ein etwas zu leiser Satz ist das kleinere Übel.
+
 ### Wenn am Anfang ein Stück der Referenz zu hören ist
 
 F5-TTS erzeugt Referenz und neuen Text in einem Stück und trennt sie danach an

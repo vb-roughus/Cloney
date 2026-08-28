@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,47 @@ import soundfile as sf
 
 #: pyloudnorm braucht mindestens einen vollen 400-ms-Block für die Messung.
 _MIN_LUFS_SECONDS = 0.45
+
+#: Auflösung, in der erzeugter Ton geschrieben wird.
+#:
+#: Die Modelle liefern Gleitkomma. Ein Chunk wird geschrieben, für den
+#: Zusammenbau wieder gelesen, angeglichen und erneut geschrieben -- bei
+#: 16 Bit quantisiert das zweimal. Hörbar ist das kaum, vermeidbar aber
+#: umsonst, und "so gut wie das Modell es hergibt" ist die richtige Vorgabe
+#: für eine Zwischendatei.
+DEFAULT_SUBTYPE = "PCM_24"
+
+#: Wieviel Luft bis zur Vollaussteuerung nach der Lautheitsangleichung bleibt.
+#: Sprache hat einen hohen Scheitelfaktor; ohne diese Grenze könnte die
+#: Anhebung auf die Ziel-Lautheit die Spitzen abschneiden -- und ein
+#: abgeschnittener Spitzenwert ist hörbare Verzerrung, kein Rundungsfehler.
+PEAK_CEILING_DBFS = -1.0
+
+
+@dataclass(frozen=True)
+class AudioInfo:
+    """Was in einer Tondatei steckt, ohne sie zu laden."""
+
+    sample_rate: int
+    channels: int
+    subtype: str
+    format: str
+    duration_s: float
+
+    def beschreibung(self) -> str:
+        kanaele = {1: "Mono", 2: "Stereo"}.get(self.channels, f"{self.channels} Kanäle")
+        return f"{self.sample_rate} Hz, {kanaele}, {self.subtype}"
+
+
+def describe_audio(path: Path | str) -> AudioInfo:
+    info = sf.info(str(path))
+    return AudioInfo(
+        sample_rate=int(info.samplerate),
+        channels=int(info.channels),
+        subtype=str(info.subtype),
+        format=str(info.format),
+        duration_s=float(info.duration),
+    )
 
 
 def to_mono(audio: np.ndarray) -> np.ndarray:
@@ -23,10 +65,12 @@ def read_wav(path: Path | str) -> tuple[np.ndarray, int]:
     return to_mono(audio), int(sample_rate)
 
 
-def write_wav(path: Path | str, audio: np.ndarray, sample_rate: int) -> None:
+def write_wav(
+    path: Path | str, audio: np.ndarray, sample_rate: int, subtype: str = DEFAULT_SUBTYPE
+) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(str(path), np.clip(audio, -1.0, 1.0).astype(np.float32), sample_rate, subtype="PCM_16")
+    sf.write(str(path), np.clip(audio, -1.0, 1.0).astype(np.float32), sample_rate, subtype=subtype)
 
 
 def duration_seconds(audio: np.ndarray, sample_rate: int) -> float:
@@ -82,13 +126,31 @@ def measure_lufs(audio: np.ndarray, sample_rate: int) -> float | None:
     return None if np.isinf(loudness) or np.isnan(loudness) else loudness
 
 
-def normalize_lufs(audio: np.ndarray, sample_rate: int, target_lufs: float) -> np.ndarray:
-    """Hebt/senkt auf die Ziel-Lautheit. Zu kurze oder stille Chunks bleiben unberührt."""
+def normalize_lufs(
+    audio: np.ndarray,
+    sample_rate: int,
+    target_lufs: float,
+    peak_ceiling_db: float = PEAK_CEILING_DBFS,
+) -> np.ndarray:
+    """Hebt/senkt auf die Ziel-Lautheit. Zu kurze oder stille Chunks bleiben unberührt.
+
+    Reicht die Aussteuerung für die Ziel-Lautheit nicht, gewinnt die Spitze:
+    der Chunk wird so weit zurückgenommen, dass er unter die Grenze passt, und
+    bleibt damit etwas leiser als gewollt. Vorher wurde stattdessen bei
+    Vollaussteuerung abgeschnitten -- das hätte die lautesten Stellen verzerrt,
+    und ein um ein Dezibel zu leiser Satz ist das kleinere Übel.
+    """
     loudness = measure_lufs(audio, sample_rate)
     if loudness is None:
         return audio
     gain = 10.0 ** ((target_lufs - loudness) / 20.0)
-    return np.clip(audio * gain, -1.0, 1.0).astype(np.float32)
+    verstaerkt = audio * gain
+
+    grenze = 10.0 ** (peak_ceiling_db / 20.0)
+    spitze = float(np.max(np.abs(verstaerkt))) if verstaerkt.size else 0.0
+    if spitze > grenze:
+        verstaerkt *= grenze / spitze
+    return verstaerkt.astype(np.float32)
 
 
 def apply_edge_fade(audio: np.ndarray, sample_rate: int, fade_ms: int = 12) -> np.ndarray:
