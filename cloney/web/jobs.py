@@ -63,7 +63,7 @@ class JobRunner:
         job = self.get(project_id)
         return bool(job and job.running)
 
-    def start(self, project_root: Path, asr_factory=None) -> Job:  # noqa: ANN001
+    def start(self, project_root: Path, asr_factory=None, embedder_factory=None) -> Job:  # noqa: ANN001
         project = Project.load(project_root)
         with self._lock:
             existing = self._jobs.get(project.id)
@@ -84,6 +84,7 @@ class JobRunner:
                     lambda: create_engine(project.engine, settings, project.engine_options),
                     asr_factory,
                     job.update,
+                    embedder_factory,
                 )
             except Exception as exc:  # noqa: BLE001 - der Fehler gehört in die UI
                 job.error = str(exc)[:500]

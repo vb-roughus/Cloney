@@ -316,6 +316,34 @@ Die Reglerstellung steht im Projekt-Manifest — ein Lauf bleibt damit auch
 nachträglich reproduzierbar. Welche Regler es gibt, bestimmt die Engine selbst;
 die Oberfläche zeigt, was da ist.
 
+### Zwei Kennzahlen, nicht eine
+
+Die **Fehlerrate** (CER) vergleicht die Rückschrift der Spracherkennung mit der
+Sprechfassung. Sie prüft damit, ob die richtigen Wörter herauskommen — über die
+Stimme sagt sie nichts. Ein Satz kann fehlerfrei sein und nach jemand anderem
+klingen.
+
+Diese Lücke schließt die **Stimmähnlichkeit**: die Einbettungen von Referenz und
+Ergebnis werden verglichen (ECAPA-TDNN, rund 20 MB, eigene Phase nach der
+Spracherkennung). 1,00 heißt identisch.
+
+```
+ #     CER  Stimme  Text
+ 0   0.000    0.91  Am dritten Mai zweitausendvierundzwanzig begann alles.
+ 1   0.041    0.62  Doktor Meier sagte zum Beispiel nichts dazu.
+```
+
+Satz 1 wäre nach der Fehlerrate allein unauffällig — die Ähnlichkeit zeigt, dass
+er aus der Rolle fällt.
+
+**Markiert wird erst mit gesetzter Schwelle.** `CLONEY_SIMILARITY_THRESHOLD` steht
+auf 0, es wird also nur gemessen und angezeigt. Welchen Wert ein guter Klon
+erreicht, hängt an Modell und Aufnahme; eine ungeprüfte Vorgabe erzeugte
+Fehlalarme und lenkte vom Wesentlichen ab. Nach ein paar Läufen den niedrigsten
+Wert unter den guten Sätzen ablesen und die Schwelle knapp darunter setzen.
+
+Installation: `pip install -e ".[similarity]"`.
+
 ### Wenn am Anfang ein Stück der Referenz zu hören ist
 
 F5-TTS erzeugt Referenz und neuen Text in einem Stück und trennt sie danach an

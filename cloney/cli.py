@@ -55,6 +55,19 @@ def _parse_options(rohwerte: list[str] | None, info) -> dict[str, float]:  # noq
     return info.clean_options(gesammelt)
 
 
+def _embedder_factory(settings: Settings, enabled: bool):  # noqa: ANN202
+    """Fabrik für den Stimmvergleich, oder None wenn er nicht gewünscht ist."""
+    if not enabled or not settings.check_speaker_similarity:
+        return None
+
+    def make():  # noqa: ANN202
+        from cloney.speaker.ecapa import EcapaEmbedder
+
+        return EcapaEmbedder(settings.speaker_model)
+
+    return make
+
+
 def _echo(event: ProgressEvent) -> None:
     progress = f" [{event.done}/{event.total}]" if event.total else ""
     typer.echo(f"  {event.phase}{progress}: {event.message}")
@@ -317,6 +330,7 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
             lambda: create_engine(engine_name, settings, project.engine_options),
             _asr_factory(settings, qc),
             _echo,
+            _embedder_factory(settings, qc),
         )
     except (RuntimeError, ValueError) as exc:
         # Fehlendes Modell, nicht erreichbarer Server, unbekannte Engine: alles
@@ -332,6 +346,9 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
     typer.echo(f"Fertig: {project.output_path}")
     if median is not None:
         typer.echo(f"Median-Fehlerrate: {median:.1%}")
+    aehnlichkeit = project.median_similarity()
+    if aehnlichkeit is not None:
+        typer.echo(f"Median-Stimmähnlichkeit: {aehnlichkeit:.2f} (1.00 = identisch)")
     flagged = project.flagged()
     if flagged:
         indices = ", ".join(str(c.index + 1) for c in flagged)
@@ -519,8 +536,9 @@ def web(
     typer.secho("Beenden mit Strg+C", fg=typer.colors.BRIGHT_BLACK)
     if open_browser:
         open_browser_when_ready(url)
+    anwendung = create_app(settings, _asr_factory(settings, qc), _embedder_factory(settings, qc))
     try:
-        uvicorn.run(create_app(settings, _asr_factory(settings, qc)), host=host, port=port)
+        uvicorn.run(anwendung, host=host, port=port)
     except KeyboardInterrupt:
         typer.echo("")
 

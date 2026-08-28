@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     trim_reference_bleed: bool = True
     min_bleed_seconds: float = 0.15
 
+    # --- Stimmähnlichkeit --------------------------------------------------
+    # Die Fehlerrate prüft die Wörter, nicht die Stimme. Dieser Vergleich
+    # schließt die Lücke.
+    check_speaker_similarity: bool = True
+    # Bewusst 0: gemessen und angezeigt wird immer, markiert wird erst, wenn
+    # hier ein Wert steht. Welche Ähnlichkeit ein guter Klon erreicht, hängt am
+    # Modell und an der Aufnahme -- eine ungeprüfte Schwelle würde Fehlalarme
+    # erzeugen und vom Wesentlichen ablenken. Nach ein paar Läufen den
+    # niedrigsten Wert guter Sätze ablesen und knapp darunter setzen.
+    similarity_threshold: float = 0.0
+    speaker_model: str = "speechbrain/spkrec-ecapa-voxceleb"
+
     # --- Assembly ---------------------------------------------------------
     target_lufs: float = -16.0
     pause_sentence_ms: int = 350
