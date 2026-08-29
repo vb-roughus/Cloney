@@ -286,3 +286,51 @@ def test_tempo_wird_auf_dem_wortlaut_gerechnet(tmp_path: Path) -> None:
     assert utterance.chars_per_second == pytest.approx(
         len(utterance.raw_text) / utterance.duration_s
     )
+
+
+# -- Geschnittene Aufnahmen: exakte Null ist kein Raumton -------------------
+
+
+def _mit_vorlauf(rausch_db: float | None, vorlauf_s: float = 0.5) -> np.ndarray:
+    """Wie ein Schnittprogramm sie hinterlässt: harte Null am Anfang, dann die
+    Lesung -- mit oder ohne Raumton in den Pausen."""
+    rng = np.random.default_rng(2)
+    kern = np.concatenate([_sprache(7.0), _stille(0.45), _sprache(5.5), _stille(0.45)])
+    if rausch_db is not None:
+        kern = (kern + 10 ** (rausch_db / 20) * rng.standard_normal(len(kern))).astype(np.float32)
+    return np.concatenate([_stille(vorlauf_s), kern]).astype(np.float32)
+
+
+@pytest.mark.parametrize("rausch_db", [-70.0, -45.0, -34.0, None])
+def test_harte_null_am_dateianfang_verdirbt_die_schaetzung_nicht(rausch_db: float | None) -> None:
+    """Eine halbe Sekunde exakte Null zog den Grundpegel auf -240 dBFS und die
+    Schwelle auf -230 -- damit galt jedes Rauschen als Sprache, und die ganze
+    Lesung wurde ein Block ohne Pause. Genau das kam beim zweiten Anlauf des
+    ersten echten Datensatzes heraus."""
+    gut, schlecht = find_segments(_mit_vorlauf(rausch_db), SR)
+
+    assert len(gut) == 2
+    assert schlecht == []
+
+
+def test_grundpegel_ignoriert_exakt_stille_frames() -> None:
+    """Sonst misst man das Schnittprogramm statt des Zimmers."""
+    from cloney.core.dataset import silence_levels
+
+    audio = _mit_vorlauf(-45.0)
+    rahmen = audio[: len(audio) - len(audio) % 240].reshape(-1, 240)
+    rms = np.sqrt(np.mean(rahmen.astype(np.float64) ** 2, axis=1))
+    pegel = 20 * np.log10(np.maximum(rms, 1e-12))
+
+    grund, _ = silence_levels(pegel)
+    assert grund == pytest.approx(-45.0, abs=3.0)
+
+
+def test_meldung_nennt_geschnittene_stille_statt_einer_sinnlosen_zahl() -> None:
+    """'Raumton -240 dBFS' ist keine Aussage über die Aufnahme, sondern über
+    die Rechengenauigkeit."""
+    from cloney.core.dataset import LevelReport
+
+    assert LevelReport(-21.4, -14.0, digital_silence=True).beschreibung() == "geschnittene Stille"
+    assert LevelReport(-45.0, -14.0).beschreibung() == "Raumton -45 dBFS"
+    assert "geschnittene Stille" in LevelReport(-45.0, -14.0, True).beschreibung()

@@ -30,6 +30,7 @@ import csv
 import os
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -74,6 +75,17 @@ SILENCE_MARGIN_DB = 10.0
 #: Höher darf die selbst bestimmte Schwelle nicht liegen -- sonst schneidet eine
 #: durchweg laute Aufnahme mitten in leisen Wörtern.
 MAX_SILENCE_DB = -20.0
+
+#: Und nicht tiefer. Ohne diese Grenze kippt die Rechnung ins Gegenteil: eine
+#: bearbeitete Aufnahme mit exakt stillen Stellen ergibt einen Grundpegel von
+#: -240 dBFS, eine Schwelle von -230 -- und damit gilt jedes Rauschen als
+#: Sprache, sodass die ganze Lesung ein einziger Block ohne Pause wird.
+MIN_SILENCE_DB = -55.0
+
+#: Darunter ist ein Frame nicht leise, sondern numerisch null. Solche Frames
+#: stammen vom Schnittprogramm, nicht aus dem Zimmer, und taugen nicht zur
+#: Schätzung des Grundpegels.
+DIGITAL_ZERO_DB = -100.0
 
 #: Unterschreitet der Abstand zwischen leisen und lauten Stellen diesen Wert,
 #: enthält die Aufnahme keine brauchbare Stille.
@@ -216,7 +228,7 @@ def find_segments(
     silence_db: float | None = None,
     min_pause_ms: int = MIN_PAUSE_MS,
     split_pause_ms: int = SPLIT_PAUSE_MS,
-    levels: list[float] | None = None,
+    levels: list[LevelReport] | None = None,
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int, str]]]:
     """Sprachbereiche zwischen den Pausen finden.
 
@@ -239,16 +251,21 @@ def find_segments(
         pegel = 20.0 * np.log10(np.maximum(rms, 1e-12))
 
     grundpegel, sprechpegel = silence_levels(pegel)
+    hat_digitale_stille = float(np.mean(pegel <= DIGITAL_ZERO_DB)) >= _DIGITAL_SILENCE_SHARE
     if levels is not None:
         # Der Aufrufer will die gemessenen Pegel sehen -- sie sagen mehr über
         # die Aufnahme als jede Zahl, die wir selbst gewählt hätten.
-        levels[:] = [grundpegel, sprechpegel]
+        levels[:] = [LevelReport(grundpegel, sprechpegel, hat_digitale_stille)]
     if silence_db is None:
-        silence_db = min(grundpegel + SILENCE_MARGIN_DB, MAX_SILENCE_DB)
+        silence_db = min(max(grundpegel + SILENCE_MARGIN_DB, MIN_SILENCE_DB), MAX_SILENCE_DB)
         if sprechpegel < SILENCE_FLOOR_DB:
             # Nichts zu hören. Kein Befund, sondern schlicht keine Aufnahme.
             return [], []
-        if sprechpegel - grundpegel < MIN_DYNAMIC_RANGE_DB:
+        # Enthält die Aufnahme exakt stille Stellen, ist die Frage nach der
+        # Dynamik erledigt: dann gibt es Pausen, und zwar unbestreitbare. Der
+        # Grundpegel ist dort aus dem Sprachanteil geschätzt und entsprechend
+        # hoch -- das darf keine Beschwerde auslösen.
+        if not hat_digitale_stille and sprechpegel - grundpegel < MIN_DYNAMIC_RANGE_DB:
             # Zwischen leise und laut liegt fast nichts: entweder durchgehend
             # gesprochen oder stark komprimiert. Ein Schnitt wäre geraten.
             return [], [
@@ -291,6 +308,29 @@ def find_segments(
 #: die kürzeste brauchbare Pause -- gesucht ist ja genau deren Pegel.
 _FLOOR_WINDOW = 20
 
+#: Ab diesem Anteil exakt stiller Frames gilt eine Aufnahme als geschnitten.
+_DIGITAL_SILENCE_SHARE = 0.005
+
+
+@dataclass(frozen=True)
+class LevelReport:
+    """Was die Pegel einer Aufnahme über sie aussagen."""
+
+    floor_db: float
+    speech_db: float
+    #: Enthält die Aufnahme exakt stille Stellen? Dann stammt die Stille vom
+    #: Schnittprogramm, und der Grundpegel ist aus dem Sprachanteil geschätzt.
+    digital_silence: bool = False
+
+    def beschreibung(self) -> str:
+        """Ein Satzteil für die Ausgabe -- ohne eine Zahl zu nennen, die nichts bedeutet."""
+        if self.digital_silence and self.floor_db > -30.0:
+            # Der Grundpegel kommt hier aus der Sprache, nicht aus dem Zimmer.
+            return "geschnittene Stille"
+        if self.digital_silence:
+            return f"Raumton {self.floor_db:.0f} dBFS, dazu geschnittene Stille"
+        return f"Raumton {self.floor_db:.0f} dBFS"
+
 
 def silence_levels(pegel: np.ndarray) -> tuple[float, float]:
     """Grund- und Sprechpegel einer Aufnahme in dBFS.
@@ -308,10 +348,18 @@ def silence_levels(pegel: np.ndarray) -> tuple[float, float]:
     """
     if pegel.size == 0:
         return -120.0, -120.0
-    if pegel.size < _FLOOR_WINDOW:
-        grund = float(pegel.min())
+
+    # Exakt stille Frames stammen vom Schnittprogramm, nicht aus dem Zimmer.
+    # Schon eine halbe Sekunde davon am Dateianfang zöge den Grundpegel auf
+    # -240 dBFS und machte jede Schätzung wertlos.
+    nutzbar = pegel[pegel > DIGITAL_ZERO_DB]
+    if nutzbar.size == 0:
+        return -120.0, -120.0
+
+    if nutzbar.size < _FLOOR_WINDOW:
+        grund = float(nutzbar.min())
     else:
-        sicht = np.lib.stride_tricks.sliding_window_view(pegel, _FLOOR_WINDOW)
+        sicht = np.lib.stride_tricks.sliding_window_view(nutzbar, _FLOOR_WINDOW)
         grund = float(np.median(sicht, axis=1).min())
     return grund, float(np.percentile(pegel, 95))
 
@@ -428,10 +476,10 @@ def build_dataset(
     for quelle in sources:
         audio, sample_rate = read_wav(quelle)
         raten.add(sample_rate)
-        pegel: list[float] = []
+        pegel: list[LevelReport] = []
         gut, schlecht = find_segments(audio, sample_rate, min_seconds, max_seconds, levels=pegel)
-        raumton = f", Raumton {pegel[0]:.0f} dBFS" if pegel else ""
-        melde(f"{quelle.name}: {len(gut)} Abschnitte, {len(schlecht)} verworfen{raumton}")
+        klang = f", {pegel[0].beschreibung()}" if pegel else ""
+        melde(f"{quelle.name}: {len(gut)} Abschnitte, {len(schlecht)} verworfen{klang}")
 
         for start, ende, grund in schlecht:
             verworfen.append(

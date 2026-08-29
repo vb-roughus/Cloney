@@ -661,9 +661,22 @@ normalisierten Aufnahme keine Seltenheit --, ist plötzlich *nichts* mehr still,
 und die ganze Lesung gilt als ein einziger Bereich ohne Schnittstelle. Cloney
 misst deshalb den Grundpegel als leiseste *anhaltende* Stelle und setzt die
 Schwelle zehn Dezibel darüber. An synthetischen Aufnahmen mit Raumton von -70
-bis -30 dBFS findet das durchgehend genau die echten Pausen. Der gemessene
-Raumton steht in der Ausgabe -- er sagt mehr über die Aufnahme als jede Schwelle,
-die wir vorgeben könnten.
+bis -30 dBFS findet das durchgehend genau die echten Pausen.
+
+Zwei Fallen sind dabei umgangen, in die beide Richtungen führen:
+
+- **Exakt stille Stellen zählen nicht mit.** Eine halbe Sekunde harte Null am
+  Dateianfang -- was jedes Schnittprogramm hinterlässt -- ergäbe einen
+  Grundpegel von -240 dBFS und eine Schwelle von -230. Damit gälte jedes
+  Rauschen als Sprache, und die Lesung wäre wieder ein Block ohne Pause. Solche
+  Frames stammen vom Programm, nicht aus dem Zimmer, und bleiben deshalb bei der
+  Schätzung außen vor.
+- **Die Schwelle bleibt in einem sinnvollen Band** (-55 bis -20 dBFS), damit
+  weder eine sehr leise noch eine durchweg laute Aufnahme sie ins Absurde zieht.
+
+Was gemessen wurde, steht in der Ausgabe -- „Raumton -34 dBFS" oder
+„geschnittene Stille". Das sagt mehr über die Aufnahme als jede Schwelle, die
+wir vorgeben könnten.
 
 **Der Text durchläuft dieselbe Normalisierung wie bei der Synthese.** Die
 Spracherkennung schreibt „3. Mai", gesprochen wurde „dritten Mai". Trainiert
