@@ -43,6 +43,21 @@ class AudioInfo:
         return f"{self.sample_rate} Hz, {kanaele}, {self.subtype}"
 
 
+def media_type(path: Path | str) -> str:
+    """MIME-Typ einer Tondatei.
+
+    Für WAV steht hier fest ``audio/wav``: ``mimetypes`` liefert je nach System
+    ``audio/x-wav``, und der eingetragene Name ist der, den Browser und fremde
+    Dienste ohne Rückfrage annehmen.
+    """
+    import mimetypes
+
+    suffix = Path(path).suffix.lower()
+    if suffix == ".wav":
+        return "audio/wav"
+    return mimetypes.guess_type(Path(path).name)[0] or "application/octet-stream"
+
+
 def describe_audio(path: Path | str) -> AudioInfo:
     info = sf.info(str(path))
     return AudioInfo(

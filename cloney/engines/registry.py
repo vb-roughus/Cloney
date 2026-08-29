@@ -19,6 +19,7 @@ def _make_higgs(settings: Settings, options: Options) -> TTSEngine:
         model=settings.higgs_model,
         timeout_s=settings.higgs_timeout_s,
         reference_mode=settings.higgs_reference_mode,
+        voice=settings.higgs_voice,
         temperature=options.get("temperature", settings.higgs_temperature),
         top_k=int(options.get("top_k", settings.higgs_top_k)),
         max_new_tokens=settings.higgs_max_new_tokens,

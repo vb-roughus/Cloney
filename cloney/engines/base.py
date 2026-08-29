@@ -66,6 +66,12 @@ class EngineInfo:
     max_reference_seconds: float | None = None
     #: Regler, die diese Engine anbietet.
     options: tuple[EngineOption, ...] = ()
+    #: Liefert dieselbe Eingabe mit demselben Seed dasselbe Audio? Manche
+    #: Engines laufen über eine Schnittstelle, die gar keinen Seed entgegennimmt
+    #: -- dort würfelt jeder Aufruf neu. Das Neuwürfeln eines Satzes funktioniert
+    #: weiterhin, das Wiederherstellen eines früheren Ergebnisses nicht. Wer das
+    #: verschweigt, verspricht eine Reproduzierbarkeit, die es nicht gibt.
+    reproducible_seed: bool = True
     #: Leitet die Engine ihr Sprechtempo aus der Referenzaufnahme ab? Dann ist
     #: ein zügig gesprochenes Vorbild der Grund für zügige Ausgabe, und die
     #: Oberfläche kann den passenden Reglerwert vorrechnen. Wieder ein

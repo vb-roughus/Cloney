@@ -55,10 +55,16 @@ class Settings(BaseSettings):
 
     # --- Higgs Audio v3 über sgl-omni ------------------------------------
     higgs_base_url: str = "http://localhost:8000/v1"
-    higgs_model: str = "higgs-audio-v3-tts"
+    # Muss dem --model-path des Servers entsprechen; sonst lehnt er die Anfrage ab.
+    higgs_model: str = "bosonai/higgs-audio-v3-tts-4b"
     higgs_timeout_s: float = 300.0
-    # "path": Serverseitiger Dateipfad (sgl-omni läuft lokal). "base64": Audio inline.
-    higgs_reference_mode: str = "path"
+    # Steht in jedem Beispiel der Schnittstelle, auch beim Klonen.
+    higgs_voice: str = "default"
+    # Die Referenz liest der Server, nicht Cloney. "auto" übersetzt unter Windows
+    # nach /mnt/<laufwerk>/..., weil der Server dort in aller Regel in WSL läuft.
+    # "wsl" erzwingt das, "path" reicht den Pfad unverändert weiter (Cloney und
+    # Server auf demselben System), "base64" schickt die Aufnahme inline mit.
+    higgs_reference_mode: str = "auto"
     higgs_temperature: float = 0.8
     higgs_top_k: int = 50
     higgs_max_new_tokens: int = 1024

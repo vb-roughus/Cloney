@@ -51,11 +51,11 @@ könnte — CLI, Web-UI und Wiederaufnahme lesen dieselbe Datei.
 | RTX 3090 / 4090 (24 GB) | passt bequem | passt mühelos |
 | 8-GB-Karten | passt nicht | passt |
 
-**Unter Windows steht nur `f5-de` zur Verfügung.** SGLang-Omni, über das Higgs v3
-bedient wird, [läuft nicht nativ unter Windows](https://docs.sglang.ai/get_started/install.html) —
-es setzt Linux-spezifische CUDA-Kernel voraus. Für Higgs braucht es dort WSL2.
-Da `f5-de` ohnehin das auf Deutsch nachtrainierte Modell ist, ist das kein großer
-Verlust.
+**Unter Windows braucht Higgs den Umweg über WSL2.** SGLang-Omni
+[läuft nicht nativ unter Windows](https://docs.sglang.ai/get_started/install.html) —
+es setzt Linux-spezifische CUDA-Kernel voraus. Mit WSL2 läuft es; siehe
+[Higgs unter Windows](#higgs-unter-windows). Ohne WSL2 bleibt `f5-de`, das
+ohnehin auf Deutsch nachtrainiert ist.
 
 **Blackwell (RTX 50-Serie) braucht eine neuere Toolchain.** Der sm_120-Rechenkern
 der 5080 wird erst ab **CUDA 12.8** und **PyTorch 2.7** unterstützt. Ältere
@@ -176,8 +176,8 @@ Durchstich mit der Dummy-Engine. Zu jedem Befund steht der Befehl, der ihn beheb
 ```
 [ OK ] PyTorch            2.7.0 (CUDA 12.8) auf NVIDIA GeForce RTX 5080, sm_120, 16 GB VRAM
 [ OK ] Audio-Laden        torchaudio liest WAV (24000 Hz, 24000 Samples)
-[WARN] Engine higgs       SGLang-Omni läuft nicht nativ unter Windows
-                          -> Für Higgs v3 wird WSL2 gebraucht. Unter Windows ist f5-de die Engine der Wahl.
+[ OK ] Engine higgs       Server erreichbar, Modell 'bosonai/higgs-audio-v3-tts-4b'
+[ OK ] Higgs-Referenz     Pfade werden für WSL nach /mnt/<laufwerk>/... übersetzt
 [ OK ] Durchstich         1 Chunks, 7.5s erzeugt, Fehlerrate 0%
 ```
 
@@ -237,6 +237,32 @@ Für die Higgs-Engine muss der Modellserver laufen:
 ```bash
 sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000
 ```
+
+### Higgs unter Windows
+
+Der Server läuft in WSL2, Cloney auf Windows. Aus dieser Trennung folgen drei
+Dinge, um die sich Cloney kümmert -- die man aber kennen sollte, wenn etwas
+klemmt:
+
+**Die Referenzaufnahme liest der Server, nicht Cloney.** Die Anfrage enthält
+einen Dateipfad, und `C:\Users\...` ist für einen Prozess in WSL kein gültiger
+Pfad; dieselbe Datei liegt dort unter `/mnt/c/Users/...`. Cloney übersetzt das
+(`CLONEY_HIGGS_REFERENCE_MODE=auto`). Läuft beides auf demselben Linux-System,
+gehört dort `path` hin; kommt der Server an die Datei überhaupt nicht heran,
+schickt `base64` die Aufnahme inline mit.
+
+**Der Modellname muss zum Server passen.** Ein OpenAI-kompatibler Server lehnt
+eine Anfrage mit unbekanntem Modellnamen ab. `cloney doctor` fragt deshalb
+`/v1/models` ab und nennt den Namen, unter dem der laufende Server das Modell
+anbietet -- bevor mitten in einem Kapitel eine Fehlermeldung auftaucht.
+
+**Higgs kennt keinen Seed.** Die Schnittstelle nimmt kein solches Feld entgegen,
+jeder Aufruf würfelt neu. „Neu würfeln" liefert also weiterhin eine andere
+Fassung, aber ein früheres Ergebnis lässt sich nicht wiederherstellen, und „Ton
+verwerfen" zeigt nicht die Wirkung eines Reglers allein. Im Vergleichslauf heißt
+das: die Varianten unterscheiden sich zusätzlich im Zufall. Cloney führt das als
+`EngineInfo.reproducible_seed` und schreibt den Hinweis an beide Stellen, statt
+eine Reproduzierbarkeit zu versprechen, die es hier nicht gibt.
 
 ## Die Projektseite
 
@@ -537,6 +563,8 @@ setzen; die Standardwerte stehen in [`cloney/config.py`](cloney/config.py).
 | `CLONEY_TARGET_CHUNK_SECONDS` | `20.0` | angestrebte Chunk-Länge |
 | `CLONEY_TARGET_LUFS` | `-16.0` | Ziel-Lautheit der fertigen Spur |
 | `CLONEY_HIGGS_BASE_URL` | `http://localhost:8000/v1` | Adresse des Modellservers |
+| `CLONEY_HIGGS_MODEL` | `bosonai/higgs-audio-v3-tts-4b` | muss dem `--model-path` des Servers entsprechen |
+| `CLONEY_HIGGS_REFERENCE_MODE` | `auto` | `auto`/`wsl`/`path`/`base64` — wie der Server an die Referenz kommt |
 | `CLONEY_ASR_MODEL` | `large-v3-turbo` | Whisper-Modell für die Rückschrift |
 | `CLONEY_F5_REPO_ID` | `aihpi/F5-TTS-German` | Modell für die Engine `f5-de` |
 | `CLONEY_F5_CKPT_PATH` | — | lokaler Checkpoint, hat Vorrang vor dem Download |
@@ -572,9 +600,10 @@ Als Nächstes: LLM-gestützte Textvorbereitung für das, was Regeln nicht könne
 vergleicht bislang Reglerstellungen einer Engine; ihn über mehrere Engines
 laufen zu lassen, ist der nächste Schritt zum Benchmark-Harness.
 
-Das Anfrageschema der Higgs-Engine ist gegen die öffentliche Dokumentation
-gebaut, aber nicht gegen einen laufenden Server verifiziert; die Engine gibt den
-Fehler der Gegenstelle unverändert weiter, statt ihn zu verschlucken. Der
+Das Anfrageschema der Higgs-Engine folgt dem Kochbuch von SGLang-Omni und ist
+gegen einen nachgebildeten Server geprüft (`tests/test_higgs.py`), aber nicht
+gegen einen echten Higgs-Server gelaufen. Die Engine gibt den Fehler der
+Gegenstelle unverändert weiter, statt ihn zu verschlucken. Der
 Windows-Installer `install.ps1` konnte mangels PowerShell in der
 Entwicklungsumgebung nicht ausgeführt werden — die gesamte Logik liegt deshalb in
 `scripts/setup.py`, das geprüft ist; das Skript selbst beschränkt sich auf das

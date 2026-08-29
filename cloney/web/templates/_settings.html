@@ -35,6 +35,16 @@
     </form>
   </div>
 
+  {% if not engine.reproducible_seed %}
+  <p class="hinweis">
+    <strong>{{ project.engine }} nimmt keinen Seed entgegen.</strong>
+    Jeder Aufruf würfelt neu. „Neu würfeln“ liefert deshalb weiterhin eine andere
+    Fassung &mdash; ein früheres Ergebnis lässt sich aber nicht wiederherstellen, und
+    „Ton verwerfen“ zeigt nicht die Wirkung eines Reglers allein, weil zugleich der
+    Zufall wechselt.
+  </p>
+  {% endif %}
+
   <div class="card">
     <h3>Referenz</h3>
     <table class="kv">

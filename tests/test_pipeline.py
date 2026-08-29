@@ -7,6 +7,8 @@ ohne ein einziges Modell zu laden.
 
 from __future__ import annotations
 
+import numpy as np
+
 from cloney.asr.dummy import DummyASR
 from cloney.config import Settings
 from cloney.core.audio import duration_seconds, read_wav
@@ -188,3 +190,46 @@ def test_abschneiden_laesst_sich_abschalten(settings: Settings, voice_store: Voi
         project, settings, voice_store, DummyEngine, lambda: DummyASR(bleed_words="Rest davor")
     )
     assert all(c.trimmed_bleed_s is None for c in project.chunks)
+
+
+def test_abtastrate_der_dateien_gilt_beim_zusammenbau(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Eine Engine hinter einem Server kann eine andere Rate liefern als ihre
+    EngineInfo verspricht. Gälte hier die Annahme aus dem Manifest, liefe die
+    fertige Spur zu langsam oder zu schnell."""
+    from cloney.core.audio import write_wav
+    from cloney.pipeline import assemble_output
+
+    project = _project(settings)
+    for chunk in project.chunks:
+        t = np.arange(int(0.8 * 44100), dtype=np.float32) / 44100
+        write_wav(project.chunk_path(chunk.index), 0.2 * np.sin(2 * np.pi * 200 * t), 44100)
+    project.sample_rate = 24000
+    project.save()
+
+    assemble_output(project, settings)
+
+    assert Project.load(project.root).sample_rate == 44100
+    _, rate = read_wav(project.output_path)
+    assert rate == 44100
+
+
+def test_uneinheitliche_raten_brechen_den_zusammenbau_ab(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Sonst entstünde eine Spur, in der einzelne Sätze zu schnell laufen."""
+    from cloney.core.audio import write_wav
+    from cloney.pipeline import assemble_output
+
+    project = _project(settings)
+    for nummer, chunk in enumerate(project.chunks):
+        rate = 24000 if nummer % 2 == 0 else 44100
+        t = np.arange(int(0.8 * rate), dtype=np.float32) / rate
+        write_wav(project.chunk_path(chunk.index), 0.2 * np.sin(2 * np.pi * 200 * t), rate)
+
+    ereignisse: list[ProgressEvent] = []
+    assemble_output(project, settings, ereignisse.append)
+
+    assert not project.output_path.exists()
+    assert any("verschiedene Abtastraten" in e.message for e in ereignisse)

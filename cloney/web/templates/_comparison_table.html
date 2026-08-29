@@ -84,6 +84,16 @@
     {% endfor %}
   </table>
 
+  {% if not engine.reproducible_seed %}
+  <p class="hinweis">
+    <strong>{{ comparison.engine }} nimmt keinen Seed entgegen.</strong>
+    Die Varianten unterscheiden sich hier also nicht allein in der Reglerstellung,
+    sondern zusätzlich im Zufall. Die Tabelle bleibt brauchbar, aber ein kleiner
+    Unterschied zwischen zwei Zeilen kann auch daher rühren &mdash; für eine belastbare
+    Aussage denselben Vergleich zweimal fahren.
+  </p>
+  {% endif %}
+
   <p class="muted">
     Markiert ist der Spitzenreiter je Spalte, nicht eine Gesamtnote: wie eine halbe Prozent
     Fehlerrate gegen zwei Hundertstel Ähnlichkeit aufzuwiegen wäre, kann niemand belegen.
