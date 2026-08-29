@@ -334,3 +334,114 @@ def test_meldung_nennt_geschnittene_stille_statt_einer_sinnlosen_zahl() -> None:
     assert LevelReport(-21.4, -14.0, digital_silence=True).beschreibung() == "geschnittene Stille"
     assert LevelReport(-45.0, -14.0).beschreibung() == "Raumton -45 dBFS"
     assert "geschnittene Stille" in LevelReport(-45.0, -14.0, True).beschreibung()
+
+
+# -- Nachsehen statt raten --------------------------------------------------
+
+
+def _durchgehend(spitze_db: float = -20.0, rausch_db: float = -63.0) -> np.ndarray:
+    """Durchgehend gesprochen: die Hüllkurve sinkt, aber nie lange genug tief genug."""
+    rng = np.random.default_rng(21)
+    t = np.arange(int(18.0 * SR), dtype=np.float32) / SR
+    silben = 0.30 + 0.70 * (0.5 + 0.5 * np.sin(2 * np.pi * 4.4 * t)) ** 2
+    g = np.sin(2 * np.pi * 135 * t) + 0.5 * np.sin(2 * np.pi * 270 * t)
+    roh = (silben * g).astype(np.float32)
+    rede = roh / np.max(np.abs(roh)) * 10 ** (spitze_db / 20)
+    kern = np.concatenate([_stille(0.6), rede.astype(np.float32), _stille(0.5)])
+    return (kern + 10 ** (rausch_db / 20) * rng.standard_normal(len(kern))).astype(np.float32)
+
+
+def test_probe_misst_die_pegel_der_aufnahme() -> None:
+    from cloney.core.dataset import probe_audio
+
+    befund = probe_audio(_mit_raumton(-45.0), SR)
+
+    assert befund.levels.floor_db == pytest.approx(-45.0, abs=3.0)
+    assert befund.levels.speech_db > befund.levels.floor_db + 20
+    assert befund.duration_s == pytest.approx(22.0, abs=0.5)
+
+
+def test_probe_erkennt_eine_aufnahme_mit_pausen() -> None:
+    from cloney.core.dataset import probe_audio
+
+    befund = probe_audio(_mit_raumton(-45.0), SR)
+
+    assert not befund.hoffnungslos
+    assert befund.beste_schwelle() is not None
+
+
+def test_probe_erkennt_durchgehendes_sprechen() -> None:
+    """Der Fall, der von außen wie ein Schwellenproblem aussieht: keine
+    Einstellung findet Pausen, weil keine da sind."""
+    from cloney.core.dataset import probe_audio
+
+    befund = probe_audio(_durchgehend(), SR)
+
+    assert befund.hoffnungslos
+    assert befund.beste_schwelle() is None
+
+
+def test_schwelle_ueber_dem_sprechpegel_gilt_nicht_als_brauchbar() -> None:
+    """Liegt sie darüber, ist die ganze Aufnahme 'still' und die Zahl der
+    Pausen sagt nichts mehr aus -- so eine Zeile wäre sonst als Empfehlung
+    durchgegangen."""
+    from cloney.core.dataset import ProbeRow
+
+    assert ProbeRow(-30.0, 3, 3, 0.45, silence_share=0.07).brauchbar
+    assert not ProbeRow(-20.0, 1, 1, 19.4, silence_share=1.0).brauchbar
+    assert not ProbeRow(-60.0, 0, 0, 0.0, silence_share=0.0).brauchbar
+
+
+# -- Notausgang für durchgehend gesprochenes Material -----------------------
+
+
+def test_force_split_rettet_material_ohne_pausen() -> None:
+    """Ohne Notausgang geht ein durchgehend gesprochener Block vollständig
+    verloren. Mit ihm wird an der leisesten Stelle getrennt -- kein guter
+    Schnitt, aber besser als der ganze Bereich im Ausschuss."""
+    audio = _durchgehend()
+
+    ohne, verworfen = find_segments(audio, SR)
+    mit, _ = find_segments(audio, SR, force_split=True)
+
+    assert ohne == []
+    assert "ohne Pause" in verworfen[0][2]
+    assert len(mit) >= 2
+    assert all(3.0 <= (b - a) / SR <= 15.0 for a, b in mit)
+
+
+def test_force_split_bleibt_die_ausnahme() -> None:
+    """Wo es echte Pausen gibt, ändert der Notausgang nichts."""
+    audio = _mit_raumton(-45.0)
+    assert find_segments(audio, SR)[0] == find_segments(audio, SR, force_split=True)[0]
+
+
+def test_probe_zaehlt_nur_pausen_zwischen_der_sprache() -> None:
+    """Vorlauf und Ausklang sind fast immer still, taugen aber nicht als
+    Schnittstelle -- zu trennen ist ja das, was dazwischen liegt."""
+    from cloney.core.dataset import probe_audio
+
+    # Ruhiger Anfang und Schluss, dazwischen durchgehend gesprochen.
+    befund = probe_audio(_durchgehend(), SR)
+
+    assert befund.gefundene_pausen() == 0
+
+
+def test_probe_misst_pausen_gegen_die_benoetigte_zahl() -> None:
+    """Eine einzelne Pause auf vierzig Sekunden 'trennt Pausen' und ist trotzdem
+    unbrauchbar. Die Bewertung muss das benennen."""
+    from cloney.core.dataset import probe_audio
+
+    lang = np.concatenate([_durchgehend(), _stille(0.8), _durchgehend()])
+    befund = probe_audio(lang, SR)
+
+    assert befund.benoetigte_pausen() >= 2
+    assert befund.gefundene_pausen() == 1
+    assert not befund.genug_pausen()
+
+
+def test_probe_bestaetigt_ausreichendes_material() -> None:
+    from cloney.core.dataset import probe_audio
+
+    befund = probe_audio(_mit_raumton(-45.0), SR)
+    assert befund.genug_pausen()

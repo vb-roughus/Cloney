@@ -390,6 +390,12 @@ def dataset_build(
     name: str = typer.Option(..., help="Name des Datensatzes."),
     min_seconds: float = typer.Option(3.0, help="Kürzeste Segmentlänge."),
     max_seconds: float = typer.Option(15.0, help="Längste Segmentlänge."),
+    force_split: bool = typer.Option(
+        False,
+        "--force-split",
+        help="Zu lange Bereiche notfalls an der leisesten Stelle trennen, "
+        "auch ohne echte Pause. Rettet Material, schneidet aber womöglich im Wort.",
+    ),
 ) -> None:
     """Aus langen Aufnahmen einen Trainingsdatensatz im Format von F5-TTS.
 
@@ -419,6 +425,7 @@ def dataset_build(
             language=settings.asr_language,
             min_seconds=min_seconds,
             max_seconds=max_seconds,
+            force_split=force_split,
             on_event=lambda text: typer.echo(f"  {text}"),
         )
     except ValueError as exc:
@@ -428,6 +435,86 @@ def dataset_build(
         asr.close()
 
     _print_dataset(dataset)
+
+
+@datasets_app.command("probe")
+def dataset_probe(
+    audio: list[Path] = typer.Option(
+        ..., "--audio", "-a", exists=True, help="Aufnahme oder Ordner. Mehrfach möglich."
+    ),
+) -> None:
+    """Nachsehen, statt zu raten: Pegel messen und Schwellen durchspielen.
+
+    Fällt eine Lesung durch, sind zwei Ursachen möglich -- eine Schwelle, die
+    nicht zur Aufnahme passt, oder eine Leseweise ohne Pausen. Von außen sehen
+    beide gleich aus. Diese Tabelle trennt sie.
+    """
+    from cloney.core.audio import read_wav
+    from cloney.core.dataset import probe_audio
+
+    for quelle in sorted(_sammle_aufnahmen(audio)):
+        samples, rate = read_wav(quelle)
+        befund = probe_audio(samples, rate)
+
+        typer.echo("")
+        typer.secho(f"{quelle.name}", bold=True)
+        typer.echo(f"  {befund.duration_s:.1f}s bei {rate} Hz")
+        typer.echo(
+            f"  Grundpegel   {befund.levels.floor_db:6.0f} dBFS   (leiseste anhaltende Stelle)"
+        )
+        typer.echo(f"  Sprechpegel  {befund.levels.speech_db:6.0f} dBFS   (95. Perzentil)")
+        typer.echo(f"  Exakte Stille {befund.digital_silence_share:6.1%} der Aufnahme")
+        typer.echo("")
+        typer.echo("  Schwelle   Pausen ab 180ms   ab 320ms   längste Stille   still")
+        for zeile in befund.rows:
+            marken = []
+            if zeile.threshold_db == befund.threshold_db:
+                marken.append("verwendet")
+            if zeile.silence_share > 0.5:
+                marken.append("über dem Sprechpegel")
+            marke = "  <- " + ", ".join(marken) if marken else ""
+            typer.echo(
+                f"  {zeile.threshold_db:7.0f}   {zeile.pauses_split:>13}   "
+                f"{zeile.pauses_utterance:>8}   {zeile.longest_pause_s:>11.2f}s   "
+                f"{zeile.silence_share:>5.0%}{marke}"
+            )
+        typer.echo("")
+        if befund.hoffnungslos:
+            typer.secho(
+                "  Keine Schwelle findet Pausen. Es liegt nicht an der Einstellung, "
+                "sondern an der Aufnahme:\n"
+                "  entweder wird durchgehend gesprochen, oder die Pausen sind mit "
+                "Atem oder Raumgeräusch gefüllt.\n"
+                "  Beim nächsten Take zwischen den Sätzen bewusst absetzen. Für "
+                "vorhandenes Material hilft\n"
+                "  'cloney dataset build --force-split' -- das trennt an der leisesten "
+                "Stelle, notfalls im Wort.",
+                fg=typer.colors.YELLOW,
+            )
+        elif not befund.genug_pausen():
+            typer.secho(
+                f"  Nur {befund.gefundene_pausen()} Pause(n) auf {befund.duration_s:.0f}s. "
+                f"Für Segmente von höchstens 15s bräuchte es mindestens "
+                f"{befund.benoetigte_pausen()}.\n"
+                "  Die Schwelle ist nicht das Problem -- es wird zu lang am Stück "
+                "gesprochen. Beim nächsten Take\n"
+                "  zwischen den Sätzen bewusst absetzen. Für vorhandenes Material: "
+                "'cloney dataset build --force-split'.",
+                fg=typer.colors.YELLOW,
+            )
+        else:
+            beste = befund.beste_schwelle()
+            if beste is not None and beste > befund.threshold_db:
+                typer.secho(
+                    f"  Ab {beste:.0f} dBFS werden Pausen getrennt, die verwendete "
+                    f"Schwelle liegt bei {befund.threshold_db:.0f} dBFS.",
+                    fg=typer.colors.YELLOW,
+                )
+            else:
+                typer.echo(
+                    f"  {befund.gefundene_pausen()} Pausen auf {befund.duration_s:.0f}s "
+                    "-- das reicht für die Zerlegung."
+                )
 
 
 @datasets_app.command("list")
