@@ -103,12 +103,15 @@ def test_referenz_ohne_wortlaut_laesst_das_feld_weg(tmp_path: Path) -> None:
     ]
 
 
-def test_base64_schickt_eine_data_url(tmp_path: Path) -> None:
+def test_base64_ist_die_voreinstellung_und_nutzt_dasselbe_feld(tmp_path: Path) -> None:
+    """audio_path nimmt laut Kochbuch auch eine Data-URL. Damit braucht der
+    Server weder einen lesbaren Pfad noch --allowed-local-media-path -- der
+    verlässlichste Weg über die Grenze zwischen Windows und WSL."""
     server = _Server()
-    _engine(server, reference_mode="base64").synthesize("Hallo.", _voice(tmp_path), seed=1)
+    _engine(server).synthesize("Hallo.", _voice(tmp_path), seed=1)
     referenz = server.payload["references"][0]
-    assert "audio_path" not in referenz
-    assert referenz["audio"].startswith("data:audio/wav;base64,")
+    assert referenz["audio_path"].startswith("data:audio/wav;base64,")
+    assert referenz["text"] == "Wortlaut der Aufnahme."
 
 
 # -- Der Pfad, den der Server sieht -----------------------------------------

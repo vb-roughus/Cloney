@@ -253,7 +253,37 @@ def test_higgs_ist_unter_windows_kein_ausschlusskriterium(monkeypatch) -> None: 
     check_higgs(report, Settings())
 
     assert next(e for e in report.results if e.name == "Engine higgs").status == "ok"
-    assert any("WSL" in e.detail for e in report.results)
+
+
+def test_higgs_nennt_den_serverparameter_fuer_den_pfadweg(monkeypatch, tmp_path) -> None:  # noqa: ANN001
+    """Der Pfadweg braucht --allowed-local-media-path. Fehlt er, lehnt der
+    Server die Referenz ab -- und zwar erst beim ersten Satz."""
+    from cloney.doctor import Report, check_higgs
+
+    monkeypatch.setattr("cloney.doctor.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "cloney.doctor.served_models", lambda *_a, **_k: ["bosonai/higgs-audio-v3-tts-4b"]
+    )
+    report = Report()
+    check_higgs(report, Settings(data_dir=tmp_path / "data", higgs_reference_mode="wsl"))
+
+    eintrag = next(e for e in report.results if e.name == "Higgs-Referenz")
+    assert eintrag.status == "warn"
+    assert "--allowed-local-media-path" in eintrag.remedy
+
+
+def test_higgs_mit_base64_braucht_keinen_serverparameter(monkeypatch) -> None:  # noqa: ANN001
+    from cloney.doctor import Report, check_higgs
+
+    monkeypatch.setattr(
+        "cloney.doctor.served_models", lambda *_a, **_k: ["bosonai/higgs-audio-v3-tts-4b"]
+    )
+    report = Report()
+    check_higgs(report, Settings())
+
+    eintrag = next(e for e in report.results if e.name == "Higgs-Referenz")
+    assert eintrag.status == "ok"
+    assert "Data-URL" in eintrag.detail
 
 
 def test_higgs_ohne_server_nennt_den_startbefehl(monkeypatch) -> None:  # noqa: ANN001

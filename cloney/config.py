@@ -60,11 +60,14 @@ class Settings(BaseSettings):
     higgs_timeout_s: float = 300.0
     # Steht in jedem Beispiel der Schnittstelle, auch beim Klonen.
     higgs_voice: str = "default"
-    # Die Referenz liest der Server, nicht Cloney. "auto" übersetzt unter Windows
-    # nach /mnt/<laufwerk>/..., weil der Server dort in aller Regel in WSL läuft.
-    # "wsl" erzwingt das, "path" reicht den Pfad unverändert weiter (Cloney und
-    # Server auf demselben System), "base64" schickt die Aufnahme inline mit.
-    higgs_reference_mode: str = "auto"
+    # Wie der Server an die Referenzaufnahme kommt.
+    # "base64": als Data-URL in der Anfrage. Voreinstellung, weil sie ohne
+    #   Pfadübersetzung und ohne --allowed-local-media-path am Server auskommt.
+    # "auto": Dateipfad, unter Windows nach /mnt/<laufwerk>/... übersetzt (WSL).
+    # "wsl": Übersetzung erzwingen. "path": Pfad unverändert weiterreichen.
+    # Die Pfadwege setzen voraus, dass der Server mit
+    #   --allowed-local-media-path <ordner der stimmen> gestartet wurde.
+    higgs_reference_mode: str = "base64"
     higgs_temperature: float = 0.8
     higgs_top_k: int = 50
     higgs_max_new_tokens: int = 1024

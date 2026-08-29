@@ -15,9 +15,17 @@ Liste aus ``{"audio_path": ..., "text": ...}``, dazu ``voice``, ``temperature``,
 * ``voice`` steht in jedem dokumentierten Beispiel, auch im Beispiel zum
   Klonen. Hier fehlte es bisher. Ob der Server ohne dieses Feld ablehnt, ist
   nicht geprüft -- mitzuschicken kostet nichts, es wegzulassen wäre geraten.
-* ``audio_path`` liest der **Server**, nicht Cloney. Läuft Cloney unter Windows
-  und der Server in WSL, ist ``C:\\...`` für ihn kein gültiger Pfad; er sieht
-  dieselbe Datei unter ``/mnt/c/...``. Genau das übersetzt ``server_pfad``.
+* ``audio_path`` nimmt "local path, file URL, data URL, or HTTP URL" entgegen.
+  Ein **Dateipfad** wird vom Server gelesen, nicht von Cloney -- und nur, wenn
+  er mit ``--allowed-local-media-path <ordner>`` gestartet wurde. Läuft Cloney
+  unter Windows und der Server in WSL, ist ``C:\\...`` für ihn zudem kein
+  gültiger Pfad; dieselbe Datei liegt dort unter ``/mnt/c/...``.
+
+  Deshalb ist ``base64`` die Voreinstellung: die Aufnahme geht als Data-URL im
+  selben Feld mit. Das kostet ein paar Megabyte je Anfrage über die
+  Loopback-Schnittstelle und erspart dafür beides -- die Pfadübersetzung und
+  einen Startparameter, den man vergessen kann. Wer den Pfadweg will, hat mit
+  ``auto``/``wsl``/``path`` die Wahl; ``server_pfad`` übersetzt dann.
 
 Einen Seed nimmt die Schnittstelle nicht entgegen. Higgs würfelt bei jedem Aufruf
 neu -- das ist als ``reproducible_seed=False`` in ``EngineInfo`` vermerkt, damit
@@ -146,7 +154,7 @@ class HiggsEngine:
         base_url: str = "http://localhost:8000/v1",
         model: str = "bosonai/higgs-audio-v3-tts-4b",
         timeout_s: float = 300.0,
-        reference_mode: str = "auto",
+        reference_mode: str = "base64",
         voice: str = "default",
         temperature: float = 0.8,
         top_k: int = 50,
@@ -172,10 +180,9 @@ class HiggsEngine:
     def _reference(self, voice: VoiceRef) -> dict[str, str]:
         reference: dict[str, str] = {}
         if self.reference_mode == "base64":
-            # Nicht im Kochbuch belegt. Nur nehmen, wenn der Server die Datei
-            # nachweislich nicht selbst lesen kann.
+            # Dasselbe Feld: es nimmt laut Kochbuch auch eine Data-URL entgegen.
             roh = base64.b64encode(voice.audio_path.read_bytes()).decode("ascii")
-            reference["audio"] = f"data:{media_type(voice.audio_path)};base64,{roh}"
+            reference["audio_path"] = f"data:{media_type(voice.audio_path)};base64,{roh}"
         else:
             reference["audio_path"] = server_pfad(
                 str(voice.audio_path.resolve()), self.reference_mode
