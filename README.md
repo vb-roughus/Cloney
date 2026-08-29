@@ -826,13 +826,22 @@ Beispiele, und 1600 Frames sind bei 24 kHz und Hop 256 rund 17 Sekunden Ton je
 Schritt. Erst damit lässt sich abschätzen, wie lange ein Lauf dauert -- und
 sofort sehen, ob der Datensatz überhaupt trägt.
 
-Zwei Voreinstellungen weichen bewusst von F5 ab:
+Zwei Voreinstellungen weichen bewusst von F5 ab, und beide **richten sich nach
+der Länge des Laufs** statt fest zu sein:
 
-- **`num_warmup_updates` 200 statt 20000.** Der Standard ist für einen Lauf von
-  Grund auf gedacht; ein Finetune auf eine Stimme wäre vorbei, bevor die
-  Lernrate oben angekommen ist.
-- **`save_per_updates` 1000 statt 50000.** Sonst gibt es bei einem kurzen Lauf
-  keinen einzigen Zwischenstand zum Anhören.
+- **Aufwärmen: höchstens 200 Schritte statt 20000, und nie mehr als ein Zehntel
+  des Laufs.** F5s Standard ist für einen Lauf von Grund auf gedacht. Aber auch
+  ein fester kleiner Wert geht schief: 0.6 Minuten Material ergeben rund 200
+  Schritte, und mit 200 Aufwärmschritten wäre die Lernrate genau dann oben, wenn
+  das Training endet -- der Lauf hätte nie bei der Ziellernrate trainiert.
+- **Sichern: alle 1000 Schritte statt alle 50000, bei kurzen Läufen dichter.**
+  Am Ende sichert F5 ohnehin einmal; interessant sind aber die Zwischenstände,
+  denn an ihnen zeigt sich, ob längeres Training noch etwas bringt.
+
+```
+  0.6 min ->    200 Schritte, Aufwärmen   20, sichern alle   50
+ 60.0 min ->  21100 Schritte, Aufwärmen  200, sichern alle 1000
+```
 
 Was **nicht** gemessen ist: welche `batch_size_per_gpu` auf 16 GB durchläuft.
 Der Vorschlag von 1600 ist die Hälfte von F5s Standard, der auf einer 24-GB-Karte

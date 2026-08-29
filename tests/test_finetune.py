@@ -176,6 +176,44 @@ def test_aufwaermen_ist_fuer_ein_finetune_bemessen(tmp_path: Path) -> None:
     assert int(befehl[befehl.index("--save_per_updates") + 1]) <= 5000
 
 
+def _mit_dauer(sekunden: float, epochs: int = 100) -> TrainingPlan:
+    return TrainingPlan(
+        dataset_name="anna",
+        data_dir=Path("d"),
+        checkpoint_dir=Path("c"),
+        pretrain_ckpt=Path("m"),
+        vocab_path=Path("v"),
+        total_seconds=sekunden,
+        batch_frames=1600,
+        epochs=epochs,
+    )
+
+
+def test_aufwaermen_verschlingt_nicht_den_ganzen_lauf() -> None:
+    """0.6 Minuten Material ergeben rund 200 Schritte. Mit den festen 200
+    Aufwärmschritten wäre die Lernrate genau dann oben, wenn das Training
+    endet -- der Lauf hätte nie bei der Ziellernrate trainiert."""
+    kurz = _mit_dauer(36.0)
+
+    assert kurz.total_steps == pytest.approx(200, abs=20)
+    assert kurz.warmup < kurz.total_steps // 5
+    assert kurz.warmup >= 10
+
+
+def test_bei_ausreichendem_material_gilt_die_obergrenze() -> None:
+    lang = _mit_dauer(3600.0)
+    assert lang.warmup == 200
+    assert lang.save_interval == 1000
+
+
+def test_kurze_laeufe_bekommen_trotzdem_zwischenstaende() -> None:
+    """Am Ende sichert F5 ohnehin einmal -- aber gerade die Zwischenstände
+    zeigen, ob längeres Training noch etwas bringt."""
+    kurz = _mit_dauer(36.0)
+    assert kurz.save_interval < kurz.total_steps
+    assert kurz.last_interval < kurz.save_interval
+
+
 def test_vorbereitungsbefehl_uebergibt_die_datei_nicht_den_ordner(tmp_path: Path) -> None:
     """Der Parameter heißt 'inp_dir', das Skript prüft aber auf die Endung .csv
     und liest die Tonpfade unverändert aus der Tabelle. Dem Namen zu folgen
