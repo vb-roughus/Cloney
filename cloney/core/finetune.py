@@ -41,6 +41,15 @@ und genau dort liegen die Fallen:
 4. **``batch_size_per_gpu`` zählt Frames, keine Beispiele.** Der Standard 3200
    entspricht rund 34 Sekunden Ton je Schritt. Was auf 16 GB durchläuft, ist
    hier nicht gemessen -- der Vorschlag ist ein Ausgangspunkt, kein Befund.
+
+5. **Der Pretrain muss die EMA-Struktur tragen.** ``Trainer.load_checkpoint``
+   ruft ``self.ema_model.load_state_dict(...)`` *bevor* der Zweig greift, der
+   einen reinen Inferenz-Export behandelt. Der EMA-Wrapper erwartet die
+   Schlüssel ``initted``, ``step`` und ``ema_model.<...>``; ein Export mit
+   nackten ``transformer.<...>``-Schlüsseln -- wie ihn der deutsche Finetune
+   mitbringt -- scheitert dort mit einer seitenlangen Liste fehlender
+   Schlüssel. ``write_trainer_pretrain`` legt deshalb eine Fassung an, die
+   diese Struktur trägt.
 """
 
 from __future__ import annotations
@@ -87,6 +96,13 @@ LAST_PER_UPDATES = 500
 
 #: So viele Zwischenstände sollen bei einem kurzen Lauf mindestens anfallen.
 ZWISCHENSTAENDE = 5
+
+
+#: Schlüssel, die der EMA-Wrapper neben den Gewichten erwartet.
+EMA_BUCHFUEHRUNG = ("initted", "step")
+
+#: Präfix, unter dem der Wrapper die Gewichte führt.
+EMA_PREFIX = "ema_model."
 
 
 class FinetuneError(RuntimeError):
@@ -209,6 +225,62 @@ class TrainingPlan:
             str(self.last_interval),
             *self.extra,
         ]
+
+
+def needs_ema_wrapper(keys) -> bool:  # noqa: ANN001
+    """Trägt dieser Checkpoint schon die Struktur, die der Trainer erwartet?
+
+    Ein Inferenz-Export führt die Gewichte nackt (``transformer....``). Der
+    Trainer lädt sie aber zuerst in den EMA-Wrapper, und der kennt nur
+    ``ema_model....`` samt ``initted`` und ``step``.
+    """
+    return not any(str(k).startswith(EMA_PREFIX) for k in keys)
+
+
+def ema_wrapped(state: dict) -> dict:
+    """Einen Inferenz-Export in die Struktur des EMA-Wrappers bringen."""
+    import torch
+
+    gewrappt: dict = {
+        "initted": torch.tensor(True),
+        "step": torch.tensor(0),
+    }
+    gewrappt.update({f"{EMA_PREFIX}{schluessel}": wert for schluessel, wert in state.items()})
+    return gewrappt
+
+
+def read_state_dict(path: Path) -> dict:
+    """Gewichte aus .safetensors oder .pt lesen."""
+    import torch
+
+    if path.suffix == ".safetensors":
+        try:
+            from safetensors.torch import load_file
+        except ImportError as exc:
+            raise FinetuneError('safetensors fehlt. Installation: pip install -e ".[f5]"') from exc
+        return load_file(str(path), device="cpu")
+
+    inhalt = torch.load(str(path), map_location="cpu", weights_only=True)
+    if isinstance(inhalt, dict) and "ema_model_state_dict" in inhalt:
+        return inhalt["ema_model_state_dict"]
+    return inhalt
+
+
+def write_trainer_pretrain(source: Path, target: Path) -> Path:
+    """Den Pretrain in der Form ablegen, die F5s Trainer laden kann.
+
+    Gibt den Pfad zurück, der als ``--pretrain`` zu übergeben ist -- die Quelle
+    selbst, wenn sie die Struktur schon trägt.
+    """
+    import torch
+
+    zustand = read_state_dict(source)
+    if not needs_ema_wrapper(zustand.keys()):
+        return source
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"ema_model_state_dict": ema_wrapped(zustand)}, str(target))
+    return target
 
 
 def write_f5_metadata(dataset: Dataset, target: Path) -> Path:

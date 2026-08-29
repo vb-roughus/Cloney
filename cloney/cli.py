@@ -795,10 +795,20 @@ def finetune_train(
         FinetuneError,
         check_prepared,
         plan_training,
+        write_trainer_pretrain,
     )
 
     dataset = _lade_datensatz(name)
     ckpt, vocab = _pretrain_dateien()
+    try:
+        # F5s Trainer lädt den Pretrain zuerst in den EMA-Wrapper. Ein reiner
+        # Inferenz-Export -- wie ihn der deutsche Finetune mitbringt -- scheitert
+        # dort. Umgeschrieben wird nur, wenn nötig.
+        ckpt = write_trainer_pretrain(ckpt, dataset.root / "f5" / f"pretrain_{ckpt.stem}.pt")
+    except FinetuneError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+
     try:
         plan = plan_training(
             dataset,

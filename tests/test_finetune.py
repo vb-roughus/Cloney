@@ -347,3 +347,61 @@ def test_eintrag_loeschen_laesst_den_checkpoint_liegen(tmp_path: Path) -> None:
     store.delete("anna-ft")
     assert not store.exists("anna-ft")
     assert ckpt.exists()
+
+
+# -- Der Pretrain muss die EMA-Struktur tragen ------------------------------
+
+
+def test_inferenz_export_wird_erkannt() -> None:
+    """Trainer.load_checkpoint ruft ema_model.load_state_dict, bevor der Zweig
+    greift, der einen nackten Export behandelt. Der Wrapper kennt nur
+    'ema_model....' samt 'initted' und 'step' -- ein Inferenz-Export scheitert
+    dort mit einer seitenlangen Liste fehlender Schlüssel."""
+    from cloney.core.finetune import needs_ema_wrapper
+
+    assert needs_ema_wrapper(["transformer.proj_out.weight", "transformer.proj_out.bias"])
+    assert not needs_ema_wrapper(["initted", "step", "ema_model.transformer.proj_out.weight"])
+
+
+def test_wrapper_ergaenzt_praefix_und_buchfuehrung() -> None:
+    import torch
+
+    from cloney.core.finetune import EMA_BUCHFUEHRUNG, ema_wrapped
+
+    gewrappt = ema_wrapped({"transformer.proj_out.weight": torch.zeros(2, 2)})
+
+    assert set(EMA_BUCHFUEHRUNG) <= set(gewrappt)
+    assert "ema_model.transformer.proj_out.weight" in gewrappt
+    assert "transformer.proj_out.weight" not in gewrappt
+
+
+def test_pretrain_wird_nur_bei_bedarf_umgeschrieben(tmp_path: Path) -> None:
+    """Die offiziellen F5-Checkpoints tragen die Struktur bereits. Sie zu
+    kopieren kostete über ein Gigabyte für nichts."""
+    import torch
+
+    from cloney.core.finetune import ema_wrapped, write_trainer_pretrain
+
+    passend = tmp_path / "schon_gut.pt"
+    torch.save({"ema_model_state_dict": ema_wrapped({"transformer.w": torch.zeros(2)})}, passend)
+
+    assert write_trainer_pretrain(passend, tmp_path / "kopie.pt") == passend
+    assert not (tmp_path / "kopie.pt").exists()
+
+
+def test_nackter_export_wird_ladbar_geschrieben(tmp_path: Path) -> None:
+    import torch
+
+    from cloney.core.finetune import write_trainer_pretrain
+
+    quelle = tmp_path / "model_420000.pt"
+    torch.save({"transformer.proj_out.weight": torch.zeros(2, 2)}, quelle)
+
+    ziel = write_trainer_pretrain(quelle, tmp_path / "pretrain_model_420000.pt")
+
+    assert ziel != quelle
+    inhalt = torch.load(ziel, map_location="cpu", weights_only=True)
+    # Genau die Struktur, die Trainer.load_checkpoint erwartet.
+    assert set(inhalt) == {"ema_model_state_dict"}
+    assert {"initted", "step"} <= set(inhalt["ema_model_state_dict"])
+    assert "ema_model.transformer.proj_out.weight" in inhalt["ema_model_state_dict"]
