@@ -655,6 +655,16 @@ ein Bereich zu lang, wird er an seiner längsten inneren Pause geteilt -- dafür
 genügt ein Atemzug, denn die Alternative wäre, zwanzig Sekunden brauchbare
 Sprache wegzuwerfen. Findet sich gar keine, wird verworfen statt hart geschnitten.
 
+**Was still ist, bestimmt die Aufnahme selbst.** Eine feste Schwelle wie
+-40 dBFS setzt ein leises Zimmer voraus. Liegt der Raumton darüber -- bei einer
+normalisierten Aufnahme keine Seltenheit --, ist plötzlich *nichts* mehr still,
+und die ganze Lesung gilt als ein einziger Bereich ohne Schnittstelle. Cloney
+misst deshalb den Grundpegel als leiseste *anhaltende* Stelle und setzt die
+Schwelle zehn Dezibel darüber. An synthetischen Aufnahmen mit Raumton von -70
+bis -30 dBFS findet das durchgehend genau die echten Pausen. Der gemessene
+Raumton steht in der Ausgabe -- er sagt mehr über die Aufnahme als jede Schwelle,
+die wir vorgeben könnten.
+
 **Der Text durchläuft dieselbe Normalisierung wie bei der Synthese.** Die
 Spracherkennung schreibt „3. Mai", gesprochen wurde „dritten Mai". Trainiert
 werden muss auf der Form, die später auch hineingeht -- sonst lernt das Modell,
@@ -667,13 +677,18 @@ Fehltranskription). Jeder verworfene Abschnitt steht mit Sekunde und Grund im
 Manifest:
 
 ```
+lesung.wav: 4 Abschnitte, 1 verworfen, Raumton -34 dBFS
+
 Datensatz 'anna' in data/datasets/anna
-  6 Segmente, 0.7 Minuten, 24000 Hz
-  Median: 7.1s je Segment, 14.0 Zeichen/s
-  Verworfen: 2 Abschnitte (0.1 Minuten)
-       1x nur 1.5s
-       1x übersteuert
+  4 Segmente, 0.5 Minuten, 44100 Hz
+  Median: 6.6s je Segment, 14.9 Zeichen/s
+  Verworfen: 1 Abschnitte (0.4 Minuten)
+       1x 22.8s ohne Pause zum Schneiden
 ```
+
+Das Sprechtempo meint dabei den **Wortlaut**, nicht die Sprechfassung: die
+Normalisierung bläht den Text auf -- aus „3. Mai 2024" werden 36 Zeichen --, und
+auf ihr gerechnet sähe jede Aufnahme mit Ziffern zu schnell aus.
 
 Ein Datensatz, der stillschweigend die Hälfte wegwirft, ist sonst nicht von
 einem zu unterscheiden, bei dem die Aufnahme schlecht war.
