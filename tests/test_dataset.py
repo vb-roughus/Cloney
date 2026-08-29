@@ -445,3 +445,45 @@ def test_probe_bestaetigt_ausreichendes_material() -> None:
 
     befund = probe_audio(_mit_raumton(-45.0), SR)
     assert befund.genug_pausen()
+
+
+# -- Die Schwelle hängt auch am Sprechpegel ---------------------------------
+
+
+def test_schwelle_beruecksichtigt_beide_anker() -> None:
+    """Nur am Grundpegel festgemacht, greift die Schwelle zu tief, wenn die
+    Aufnahme irgendwo sehr leise ist, die Sprechpausen aber viel höher liegen --
+    weil in ihnen geatmet wird. Gemessen an einer echten Lesung: Grundpegel
+    -63 dBFS, Sprechpegel -12, Pausen erst ab -50 aufwärts."""
+    from cloney.core.dataset import threshold_for
+
+    # Der Fall aus der Praxis: Sprech-25 gewinnt.
+    assert threshold_for(-63.0, -12.0) == pytest.approx(-37.0)
+    # Laute Umgebung: der Abstand über dem Grundpegel gewinnt.
+    assert threshold_for(-34.0, -14.0) == pytest.approx(-24.0)
+    # Nach oben und unten bleibt die Schwelle im Band.
+    assert threshold_for(-10.0, -5.0) == pytest.approx(-20.0)
+    assert threshold_for(-120.0, -100.0) == pytest.approx(-55.0)
+
+
+def test_bewertung_zaehlt_die_verwendete_schwelle_nicht_die_beste() -> None:
+    """Was eine andere Schwelle fände, hilft niemandem, solange sie nicht
+    verwendet wird. Genau diese Verwechslung ließ eine unzerlegbare Aufnahme
+    als in Ordnung durchgehen."""
+    from cloney.core.dataset import LevelReport, Probe, ProbeRow
+
+    befund = Probe(
+        duration_s=42.0,
+        sample_rate=SR,
+        levels=LevelReport(-63.0, -12.0),
+        digital_silence_share=0.12,
+        threshold_db=-53.0,
+        rows=[
+            ProbeRow(-53.0, 1, 1, 2.12, silence_share=0.13),
+            ProbeRow(-25.0, 11, 7, 2.20, silence_share=0.41),
+        ],
+    )
+
+    assert befund.gefundene_pausen() == 1
+    assert not befund.genug_pausen()
+    assert befund.beste_zeile().pauses_split == 11
