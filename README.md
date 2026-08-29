@@ -706,6 +706,49 @@ auf ihr gerechnet sähe jede Aufnahme mit Ziffern zu schnell aus.
 Ein Datensatz, der stillschweigend die Hälfte wegwirft, ist sonst nicht von
 einem zu unterscheiden, bei dem die Aufnahme schlecht war.
 
+### Wenn nichts durchkommt: nachsehen statt raten
+
+Fällt eine Lesung durch, sind zwei Ursachen möglich -- eine Schwelle, die nicht
+zur Aufnahme passt, oder eine Leseweise ohne Pausen. Von außen sehen beide
+gleich aus:
+
+```bash
+cloney dataset probe --audio lesungen/normal-talk.wav
+```
+
+```
+  38.8s bei 44100 Hz
+  Grundpegel      -63 dBFS   (leiseste anhaltende Stelle)
+  Sprechpegel     -23 dBFS   (95. Perzentil)
+  Exakte Stille   0.0% der Aufnahme
+
+  Schwelle   Pausen ab 180ms   ab 320ms   längste Stille   still
+      -53               1          1          0.80s      5%  <- verwendet
+      -45               1          1          0.80s      5%
+      -35               1          1          0.80s      6%
+      -25             107          1          0.87s     80%  <- über dem Sprechpegel
+
+  Nur 1 Pause(n) auf 39s. Für Segmente von höchstens 15s bräuchte es mindestens 2.
+  Die Schwelle ist nicht das Problem -- es wird zu lang am Stück gesprochen.
+```
+
+Die Tabelle spielt durch, was jede Schwelle fände. Bleibt die Zahl über alle
+Schwellen gleich, liegt es nicht an der Einstellung. Gezählt werden dabei nur
+Pausen **zwischen** der Sprache: Vorlauf und Ausklang sind fast immer still,
+taugen aber nicht als Schnittstelle. Und eine Schwelle über dem Sprechpegel ist
+markiert -- dort gilt die ganze Aufnahme als still, und die Zahl der „Pausen"
+sagt nichts mehr aus.
+
+Für Material, das schon aufgenommen ist und keine Pausen hat:
+
+```bash
+cloney dataset build --audio lesungen/ --name anna --force-split
+```
+
+Das trennt zu lange Bereiche an ihrer leisesten Stelle, auch ohne echte Pause --
+kein guter Schnitt, aber besser, als den ganzen Bereich zu verlieren. Bewusst
+nicht der Normalfall.
+
 ### 2. Vorbereiten (geplant)
 
 `prepare_csv_wavs.py` aus F5-TTS erzeugt aus dem Ordner `raw.arrow`,

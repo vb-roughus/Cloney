@@ -229,6 +229,7 @@ def find_segments(
     min_pause_ms: int = MIN_PAUSE_MS,
     split_pause_ms: int = SPLIT_PAUSE_MS,
     levels: list[LevelReport] | None = None,
+    force_split: bool = False,
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int, str]]]:
     """Sprachbereiche zwischen den Pausen finden.
 
@@ -300,6 +301,8 @@ def find_segments(
             max_seconds,
             gut,
             schlecht,
+            pegel,
+            force_split,
         )
     return gut, schlecht
 
@@ -391,6 +394,8 @@ def _teile(  # noqa: PLR0913
     max_seconds: float,
     gut: list[tuple[int, int]],
     schlecht: list[tuple[int, int, str]],
+    pegel: np.ndarray,
+    force_split: bool,
 ) -> None:
     dauer = (ende - start) / sample_rate
     if dauer < min_seconds:
@@ -401,6 +406,10 @@ def _teile(  # noqa: PLR0913
         return
 
     schnitt = _laengste_pause(laut, frame, start, ende, schnitt_frames)
+    if schnitt is None and force_split:
+        # Notausgang. Kein guter Schnitt, aber besser als der ganze Bereich in
+        # den Ausschuss -- und die betroffenen Sätze sind im Manifest markiert.
+        schnitt = _leiseste_stelle(pegel, frame, start, ende)
     if schnitt is None:
         schlecht.append(
             (
@@ -424,7 +433,26 @@ def _teile(  # noqa: PLR0913
             max_seconds,
             gut,
             schlecht,
+            pegel,
+            force_split,
         )
+
+
+def _leiseste_stelle(pegel: np.ndarray, frame: int, start: int, ende: int) -> int | None:
+    """Mitte des leisesten Fensters im mittleren Drittel des Bereichs.
+
+    Nur als Notausgang gedacht: gesucht ist die Stelle, an der ein Schnitt am
+    wenigsten weh tut, wenn es keine echte Pause gibt. Das mittlere Drittel,
+    damit nicht direkt am Rand getrennt wird und ein Schnipsel entsteht.
+    """
+    von, bis = start // frame, min(len(pegel), ende // frame)
+    if bis - von < 6:
+        return None
+    drittel = (bis - von) // 3
+    fenster = pegel[von + drittel : bis - drittel]
+    if fenster.size == 0:
+        return None
+    return (von + drittel + int(np.argmin(fenster))) * frame
 
 
 def _laengste_pause(
@@ -450,6 +478,148 @@ def _laengste_pause(
     return mitte * frame
 
 
+# -- Nachsehen, statt zu raten ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProbeRow:
+    """Was eine bestimmte Schwelle in dieser Aufnahme fände."""
+
+    threshold_db: float
+    pauses_split: int
+    pauses_utterance: int
+    longest_pause_s: float
+    #: Anteil der Aufnahme, der bei dieser Schwelle als still gilt.
+    silence_share: float = 0.0
+
+    @property
+    def brauchbar(self) -> bool:
+        """Trennt diese Schwelle Sprache von Pause -- oder nur Alles von Nichts?
+
+        Liegt sie über dem Sprechpegel, gilt die ganze Aufnahme als still und
+        die Zahl der "Pausen" sagt nichts mehr aus. Genau so eine Zeile hätte
+        sonst als brauchbare Einstellung durchgehen können.
+        """
+        return self.pauses_split > 0 and 0.005 <= self.silence_share <= 0.5
+
+
+@dataclass(frozen=True)
+class Probe:
+    """Befund einer Aufnahme, ohne sie zu zerlegen.
+
+    Warum das ein eigener Befehl ist: fällt eine Lesung durch, sind zwei
+    Ursachen möglich -- eine Schwelle, die nicht zur Aufnahme passt, oder eine
+    Leseweise ohne Pausen. Von außen sehen beide gleich aus. Diese Tabelle
+    trennt sie: findet *keine* Schwelle Pausen, liegt es nicht an der Schwelle.
+    """
+
+    duration_s: float
+    sample_rate: int
+    levels: LevelReport
+    digital_silence_share: float
+    threshold_db: float
+    rows: list[ProbeRow]
+
+    @property
+    def hoffnungslos(self) -> bool:
+        """Keine einzige Schwelle trennt Sprache von Pause."""
+        return not any(row.brauchbar for row in self.rows)
+
+    def beste_schwelle(self) -> float | None:
+        """Die niedrigste Schwelle, die tatsächlich Pausen trennt."""
+        brauchbar = [row for row in self.rows if row.brauchbar]
+        return brauchbar[0].threshold_db if brauchbar else None
+
+    def benoetigte_pausen(self, max_seconds: float = MAX_SECONDS) -> int:
+        """Wie viele Schnittstellen die Aufnahme mindestens braucht.
+
+        Ein Segment darf höchstens ``max_seconds`` lang sein; für n Segmente
+        braucht es n-1 Trennstellen dazwischen.
+        """
+        return max(0, int(np.ceil(self.duration_s / max_seconds)) - 1)
+
+    def gefundene_pausen(self) -> int:
+        """Die meisten Pausen, die eine brauchbare Schwelle findet."""
+        brauchbar = [row.pauses_split for row in self.rows if row.brauchbar]
+        return max(brauchbar) if brauchbar else 0
+
+    def genug_pausen(self, max_seconds: float = MAX_SECONDS) -> bool:
+        return self.gefundene_pausen() >= self.benoetigte_pausen(max_seconds)
+
+
+def probe_audio(
+    audio: np.ndarray,
+    sample_rate: int,
+    min_pause_ms: int = MIN_PAUSE_MS,
+    split_pause_ms: int = SPLIT_PAUSE_MS,
+) -> Probe:
+    """Pegel messen und durchspielen, was verschiedene Schwellen fänden."""
+    frame = max(1, sample_rate // 100)
+    rahmen = audio[: len(audio) - len(audio) % frame].reshape(-1, frame)
+    rms = np.sqrt(np.mean(rahmen.astype(np.float64) ** 2, axis=1))
+    with np.errstate(divide="ignore"):
+        pegel = 20.0 * np.log10(np.maximum(rms, 1e-12))
+
+    grund, sprech = silence_levels(pegel)
+    anteil_null = float(np.mean(pegel <= DIGITAL_ZERO_DB))
+    schwelle = min(max(grund + SILENCE_MARGIN_DB, MIN_SILENCE_DB), MAX_SILENCE_DB)
+
+    kandidaten = sorted({schwelle, *(float(w) for w in range(-60, -14, 5))})
+    zeilen = [
+        ProbeRow(
+            threshold_db=wert,
+            pauses_split=_zaehle_pausen(pegel, wert, max(1, split_pause_ms // 10)),
+            pauses_utterance=_zaehle_pausen(pegel, wert, max(1, min_pause_ms // 10)),
+            longest_pause_s=_laengste_stille(pegel, wert) * frame / sample_rate,
+            silence_share=float(np.mean(pegel < wert)),
+        )
+        for wert in kandidaten
+    ]
+    return Probe(
+        duration_s=duration_seconds(audio, sample_rate),
+        sample_rate=sample_rate,
+        levels=LevelReport(grund, sprech, anteil_null >= _DIGITAL_SILENCE_SHARE),
+        digital_silence_share=anteil_null,
+        threshold_db=schwelle,
+        rows=zeilen,
+    )
+
+
+def _stille_laeufe(still: np.ndarray) -> list[tuple[int, int]]:
+    """Zusammenhängende stille Abschnitte als (Anfang, Ende)."""
+    if still.size == 0:
+        return []
+    wechsel = np.flatnonzero(np.diff(still.astype(np.int8)))
+    grenzen = [0, *(int(i) + 1 for i in wechsel), len(still)]
+    laeufe = []
+    for a, b in zip(grenzen[:-1], grenzen[1:], strict=True):
+        if still[a]:
+            laeufe.append((a, b))
+    return laeufe
+
+
+def _zaehle_pausen(pegel: np.ndarray, schwelle: float, min_frames: int) -> int:
+    """Pausen *innerhalb* der Aufnahme, ohne die stillen Ränder.
+
+    Vorlauf und Ausklang sind fast immer still -- als Schnittstelle taugen sie
+    nicht, denn zu trennen ist ja das, was dazwischen liegt. Zählte man sie mit,
+    sähe eine durchgehend gesprochene Lesung mit ruhigem Anfang aus wie eine mit
+    Pausen, und die Diagnose ginge in die Irre.
+    """
+    still = pegel < schwelle
+    return sum(
+        1 for a, b in _stille_laeufe(still) if b - a >= min_frames and a > 0 and b < len(still)
+    )
+
+
+def _laengste_stille(pegel: np.ndarray, schwelle: float) -> int:
+    laengste, lauf = 0, 0
+    for still in pegel < schwelle:
+        lauf = lauf + 1 if still else 0
+        laengste = max(laengste, lauf)
+    return laengste
+
+
 # -- Bauen ------------------------------------------------------------------
 
 
@@ -461,9 +631,15 @@ def build_dataset(
     language: str = "de",
     min_seconds: float = MIN_SECONDS,
     max_seconds: float = MAX_SECONDS,
+    force_split: bool = False,
     on_event=None,  # noqa: ANN001
 ) -> Dataset:
-    """Aus langen Aufnahmen einen Trainingsdatensatz im F5-Format."""
+    """Aus langen Aufnahmen einen Trainingsdatensatz im F5-Format.
+
+    ``force_split`` trennt zu lange Bereiche notfalls an ihrer leisesten Stelle,
+    auch wenn dort keine echte Pause ist. Bewusst nicht der Normalfall -- aber
+    wer durchgehend spricht, verlöre sonst sein ganzes Material.
+    """
     melde = on_event or (lambda _text: None)
     root = datasets_dir / slug(name)
     root.mkdir(parents=True, exist_ok=True)
@@ -477,7 +653,14 @@ def build_dataset(
         audio, sample_rate = read_wav(quelle)
         raten.add(sample_rate)
         pegel: list[LevelReport] = []
-        gut, schlecht = find_segments(audio, sample_rate, min_seconds, max_seconds, levels=pegel)
+        gut, schlecht = find_segments(
+            audio,
+            sample_rate,
+            min_seconds,
+            max_seconds,
+            levels=pegel,
+            force_split=force_split,
+        )
         klang = f", {pegel[0].beschreibung()}" if pegel else ""
         melde(f"{quelle.name}: {len(gut)} Abschnitte, {len(schlecht)} verworfen{klang}")
 
