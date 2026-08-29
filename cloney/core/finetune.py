@@ -61,10 +61,15 @@ FRAMES_PER_SECOND = 24000 / 256
 #: einer 24-GB-Karte erprobt, hier aber nicht gemessen.
 BATCH_FRAMES_16GB = 1600
 
-#: Aufwärmen über 20000 Schritte ist für einen Lauf von Grund auf gedacht. Ein
-#: Finetune auf eine Stimme ist nach wenigen tausend Schritten vorbei -- bis
-#: dahin wäre die Lernrate nie oben angekommen.
+#: Obergrenze fürs Aufwärmen. F5s Standard von 20000 Schritten ist für einen
+#: Lauf von Grund auf gedacht; ein Finetune auf eine Stimme ist vorher vorbei.
 WARMUP_UPDATES = 200
+
+#: Anteil des Laufs, der höchstens fürs Aufwärmen draufgeht. Ohne diese Grenze
+#: kann die Aufwärmphase den ganzen Lauf verschlingen: 0.6 Minuten Material
+#: ergeben rund 200 Schritte, und mit 200 Aufwärmschritten wäre die Lernrate
+#: genau dann oben, wenn das Training endet.
+WARMUP_ANTEIL = 0.1
 
 #: Unterhalb dieser Menge ist ein Finetune ein Versuch, keine begründete
 #: Erwartung. F5s eigene Angabe für "in-set inference" lautet 10 bis 100
@@ -74,9 +79,14 @@ WARMUP_UPDATES = 200
 KNAPPES_MATERIAL_MINUTEN = 30.0
 
 #: Häufiger sichern als F5s Standard von 50000: sonst gibt es bei einem kurzen
-#: Lauf keinen einzigen Zwischenstand zum Anhören.
+#: Lauf keinen Zwischenstand zum Anhören. Am Ende sichert F5 ohnehin einmal,
+#: aber gerade die Zwischenstände sind interessant -- an ihnen zeigt sich, ob
+#: längeres Training überhaupt noch etwas bringt.
 SAVE_PER_UPDATES = 1000
 LAST_PER_UPDATES = 500
+
+#: So viele Zwischenstände sollen bei einem kurzen Lauf mindestens anfallen.
+ZWISCHENSTAENDE = 5
 
 
 class FinetuneError(RuntimeError):
@@ -147,6 +157,25 @@ class TrainingPlan:
     def knappes_material(self) -> bool:
         return self.total_seconds / 60.0 < KNAPPES_MATERIAL_MINUTEN
 
+    @property
+    def warmup(self) -> int:
+        """Aufwärmschritte, auf die Länge dieses Laufs bemessen.
+
+        Ein fester Wert geht bei kurzen Läufen schief: 200 Aufwärmschritte in
+        einem Lauf von 200 Schritten heißen, dass die Lernrate genau dann oben
+        ankommt, wenn das Training endet.
+        """
+        return max(10, min(self.warmup_updates, int(self.total_steps * WARMUP_ANTEIL)))
+
+    @property
+    def save_interval(self) -> int:
+        """Abstand der Zwischenstände, ebenfalls auf den Lauf bemessen."""
+        return max(50, min(self.save_per_updates, self.total_steps // ZWISCHENSTAENDE))
+
+    @property
+    def last_interval(self) -> int:
+        return max(25, min(self.last_per_updates, self.save_interval // 2))
+
     def command(self) -> list[str]:
         """Der Aufruf von F5s finetune_cli, vollständig und nachvollziehbar."""
         return [
@@ -173,11 +202,11 @@ class TrainingPlan:
             "--epochs",
             str(self.epochs),
             "--num_warmup_updates",
-            str(self.warmup_updates),
+            str(self.warmup),
             "--save_per_updates",
-            str(self.save_per_updates),
+            str(self.save_interval),
             "--last_per_updates",
-            str(self.last_per_updates),
+            str(self.last_interval),
             *self.extra,
         ]
 

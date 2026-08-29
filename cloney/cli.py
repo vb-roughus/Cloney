@@ -825,6 +825,9 @@ def finetune_train(
         f"eine Epoche braucht rund {plan.steps_per_epoch} Schritte,"
     )
     typer.echo(f"{plan.epochs} Epochen also etwa {plan.total_steps} Schritte.")
+    typer.echo(
+        f"Davon {plan.warmup} zum Aufwärmen; gesichert wird alle {plan.save_interval} Schritte."
+    )
     typer.secho(
         "Der Vorschlag für den Speicher ist ein Ausgangspunkt, kein Befund -- "
         "bei einem Speicherfehler --batch-frames halbieren.",
