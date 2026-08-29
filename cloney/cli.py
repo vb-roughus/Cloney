@@ -378,6 +378,133 @@ def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> No
         )
 
 
+datasets_app = typer.Typer(help="Trainingsmaterial für ein Finetune.", no_args_is_help=True)
+app.add_typer(datasets_app, name="dataset")
+
+
+@datasets_app.command("build")
+def dataset_build(
+    audio: list[Path] = typer.Option(
+        ..., "--audio", "-a", exists=True, help="Aufnahme oder Ordner. Mehrfach möglich."
+    ),
+    name: str = typer.Option(..., help="Name des Datensatzes."),
+    min_seconds: float = typer.Option(3.0, help="Kürzeste Segmentlänge."),
+    max_seconds: float = typer.Option(15.0, help="Längste Segmentlänge."),
+) -> None:
+    """Aus langen Aufnahmen einen Trainingsdatensatz im Format von F5-TTS.
+
+    Geschnitten wird an Pausen, transkribiert mit Whisper, und der Text
+    durchläuft dieselbe Normalisierung wie bei der Synthese -- trainiert werden
+    muss auf der Form, die später auch hineingeht.
+    """
+    settings = get_settings()
+    settings.ensure_dirs()
+
+    quellen = sorted(_sammle_aufnahmen(audio))
+    if not quellen:
+        typer.secho("Keine lesbaren Aufnahmen gefunden.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"{len(quellen)} Aufnahme(n) werden zerlegt.")
+
+    from cloney.asr.whisper import WhisperASR
+    from cloney.core.dataset import build_dataset
+
+    asr = WhisperASR(settings.asr_model, settings.asr_device, settings.asr_compute_type)
+    try:
+        dataset = build_dataset(
+            name,
+            quellen,
+            asr,
+            settings.datasets_dir,
+            language=settings.asr_language,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+            on_event=lambda text: typer.echo(f"  {text}"),
+        )
+    except ValueError as exc:
+        typer.secho(f"\nAbgebrochen: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    finally:
+        asr.close()
+
+    _print_dataset(dataset)
+
+
+@datasets_app.command("list")
+def dataset_list() -> None:
+    """Angelegte Datensätze auflisten."""
+    from cloney.core.dataset import Dataset
+
+    settings = get_settings()
+    gefunden = Dataset.list_all(settings.datasets_dir)
+    if not gefunden:
+        typer.echo("Noch keine Datensätze angelegt.")
+        return
+    for dataset in gefunden:
+        werte = dataset.statistik()
+        typer.echo(
+            f"{dataset.name:20} {werte['segmente']:>5} Segmente, "
+            f"{werte['minuten']:>6.1f} min, {werte['verworfen']} verworfen"
+        )
+
+
+@datasets_app.command("show")
+def dataset_show(name: str = typer.Argument(..., help="Name des Datensatzes.")) -> None:
+    """Kennzahlen und die Gründe für Verworfenes."""
+    from cloney.core.dataset import Dataset
+
+    settings = get_settings()
+    root = Dataset.resolve(settings.datasets_dir, name)
+    if not (root / "dataset.json").exists():
+        typer.secho(f"Datensatz '{name}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    _print_dataset(Dataset.load(root), ausfuehrlich=True)
+
+
+def _sammle_aufnahmen(pfade: list[Path]) -> list[Path]:
+    """Dateien und Ordner zu einer Liste von Aufnahmen."""
+    endungen = {".wav", ".flac", ".ogg", ".mp3", ".m4a"}
+    gesammelt: list[Path] = []
+    for pfad in pfade:
+        if pfad.is_dir():
+            gesammelt.extend(p for p in sorted(pfad.iterdir()) if p.suffix.lower() in endungen)
+        else:
+            gesammelt.append(pfad)
+    return gesammelt
+
+
+def _print_dataset(dataset, ausfuehrlich: bool = False) -> None:  # noqa: ANN001
+    werte = dataset.statistik()
+    typer.echo("")
+    typer.echo(f"Datensatz '{dataset.name}' in {dataset.root}")
+    typer.echo(
+        f"  {werte['segmente']} Segmente, {werte['minuten']:.1f} Minuten, {dataset.sample_rate} Hz"
+    )
+    typer.echo(
+        f"  Median: {werte['median_laenge_s']:.1f}s je Segment, "
+        f"{werte['median_zeichen_pro_s']:.1f} Zeichen/s"
+    )
+    if werte["verworfen"]:
+        typer.secho(
+            f"  Verworfen: {werte['verworfen']} Abschnitte "
+            f"({werte['verworfene_minuten']:.1f} Minuten)",
+            fg=typer.colors.YELLOW,
+        )
+        gruende: dict[str, int] = {}
+        for eintrag in dataset.rejected:
+            kurz = eintrag.reason.split(" -- ")[0].split(" (")[0]
+            gruende[kurz] = gruende.get(kurz, 0) + 1
+        for grund, anzahl in sorted(gruende.items(), key=lambda p: -p[1]):
+            typer.echo(f"    {anzahl:>4}x {grund}")
+        if ausfuehrlich:
+            typer.echo("")
+            for eintrag in dataset.rejected:
+                typer.echo(
+                    f"    {eintrag.source} bei {eintrag.start_s:7.1f}s "
+                    f"({eintrag.duration_s:5.1f}s): {eintrag.reason}"
+                )
+
+
 @app.command()
 def compare(
     text: Path = typer.Option(..., exists=True, help="Kurze Textprobe."),
