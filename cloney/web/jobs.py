@@ -22,6 +22,15 @@ from cloney.engines.registry import create_engine
 from cloney.pipeline import ProgressEvent, run_comparison, run_project
 
 
+def _settings_fuer(settings: Settings, modell: str) -> Settings:
+    """Einstellungen, die auf einen trainierten Stand zeigen -- oder die eigenen."""
+    from cloney.core.models import ModelStore, settings_for
+
+    if not modell:
+        return settings
+    return settings_for(ModelStore(settings.models_dir).get(modell), settings)
+
+
 @dataclass
 class Job:
     #: Kennung des Projekts oder des Vergleichs, zu dem dieser Lauf gehört.
@@ -107,7 +116,9 @@ class JobRunner(_Runner):
                 project,
                 settings,
                 voice_store,
-                lambda: create_engine(project.engine, settings, project.engine_options),
+                lambda: create_engine(
+                    project.engine, _settings_fuer(settings, project.model), project.engine_options
+                ),
                 asr_factory,
                 job.update,
                 embedder_factory,
@@ -134,7 +145,9 @@ class ComparisonRunner(_Runner):
                 comparison,
                 settings,
                 voice_store,
-                lambda options: create_engine(comparison.engine, settings, options),
+                lambda options, modell: create_engine(
+                    comparison.engine, _settings_fuer(settings, modell), options
+                ),
                 asr_factory,
                 job.update,
                 embedder_factory,

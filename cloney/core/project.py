@@ -71,6 +71,9 @@ class Project(BaseModel):
     #: Reglerstellung der Engine. Gehört ins Manifest, damit ein Lauf auch
     #: nachträglich reproduzierbar bleibt.
     engine_options: dict[str, float] = Field(default_factory=dict)
+    #: Trainierter Stand, gegen den gerendert wird. Leer = der Pretrain aus der
+    #: Konfiguration.
+    model: str = ""
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
     #: Warum die Stimmähnlichkeit nicht gemessen wurde. Steht im Manifest und

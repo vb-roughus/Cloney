@@ -20,7 +20,7 @@ from cloney.pipeline import run_comparison
 PROBE = "Am 3. Mai 2024 begann es. Dr. Meier sagte z.B. nichts dazu."
 
 
-def _engine(options: dict[str, float]):  # noqa: ANN202
+def _engine(options: dict[str, float], model: str = ""):  # noqa: ANN202
     return DummyEngine(speed=options.get("speed", 1.0), pitch=options.get("pitch", 0.0))
 
 
@@ -134,7 +134,7 @@ def test_gescheiterte_variante_bricht_den_vergleich_nicht_ab(
 ) -> None:
     from cloney.engines.base import EngineError
 
-    def launisch(options: dict[str, float]):  # noqa: ANN202
+    def launisch(options: dict[str, float], model: str = ""):  # noqa: ANN202
         if options.get("speed") == 0.6:
             raise EngineError("Modell nicht geladen")
         return _engine(options)
@@ -154,7 +154,7 @@ def test_fortsetzen_rendert_nur_das_offene(settings: Settings, voice_store: Voic
     run_comparison(comparison, settings, voice_store, _engine, DummyASR)
     vorher = comparison.variant_project(comparison.variants[0].slug).chunks[0].audio_file
 
-    def verweigert(options: dict[str, float]):  # noqa: ANN202
+    def verweigert(options: dict[str, float], model: str = ""):  # noqa: ANN202
         raise AssertionError("Eine fertige Variante darf nicht noch einmal laufen")
 
     run_comparison(comparison, settings, voice_store, verweigert, DummyASR)
@@ -230,3 +230,60 @@ def test_varianten_liegen_beim_vergleich_nicht_bei_den_projekten(
 
     assert Project.list_all(settings.projects_dir) == []
     assert len(list(comparison.variants_dir.iterdir())) == 2
+
+
+# -- Modelle gegeneinander --------------------------------------------------
+
+
+def test_modelle_werden_zu_einer_achse_des_vergleichs() -> None:
+    """Die Frage nach einem Finetune lautet: ist er besser als der Pretrain?
+    Ein leerer Name steht für den Pretrain."""
+    variants = build_variants(DummyEngine.info, {"speed": [1.0]}, models=["", "anna-ft"])
+
+    assert [v.model for v in variants] == ["", "anna-ft"]
+    assert [v.label for v in variants] == ["Pretrain", "anna-ft"]
+
+
+def test_modelle_und_regler_ergeben_das_kreuzprodukt() -> None:
+    variants = build_variants(DummyEngine.info, {"speed": [0.8, 1.2]}, models=["", "anna-ft"])
+
+    assert len(variants) == 4
+    assert variants[0].label == "Pretrain · Sprechtempo 0.8"
+    assert variants[-1].label == "anna-ft · Sprechtempo 1.2"
+
+
+def test_ein_einzelnes_modell_ist_keine_achse() -> None:
+    """Sonst stünde in jeder Beschriftung derselbe Name."""
+    variants = build_variants(DummyEngine.info, {"speed": [0.8, 1.2]}, models=["anna-ft"])
+
+    assert all(v.model == "anna-ft" for v in variants)
+    assert variants[0].label == "Sprechtempo 0.8"
+
+
+def test_vergleich_nur_ueber_modelle_braucht_keine_regler() -> None:
+    variants = build_variants(DummyEngine.info, {}, models=["", "anna-ft"])
+
+    assert [v.label for v in variants] == ["Pretrain", "anna-ft"]
+
+
+def test_das_modell_erreicht_die_engine(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ohne diese Durchreichung würde jede Variante gegen denselben Stand
+    rendern und die Tabelle wäre eine Zeile Zufall je Modell."""
+    gesehen: list[str] = []
+
+    def merkend(options: dict[str, float], model: str = ""):  # noqa: ANN202
+        gesehen.append(model)
+        return _engine(options)
+
+    comparison = Comparison.create(
+        name="Stände",
+        text=PROBE,
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        grid={"speed": [1.0]},
+        comparisons_dir=settings.comparisons_dir,
+        models=["", "anna-ft"],
+    )
+    run_comparison(comparison, settings, voice_store, merkend, DummyASR)
+
+    assert gesehen == ["", "anna-ft"]
