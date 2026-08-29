@@ -372,14 +372,27 @@ def check_higgs(report: Report, settings: Settings) -> None:
         return
 
     report.add("Engine higgs", "ok", f"Server erreichbar, Modell '{settings.higgs_model}'")
-    if platform.system() == "Windows" and settings.higgs_reference_mode in ("auto", "wsl"):
-        # Kein Mangel, sondern die Erklärung, warum der Pfad in der Anfrage
-        # anders aussieht als auf der Platte.
-        report.add(
-            "Higgs-Referenz",
-            "ok",
-            "Pfade werden für WSL nach /mnt/<laufwerk>/... übersetzt",
-        )
+
+    # Wie die Referenzaufnahme zum Server kommt, ist der zweite Stolperstein
+    # nach dem Modellnamen -- und der einzige, der einen Startparameter braucht.
+    if settings.higgs_reference_mode == "base64":
+        report.add("Higgs-Referenz", "ok", "geht als Data-URL mit, kein Serverparameter nötig")
+        return
+
+    stimmen = settings.voices_dir.resolve()
+    if platform.system() == "Windows":
+        from cloney.engines.higgs import server_pfad
+
+        stimmen_fuer_server = server_pfad(str(stimmen), settings.higgs_reference_mode)
+    else:
+        stimmen_fuer_server = str(stimmen)
+    report.add(
+        "Higgs-Referenz",
+        "warn",
+        f"als Dateipfad ({settings.higgs_reference_mode}) -- der Server muss ihn lesen dürfen",
+        f"sgl-omni serve ... --allowed-local-media-path {stimmen_fuer_server} "
+        "(oder CLONEY_HIGGS_REFERENCE_MODE=base64)",
+    )
 
 
 def check_data_dir(report: Report, settings: Settings) -> None:

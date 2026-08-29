@@ -177,7 +177,7 @@ Durchstich mit der Dummy-Engine. Zu jedem Befund steht der Befehl, der ihn beheb
 [ OK ] PyTorch            2.7.0 (CUDA 12.8) auf NVIDIA GeForce RTX 5080, sm_120, 16 GB VRAM
 [ OK ] Audio-Laden        torchaudio liest WAV (24000 Hz, 24000 Samples)
 [ OK ] Engine higgs       Server erreichbar, Modell 'bosonai/higgs-audio-v3-tts-4b'
-[ OK ] Higgs-Referenz     Pfade werden für WSL nach /mnt/<laufwerk>/... übersetzt
+[ OK ] Higgs-Referenz     geht als Data-URL mit, kein Serverparameter nötig
 [ OK ] Durchstich         1 Chunks, 7.5s erzeugt, Fehlerrate 0%
 ```
 
@@ -238,29 +238,97 @@ Für die Higgs-Engine muss der Modellserver laufen:
 sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000
 ```
 
-### Higgs unter Windows
+### Higgs unter Windows: was in WSL zu tun ist
 
-Der Server läuft in WSL2, Cloney auf Windows. Aus dieser Trennung folgen drei
-Dinge, um die sich Cloney kümmert -- die man aber kennen sollte, wenn etwas
-klemmt:
+SGLang-Omni läuft nicht nativ unter Windows. Der Server läuft deshalb in WSL2,
+Cloney bleibt auf Windows, und beide reden über `localhost:8000` -- WSL2 leitet
+das durch.
 
-**Die Referenzaufnahme liest der Server, nicht Cloney.** Die Anfrage enthält
-einen Dateipfad, und `C:\Users\...` ist für einen Prozess in WSL kein gültiger
-Pfad; dieselbe Datei liegt dort unter `/mnt/c/Users/...`. Cloney übersetzt das
-(`CLONEY_HIGGS_REFERENCE_MODE=auto`). Läuft beides auf demselben Linux-System,
-gehört dort `path` hin; kommt der Server an die Datei überhaupt nicht heran,
-schickt `base64` die Aufnahme inline mit.
+**Vorweg, ehrlich:** SGLang-Omni führt Consumer-Karten als
+[offene Baustelle](https://github.com/sgl-project/sglang-omni/issues/1120).
+Validiert ist die RTX 4090 (SM89); für die RTX-50-Serie (SM120) gibt es
+Einzelnachweise für andere Modelle, aber die Installations- und Backend-Matrix
+ist ausdrücklich unvollständig, und Higgs v3 ist unter diesen Nachweisen nicht
+darunter. Es kann also sein, dass der Server auf einer 5080 gar nicht erst
+hochkommt. Das ist keine Frage von Cloney -- die Engine ist fertig und wartet.
 
-**Der Modellname muss zum Server passen.** Ein OpenAI-kompatibler Server lehnt
-eine Anfrage mit unbekanntem Modellnamen ab. `cloney doctor` fragt deshalb
-`/v1/models` ab und nennt den Namen, unter dem der laufende Server das Modell
-anbietet -- bevor mitten in einem Kapitel eine Fehlermeldung auftaucht.
+#### 1. GPU in WSL
 
-**Higgs kennt keinen Seed.** Die Schnittstelle nimmt kein solches Feld entgegen,
-jeder Aufruf würfelt neu. „Neu würfeln" liefert also weiterhin eine andere
-Fassung, aber ein früheres Ergebnis lässt sich nicht wiederherstellen, und „Ton
-verwerfen" zeigt nicht die Wirkung eines Reglers allein. Im Vergleichslauf heißt
-das: die Varianten unterscheiden sich zusätzlich im Zufall. Cloney führt das als
+Der Windows-Treiber genügt; **in WSL darf kein NVIDIA-Treiber installiert
+werden**, er würde den durchgereichten überschreiben. Nur das CUDA-Toolkit für
+WSL, und zwar die Variante `WSL-Ubuntu` von der
+[CUDA-Downloadseite](https://developer.nvidia.com/cuda-downloads).
+
+```bash
+nvidia-smi          # muss die Karte zeigen, sonst stimmt etwas am Windows-Treiber nicht
+```
+
+#### 2. SGLang-Omni
+
+Empfohlen wird das Docker-Image, weil dort UCX, flash-attn und CUDA bereits
+zusammenpassen -- genau die drei Dinge, an denen eine Handinstallation scheitert:
+
+```bash
+docker run -it --shm-size 32g --gpus all --ipc host --network host --privileged \
+  hongccc/sglang-omni:dev /bin/zsh
+```
+
+Ohne Docker, in WSL direkt (Python 3.12, `torch==2.13.0`, `flash-attn-4`):
+
+```bash
+pip install --upgrade pip && pip install uv
+uv venv .venv -p 3.12 && source .venv/bin/activate
+uv pip install --prerelease=allow "sglang-omni==0.1.3"
+```
+
+#### 3. Server starten
+
+```bash
+sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000
+```
+
+Beim ersten Mal lädt das Modell (4B, rund 9 GB) aus dem Hugging-Face-Cache
+herunter. Auf 16 GB ist das eng: das Modell belegt in bf16 etwa 11 GB, der Rest
+geht für den KV-Cache drauf.
+
+#### 4. Auf der Windows-Seite
+
+```bash
+cloney doctor
+```
+
+`doctor` fragt `/v1/models` ab und nennt den Namen, unter dem der Server das
+Modell führt -- weicht er ab, steht der passende `CLONEY_HIGGS_MODEL=`-Eintrag
+gleich in der Meldung.
+
+#### Warum die Referenzaufnahme als Data-URL geht
+
+`audio_path` nimmt laut Kochbuch "local path, file URL, data URL, or HTTP URL"
+entgegen. Ein **Dateipfad** hat über die Grenze zwischen Windows und WSL zwei
+Haken: `C:\Users\...` ist für den Server kein gültiger Pfad (dieselbe Datei
+liegt dort unter `/mnt/c/Users/...`), und er darf ihn nur lesen, wenn der Server
+mit `--allowed-local-media-path <ordner>` gestartet wurde.
+
+Deshalb ist `base64` die Voreinstellung: die Aufnahme geht als Data-URL im
+selben Feld mit. Das kostet ein paar Megabyte je Anfrage über Loopback und
+erspart dafür beides. Wer den Pfadweg will, setzt
+`CLONEY_HIGGS_REFERENCE_MODE=auto` und startet den Server mit dem Stimmenordner:
+
+```bash
+sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000 \
+  --allowed-local-media-path /mnt/c/Pfad/zu/Cloney/data/voices
+```
+
+`cloney doctor` schreibt diese Zeile mit dem richtigen Pfad hin, wenn der
+Pfadweg eingestellt ist.
+
+#### Higgs kennt keinen Seed
+
+Die Schnittstelle nimmt kein solches Feld entgegen, jeder Aufruf würfelt neu.
+„Neu würfeln" liefert also weiterhin eine andere Fassung, aber ein früheres
+Ergebnis lässt sich nicht wiederherstellen, und „Ton verwerfen" zeigt nicht die
+Wirkung eines Reglers allein. Im Vergleichslauf heißt das: die Varianten
+unterscheiden sich zusätzlich im Zufall. Cloney führt das als
 `EngineInfo.reproducible_seed` und schreibt den Hinweis an beide Stellen, statt
 eine Reproduzierbarkeit zu versprechen, die es hier nicht gibt.
 
@@ -564,7 +632,7 @@ setzen; die Standardwerte stehen in [`cloney/config.py`](cloney/config.py).
 | `CLONEY_TARGET_LUFS` | `-16.0` | Ziel-Lautheit der fertigen Spur |
 | `CLONEY_HIGGS_BASE_URL` | `http://localhost:8000/v1` | Adresse des Modellservers |
 | `CLONEY_HIGGS_MODEL` | `bosonai/higgs-audio-v3-tts-4b` | muss dem `--model-path` des Servers entsprechen |
-| `CLONEY_HIGGS_REFERENCE_MODE` | `auto` | `auto`/`wsl`/`path`/`base64` — wie der Server an die Referenz kommt |
+| `CLONEY_HIGGS_REFERENCE_MODE` | `base64` | `base64`/`auto`/`wsl`/`path` — wie der Server an die Referenz kommt |
 | `CLONEY_ASR_MODEL` | `large-v3-turbo` | Whisper-Modell für die Rückschrift |
 | `CLONEY_F5_REPO_ID` | `aihpi/F5-TTS-German` | Modell für die Engine `f5-de` |
 | `CLONEY_F5_CKPT_PATH` | — | lokaler Checkpoint, hat Vorrang vor dem Download |
