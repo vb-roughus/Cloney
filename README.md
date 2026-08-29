@@ -624,7 +624,7 @@ das das Modell fortsetzt -- und dabei gilt aus dem Quelltext:
 
 ```python
 if len(aseg) > 12000:
-    aseg = aseg[:12000]          # alles über 12 s wird abgeschnitten
+    aseg = aseg[:12000]  # alles über 12 s wird abgeschnitten
 max_chars = int(len(ref_text.encode("utf-8")) / ref_sekunden * (22 - ref_sekunden) * speed)
 ```
 
