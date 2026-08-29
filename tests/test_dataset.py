@@ -208,3 +208,81 @@ def test_pfadangaben_im_namen_werden_entschaerft(tmp_path: Path) -> None:
     ziel = Dataset.resolve(datasets, "../../etc")
     assert ziel.parent == datasets.resolve()
     assert ziel.name == "etc"
+
+
+# -- Die Schwelle kommt aus der Aufnahme, nicht aus einer Annahme -----------
+
+
+def _mit_raumton(rausch_db: float, pausen_s: float = 0.5, stuecke: int = 4) -> np.ndarray:
+    """Aufnahme mit Grundrauschen über der ganzen Länge -- so klingt ein Zimmer."""
+    rng = np.random.default_rng(11)
+    teile = []
+    for _ in range(stuecke):
+        teile += [_sprache(5.0), _stille(pausen_s)]
+    rein = np.concatenate(teile)
+    rauschen = 10 ** (rausch_db / 20) * rng.standard_normal(len(rein))
+    return (rein + rauschen).astype(np.float32)
+
+
+@pytest.mark.parametrize("rausch_db", [-70.0, -50.0, -38.0, -30.0])
+def test_pausen_werden_auch_bei_lautem_raumton_gefunden(rausch_db: float) -> None:
+    """Eine feste Schwelle von -40 dBFS findet ab -38 dBFS Raumton *keine*
+    einzige Pause mehr -- die ganze Lesung gilt dann als ein Bereich ohne
+    Schnittstelle. Genau daran ist der erste echte Datensatz gescheitert."""
+    gut, schlecht = find_segments(_mit_raumton(rausch_db), SR)
+
+    assert len(gut) == 4
+    assert schlecht == []
+
+
+def test_feste_schwelle_bleibt_uebersteuerbar() -> None:
+    """Der automatische Weg ist der Normalfall, nicht der einzige."""
+    audio = _mit_raumton(-30.0)
+    assert find_segments(audio, SR, silence_db=-40.0)[0] == []
+    assert len(find_segments(audio, SR)[0]) == 4
+
+
+def test_aufnahme_ohne_dynamik_wird_benannt() -> None:
+    """Durchgehend gesprochen oder stark komprimiert: ein Schnitt wäre geraten."""
+    rng = np.random.default_rng(3)
+    audio = (0.2 * rng.standard_normal(20 * SR)).astype(np.float32)
+
+    gut, schlecht = find_segments(audio, SR)
+
+    assert gut == []
+    assert "kaum Unterschied" in schlecht[0][2]
+
+
+def test_pegel_werden_aus_der_aufnahme_gemessen() -> None:
+    from cloney.core.dataset import silence_levels
+
+    rahmen = _mit_raumton(-45.0)[: 240 * 2000].reshape(-1, 240)
+    rms = np.sqrt(np.mean(rahmen.astype(np.float64) ** 2, axis=1))
+    pegel = 20 * np.log10(np.maximum(rms, 1e-12))
+
+    grund, sprech = silence_levels(pegel)
+    assert grund == pytest.approx(-45.0, abs=3.0)
+    assert sprech > grund + 20
+
+
+def test_ohne_pause_nennt_den_weg(tmp_path: Path) -> None:
+    """Die Meldung soll sagen, was beim nächsten Take anders zu machen ist."""
+    _, schlecht = find_segments(_sprache(20.0), SR)
+    assert "deutlicher absetzen" in schlecht[0][2]
+
+
+# -- Das Sprechtempo meint den Wortlaut, nicht die Sprechfassung ------------
+
+
+def test_tempo_wird_auf_dem_wortlaut_gerechnet(tmp_path: Path) -> None:
+    """Die Normalisierung bläht den Text auf: aus '3. Mai 2024' werden
+    36 Zeichen. Auf der Sprechfassung gerechnet sähe jede Aufnahme mit Ziffern
+    zu schnell aus -- und die Zahl wäre eine andere als die, mit der die
+    Eingangsprüfung arbeitet."""
+    dataset = build_dataset("Anna", [_quelle(tmp_path)], FesterASR(), tmp_path / "datasets")
+
+    utterance = dataset.utterances[0]
+    assert len(utterance.text) > len(utterance.raw_text)
+    assert utterance.chars_per_second == pytest.approx(
+        len(utterance.raw_text) / utterance.duration_s
+    )

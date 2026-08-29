@@ -60,8 +60,27 @@ MIN_PAUSE_MS = 320
 #: Grenze zwischen zwei Äußerungen wäre er zu wenig.
 SPLIT_PAUSE_MS = 180
 
-#: Unterhalb dieses Pegels zählt ein Frame als still.
-SILENCE_DB = -40.0
+#: Abstand über dem gemessenen Grundpegel, ab dem ein Frame als Sprache zählt.
+#:
+#: Eine feste Schwelle wie -40 dBFS setzt eine leise Aufnahme voraus. Liegt der
+#: Raumton darüber -- bei einer normalisierten oder in einem lebendigen Zimmer
+#: entstandenen Aufnahme keine Seltenheit --, ist plötzlich *nichts* mehr still,
+#: und die ganze Lesung gilt als ein einziger Bereich ohne Pause. Gemessen an
+#: synthetischen Aufnahmen mit Raumton von -70 bis -30 dBFS findet dieser
+#: Abstand durchgehend genau die echten Pausen; 14 dB zerfasert bereits die
+#: Silbenlücken, 6 dB ist unnötig knapp.
+SILENCE_MARGIN_DB = 10.0
+
+#: Höher darf die selbst bestimmte Schwelle nicht liegen -- sonst schneidet eine
+#: durchweg laute Aufnahme mitten in leisen Wörtern.
+MAX_SILENCE_DB = -20.0
+
+#: Unterschreitet der Abstand zwischen leisen und lauten Stellen diesen Wert,
+#: enthält die Aufnahme keine brauchbare Stille.
+MIN_DYNAMIC_RANGE_DB = 12.0
+
+#: Bleibt selbst der lauteste Teil darunter, ist auf der Spur nichts drauf.
+SILENCE_FLOOR_DB = -60.0
 
 #: Rand, der an beiden Enden eines Segments stehen bleibt. Ohne ihn klingt der
 #: Einsatz abgehackt, mit zu viel wird jedes Beispiel vorn und hinten zäh.
@@ -81,7 +100,14 @@ class Utterance(BaseModel):
 
     @property
     def chars_per_second(self) -> float:
-        return len(self.text) / self.duration_s if self.duration_s else 0.0
+        """Sprechtempo auf dem Wortlaut, nicht auf der Sprechfassung.
+
+        Die Normalisierung bläht den Text auf -- aus "3. Mai 2024" werden
+        36 Zeichen. Auf der Sprechfassung gerechnet sähe jede Aufnahme mit
+        Ziffern zu schnell aus, und die Zahl wäre eine andere als die, mit der
+        die Eingangsprüfung arbeitet.
+        """
+        return len(self.raw_text) / self.duration_s if self.duration_s else 0.0
 
 
 class Rejection(BaseModel):
@@ -187,9 +213,10 @@ def find_segments(
     sample_rate: int,
     min_seconds: float = MIN_SECONDS,
     max_seconds: float = MAX_SECONDS,
-    silence_db: float = SILENCE_DB,
+    silence_db: float | None = None,
     min_pause_ms: int = MIN_PAUSE_MS,
     split_pause_ms: int = SPLIT_PAUSE_MS,
+    levels: list[float] | None = None,
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int, str]]]:
     """Sprachbereiche zwischen den Pausen finden.
 
@@ -197,6 +224,10 @@ def find_segments(
     Zu lange Bereiche werden an ihrer längsten inneren Pause geteilt; findet sich
     keine, wird der Bereich verworfen -- ein harter Schnitt mitten im Wort brächte
     dem Modell einen Anfang bei, den es später produziert.
+
+    ``silence_db=None`` bestimmt die Schwelle aus der Aufnahme selbst. Das ist
+    der Normalfall: eine feste Schwelle scheitert an allem, was lauter rauscht,
+    als sie annimmt.
     """
     frame = max(1, sample_rate // 100)
     if audio.size < frame:
@@ -206,6 +237,28 @@ def find_segments(
     rms = np.sqrt(np.mean(rahmen.astype(np.float64) ** 2, axis=1))
     with np.errstate(divide="ignore"):
         pegel = 20.0 * np.log10(np.maximum(rms, 1e-12))
+
+    grundpegel, sprechpegel = silence_levels(pegel)
+    if levels is not None:
+        # Der Aufrufer will die gemessenen Pegel sehen -- sie sagen mehr über
+        # die Aufnahme als jede Zahl, die wir selbst gewählt hätten.
+        levels[:] = [grundpegel, sprechpegel]
+    if silence_db is None:
+        silence_db = min(grundpegel + SILENCE_MARGIN_DB, MAX_SILENCE_DB)
+        if sprechpegel < SILENCE_FLOOR_DB:
+            # Nichts zu hören. Kein Befund, sondern schlicht keine Aufnahme.
+            return [], []
+        if sprechpegel - grundpegel < MIN_DYNAMIC_RANGE_DB:
+            # Zwischen leise und laut liegt fast nichts: entweder durchgehend
+            # gesprochen oder stark komprimiert. Ein Schnitt wäre geraten.
+            return [], [
+                (
+                    0,
+                    len(audio),
+                    f"kaum Unterschied zwischen leisen und lauten Stellen "
+                    f"({grundpegel:.0f} bis {sprechpegel:.0f} dBFS) -- keine Pausen erkennbar",
+                )
+            ]
     laut = pegel > silence_db
 
     pause_frames = max(1, int(min_pause_ms / 10))
@@ -232,6 +285,35 @@ def find_segments(
             schlecht,
         )
     return gut, schlecht
+
+
+#: Fenster, über das der Grundpegel gesucht wird. Dieselbe Größenordnung wie
+#: die kürzeste brauchbare Pause -- gesucht ist ja genau deren Pegel.
+_FLOOR_WINDOW = 20
+
+
+def silence_levels(pegel: np.ndarray) -> tuple[float, float]:
+    """Grund- und Sprechpegel einer Aufnahme in dBFS.
+
+    Der Grundpegel ist das Minimum der gleitenden Mediane: die leiseste Stelle,
+    die *anhält*. Ein Perzentil taugt dafür nicht -- wer lange Passagen mit
+    wenigen Pausen liest, hat so wenige stille Frames, dass schon das fünfte
+    Perzentil mitten in der Sprache landet und den Raumton um zehn Dezibel zu
+    hoch schätzt. Das gleitende Minimum trifft ihn über den ganzen Bereich von
+    zwei bis siebzehn Prozent Pausenanteil auf ein halbes Dezibel genau.
+
+    Der Sprechpegel ist das fünfundneunzigste Perzentil. Beide zusammen sagen,
+    wo die Grenze zwischen still und gesprochen in *dieser* Aufnahme liegt --
+    nicht in einer angenommenen.
+    """
+    if pegel.size == 0:
+        return -120.0, -120.0
+    if pegel.size < _FLOOR_WINDOW:
+        grund = float(pegel.min())
+    else:
+        sicht = np.lib.stride_tricks.sliding_window_view(pegel, _FLOOR_WINDOW)
+        grund = float(np.median(sicht, axis=1).min())
+    return grund, float(np.percentile(pegel, 95))
 
 
 def _speech_runs(laut: np.ndarray, pause_frames: int) -> list[tuple[int, int]]:
@@ -272,7 +354,14 @@ def _teile(  # noqa: PLR0913
 
     schnitt = _laengste_pause(laut, frame, start, ende, schnitt_frames)
     if schnitt is None:
-        schlecht.append((start, ende, f"{dauer:.1f}s ohne Pause zum Schneiden -- am Stück zu lang"))
+        schlecht.append(
+            (
+                start,
+                ende,
+                f"{dauer:.1f}s ohne Pause zum Schneiden -- am Stück zu lang. "
+                "Beim Lesen zwischen den Sätzen deutlicher absetzen",
+            )
+        )
         return
     for a, b in ((start, schnitt), (schnitt, ende)):
         _teile(
@@ -339,8 +428,10 @@ def build_dataset(
     for quelle in sources:
         audio, sample_rate = read_wav(quelle)
         raten.add(sample_rate)
-        gut, schlecht = find_segments(audio, sample_rate, min_seconds, max_seconds)
-        melde(f"{quelle.name}: {len(gut)} Abschnitte, {len(schlecht)} verworfen")
+        pegel: list[float] = []
+        gut, schlecht = find_segments(audio, sample_rate, min_seconds, max_seconds, levels=pegel)
+        raumton = f", Raumton {pegel[0]:.0f} dBFS" if pegel else ""
+        melde(f"{quelle.name}: {len(gut)} Abschnitte, {len(schlecht)} verworfen{raumton}")
 
         for start, ende, grund in schlecht:
             verworfen.append(
