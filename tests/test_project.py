@@ -207,6 +207,47 @@ def test_andere_schreibweise_gleiche_sprechfassung_behaelt_den_ton(
     assert project.chunks[0].status == ChunkStatus.OK
 
 
+def test_ohne_angabe_bleibt_der_trainierte_stand(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein Aufrufer, der das Feld nicht kennt, darf den Finetune nicht
+    stillschweigend abwählen -- das Projekt spräche danach mit einer anderen
+    Stimme, ohne dass jemand etwas geändert hätte."""
+    project = _gerendert(settings, voice_store, "Erster Satz. Zweiter Satz.")
+    project.model = "anna-ft"
+    project.save()
+
+    project.reconfigure(
+        text="Erster Satz. Zweiter Satz.",
+        voice=project.voice,
+        engine=DummyEngine.info,
+        target_seconds=1.5,
+    )
+
+    assert project.model == "anna-ft"
+    assert all(chunk.status == ChunkStatus.OK for chunk in project.chunks)
+
+
+def test_modellwechsel_verwirft_allen_ton(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ein anderer trainierter Stand ist ein anderer Sprecher -- genau wie eine
+    andere Stimme oder Engine."""
+    project = _gerendert(settings, voice_store, "Erster Satz. Zweiter Satz.")
+    project.model = "anna-ft"
+    project.save()
+
+    bericht = project.reconfigure(
+        text="Erster Satz. Zweiter Satz.",
+        voice=project.voice,
+        engine=DummyEngine.info,
+        model="",
+        target_seconds=1.5,
+    )
+
+    assert project.model == ""
+    assert bericht["behalten"] == 0
+    assert all(chunk.audio_file is None for chunk in project.chunks)
+
+
 def test_stimmwechsel_verwirft_allen_ton(settings: Settings, voice_store: VoiceStore) -> None:
     """Sonst entstünde eine Spur aus zwei Sprechern."""
     voice_store.add("zweite-stimme", voice_store.get("test-stimme").audio_path, transcript="Hallo.")

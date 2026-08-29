@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,8 @@ from fastapi.testclient import TestClient
 from cloney.asr.dummy import DummyASR
 from cloney.config import Settings
 from cloney.core.audio import duration_seconds, read_wav
+from cloney.core.compare import Comparison
+from cloney.core.models import ModelStore
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
 from cloney.engines.dummy import DummyEngine
@@ -23,13 +26,11 @@ def _client(settings: Settings) -> TestClient:
     return TestClient(create_app(settings, DummyASR))
 
 
-def _create_project(client: TestClient) -> str:
-    response = client.post(
-        "/projects",
-        data={"name": "Testlauf", "text": TEXT, "voice": "test-stimme", "engine": "dummy"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
+def _create_project(client: TestClient, **werte: str) -> str:
+    daten = {"name": "Testlauf", "text": TEXT, "voice": "test-stimme", "engine": "dummy"}
+    daten.update(werte)
+    response = client.post("/projects", data=daten, follow_redirects=False)
+    assert response.status_code == 303, response.text
     return response.headers["location"].rsplit("/", 1)[-1]
 
 
@@ -763,3 +764,129 @@ def test_projektseite_zeigt_die_reiter_statt_verschachtelter_klappboxen(
     # Die Vorlage ist von der Projektseite aus änderbar, nicht nur beim Anlegen.
     assert f'action="/projects/{project_id}/configure"' in seite
     assert 'name="text"' in seite
+
+
+# -- Trainierte Modelle ------------------------------------------------------
+
+
+@pytest.fixture
+def modelle(settings: Settings, tmp_path: Path) -> ModelStore:
+    """Ein eingetragener Stand. Die Dateien sind Attrappen -- geprüft wird, was
+    Cloney mit dem Eintrag macht, nicht ob F5 ihn laden kann."""
+    store = ModelStore(settings.models_dir)
+    ckpt = tmp_path / "model_last.pt"
+    vocab = tmp_path / "vocab.txt"
+    ckpt.write_bytes(b"kein echtes Modell")
+    vocab.write_text("a\nb\n", encoding="utf-8")
+    store.add("anna-ft", ckpt, vocab, note="anna, 1 min")
+    return store
+
+
+def test_projekt_gegen_trainierten_stand_anlegen(
+    settings: Settings, voice_store: VoiceStore, modelle: ModelStore
+) -> None:
+    client = _client(settings)
+    assert "anna-ft" in client.get("/").text
+
+    project_id = _create_project(client, model="anna-ft")
+
+    assert Project.load(settings.projects_dir / project_id).model == "anna-ft"
+    assert "anna-ft" in client.get(f"/projects/{project_id}").text
+
+
+def test_unbekannter_stand_wird_abgelehnt(settings: Settings, voice_store: VoiceStore) -> None:
+    antwort = _client(settings).post(
+        "/projects",
+        data={
+            "name": "Testlauf",
+            "text": TEXT,
+            "voice": "test-stimme",
+            "engine": "dummy",
+            "model": "gibt-es-nicht",
+        },
+    )
+    assert antwort.status_code == 400
+    assert "gibt-es-nicht" in antwort.text
+
+
+def test_einzelner_satz_rendert_gegen_denselben_stand(
+    settings: Settings,
+    voice_store: VoiceStore,
+    modelle: ModelStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sonst würfelte ein einzelner Satz gegen den Pretrain und klänge neben
+    seinen Nachbarn nach einem anderen Sprecher."""
+    import cloney.web.app as web
+
+    gesehen: list[str] = []
+    echt = web.create_engine
+
+    def merken(name: str, eigene: Settings, options: dict) -> object:
+        gesehen.append(eigene.f5_ckpt_path)
+        return echt(name, eigene, options)
+
+    monkeypatch.setattr(web, "create_engine", merken)
+
+    client = _client(settings)
+    project_id = _create_project(client, model="anna-ft")
+    assert client.post(f"/projects/{project_id}/chunks/0/reroll").status_code == 200
+
+    assert gesehen == [modelle.get("anna-ft").ckpt_path]
+
+
+def test_fehlender_checkpoint_meldet_sich_beim_rendern(
+    settings: Settings, voice_store: VoiceStore, modelle: ModelStore
+) -> None:
+    """Ein verschobener Checkpoint darf nicht stillschweigend zum Pretrain
+    zurückfallen -- das wäre ein anderer Sprecher ohne jeden Hinweis."""
+    client = _client(settings)
+    project_id = _create_project(client, model="anna-ft")
+    Path(modelle.get("anna-ft").ckpt_path).unlink()
+
+    antwort = client.post(f"/projects/{project_id}/chunks/0/reroll")
+    assert antwort.status_code == 400
+    assert "anna-ft" in antwort.text
+
+
+def test_modellwechsel_verwirft_den_ton(
+    settings: Settings, voice_store: VoiceStore, modelle: ModelStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    assert _configure(client, project_id, model="anna-ft").status_code == 200
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.model == "anna-ft"
+    assert all(chunk.audio_file is None for chunk in project.chunks)
+
+
+def test_vergleich_stellt_pretrain_gegen_finetune(
+    settings: Settings, voice_store: VoiceStore, modelle: ModelStore
+) -> None:
+    """Die Frage, die ein Finetune aufwirft: hat er etwas gebracht? Ohne den
+    Pretrain in derselben Tabelle ist sie nicht zu beantworten."""
+    client = _client(settings)
+    assert "anna-ft" in client.get("/comparisons").text
+
+    antwort = client.post(
+        "/comparisons",
+        data={
+            "name": "Pretrain gegen Finetune",
+            "text": "Am 3. Mai 2024 begann es.",
+            "voice": "test-stimme",
+            "engine": "dummy",
+            "models": ["", "anna-ft"],
+        },
+        follow_redirects=False,
+    )
+    assert antwort.status_code == 303, antwort.text
+    comparison_id = antwort.headers["location"].rsplit("/", 1)[-1]
+
+    comparison = Comparison.load(settings.comparisons_dir / comparison_id)
+    assert [v.model for v in comparison.variants] == ["", "anna-ft"]
+    seite = client.get(f"/comparisons/{comparison_id}").text
+    assert "Pretrain" in seite and "anna-ft" in seite

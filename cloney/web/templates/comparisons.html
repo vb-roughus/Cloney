@@ -45,12 +45,35 @@
     </span>
   </label>
 
+  {% if models %}
+  <h3>Modelle</h3>
+  <p class="muted">
+    Mehrere angehakt heißt: das Modell wird zur Achse des Rasters. „Pretrain“ ist der
+    Stand, von dem ein Finetune ausging &mdash; ihn mitlaufen zu lassen ist die einzige
+    Art, zu belegen, dass das Training etwas gebracht hat.
+  </p>
+  <div class="modelle">
+    <label class="ankreuz">
+      <input type="checkbox" name="models" value=""> Pretrain
+    </label>
+    {% for m in models %}
+    <label class="ankreuz">
+      <input type="checkbox" name="models" value="{{ m.name }}"
+             {% if not m.exists %}disabled{% endif %}>
+      {{ m.name }}
+      {% if m.note %}<span class="muted">{{ m.note }}</span>{% endif %}
+      {% if not m.exists %}<span class="warn-text">Datei fehlt</span>{% endif %}
+    </label>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <h3>Raster</h3>
   {% include "_grid_fields.html" %}
 
   <button type="submit">Vergleich anlegen</button>
   <p class="muted">
-    Angelegt wird das Kreuzprodukt aller angegebenen Werte, höchstens
+    Angelegt wird das Kreuzprodukt aus Modellen und angegebenen Reglerwerten, höchstens
     {{ max_variants }} Varianten. Gerendert wird erst auf Knopfdruck.
   </p>
 </form>

@@ -300,16 +300,15 @@ def render(
         text=text.read_text(encoding="utf-8"),
         voice=voice,
         engine=info,
+        model=model,
         projects_dir=settings.projects_dir,
         reference_seconds=reference.duration_s,
         chars_per_second=settings.chars_per_second,
         target_seconds=settings.target_chunk_seconds,
         max_seconds=settings.max_chunk_seconds,
     )
-    project.model = model
     if options:
         project.engine_options = options
-    if options or model:
         project.save()
         gesetzt = ", ".join(f"{k}={v:g}" for k, v in sorted(options.items()))
         typer.echo(f"Regler: {gesetzt}")

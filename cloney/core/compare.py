@@ -108,7 +108,11 @@ class Comparison(BaseModel):
     ) -> Comparison:
         variants = build_variants(engine, grid, models=models)
         if not variants:
-            raise ValueError("Kein Raster: es wurde kein einziger Reglerwert angegeben.")
+            raise ValueError(
+                "Kein Raster: es wurde kein einziger Reglerwert angegeben. Ein einzelner "
+                "trainierter Stand ergibt allein noch keinen Vergleich -- entweder einen "
+                "Regler mit mehreren Werten, oder einen zweiten Stand dazunehmen."
+            )
 
         comparison_id = _make_id(name)
         root = comparisons_dir / comparison_id
@@ -296,7 +300,10 @@ def build_variants(
     Regel wie bei ``EngineInfo.clean_options``, damit ein Vergleich nichts
     misst, was so gar nicht eingestellt werden kann.
     """
-    modelle = models
+    # Wie bei den Reglerwerten: doppelt genannte Stände ergäben zwei gleiche
+    # Zeilen, die nur Rechenzeit kosten. Die Reihenfolge bleibt, wie sie
+    # angegeben wurde -- sie bestimmt die Reihenfolge der Zeilen.
+    modelle = list(dict.fromkeys(models or []))
     achsen: list[tuple[str, list[float]]] = []
     for option in engine.options:
         werte = grid.get(option.key)

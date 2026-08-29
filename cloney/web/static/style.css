@@ -274,6 +274,17 @@ label.regler input[type="range"] {
 }
 label.regler .muted { display: block; font-size: .82rem; }
 
+/* --- Modelle als Achse --------------------------------------------------- */
+
+.modelle { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: .3rem 0 .2rem; }
+label.ankreuz {
+  display: flex; align-items: baseline; gap: .4rem; margin: 0;
+  padding: .35rem .6rem; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--ink); font-size: .9rem;
+}
+label.ankreuz input { accent-color: var(--accent); }
+label.ankreuz .muted { font-size: .82rem; }
+
 /* --- Verwalten ---------------------------------------------------------- */
 
 button.gefahr {

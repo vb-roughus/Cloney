@@ -349,8 +349,8 @@ Sprechfassung und das, was die Spracherkennung tatsächlich gehört hat. Weichen
 die letzten beiden voneinander ab, ist das der konkrete Hinweis, wo es hakt.
 
 **Einstellungen** trägt alles, was den Klang bestimmt -- und dieselben Angaben
-wie beim Anlegen: Text, Stimme, Engine, dazu die Regler und die Kennwerte der
-Referenzaufnahme. Ein bestehendes Projekt lässt sich damit ändern, statt es neu
+wie beim Anlegen: Text, Stimme, Engine, den trainierten Stand, dazu die Regler
+und die Kennwerte der Referenzaufnahme. Ein bestehendes Projekt lässt sich damit ändern, statt es neu
 anlegen zu müssen.
 
 **Projekt** sammelt Umbenennen, Kopie, Ton verwerfen und Löschen an einer
@@ -360,7 +360,7 @@ Die Reiter sind reines CSS über versteckte Radioknöpfe. Ohne Skript heißt: de
 gewählte Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber
 austauscht.
 
-### Text, Stimme oder Engine nachträglich ändern
+### Text, Stimme, Engine oder Modell nachträglich ändern
 
 Ein anderer Text heißt neu segmentieren, und damit wandern die Chunk-Grenzen.
 Trotzdem soll ein Tippfehler in Satz drei nicht die Arbeit an Satz siebzehn
@@ -369,9 +369,9 @@ Seed und Messwerte. Verglichen wird die normalisierte Fassung, nicht der
 Rohtext -- wer nur `3.` zu `dritten` ändert, hört dasselbe und soll nicht neu
 rendern müssen.
 
-Ein Wechsel von Stimme oder Engine verwirft dagegen allen Ton. Vorhandene Sätze
-stammten dann von einem anderen Sprecher oder Modell, und sie stehen zu lassen
-ergäbe eine Spur aus zwei Stimmen.
+Ein Wechsel von Stimme, Engine oder trainiertem Stand verwirft dagegen allen Ton.
+Vorhandene Sätze stammten dann von einem anderen Sprecher oder Modell, und sie
+stehen zu lassen ergäbe eine Spur aus zwei Stimmen.
 
 Die fertige Spur bleibt nur, wenn sich am Satzbestand nichts geändert hat --
 sonst wäre sie eine Lüge. Dass sie ein unverändertes Übernehmen übersteht, macht
@@ -905,11 +905,22 @@ Modell zu einer Achse des Vergleichs, und die Tabelle beantwortet die Frage, die
 ein Finetune aufwirft: **ist er besser als das, was vorher da war?** -- an
 Fehlerrate und Stimmähnlichkeit, statt am Eindruck.
 
-### 4. In der Weboberfläche (geplant)### 4. In der Weboberfläche (geplant)
+### 4. In der Weboberfläche
 
-Datensätze ansehen, ein Training starten, den Verlauf verfolgen, Checkpoints
-gegeneinander hören. Der Vergleichslauf ist dafür schon da: ein Checkpoint ist
-nichts anderes als eine weitere Variante, die dieselbe Probe rendert.
+Ein eingetragener Stand ist überall dort wählbar, wo bisher Stimme und Engine
+standen: beim Anlegen eines Projekts, in der Vorlage eines bestehenden, und im
+Vergleichslauf. Dort sind die Stände ankreuzbar -- **Pretrain** ist einer davon,
+und ihn mitlaufen zu lassen ist die einzige Art, zu belegen, dass das Training
+etwas gebracht hat.
+
+Ein Wechsel des Stands verwirft den vorhandenen Ton, genau wie ein Wechsel von
+Stimme oder Engine: er stammte von einem anderen Modell. Aus demselben Grund
+rendert auch „Neu würfeln“ gegen den Stand des Projekts und nicht gegen den
+Pretrain -- sonst klänge ein einzelner Satz neben seinen Nachbarn nach einem
+anderen Sprecher.
+
+Offen bleibt das Training selbst: Datensätze ansehen, einen Lauf starten und
+seinen Verlauf verfolgen, geht weiterhin nur über die Befehlszeile.
 
 ### Was offen ist
 
