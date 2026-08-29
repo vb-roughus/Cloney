@@ -8,6 +8,9 @@ Ordner und die berechneten Parameter.
 from __future__ import annotations
 
 import csv
+import pickle
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -363,19 +366,32 @@ def test_inferenz_export_wird_erkannt() -> None:
     assert not needs_ema_wrapper(["initted", "step", "ema_model.transformer.proj_out.weight"])
 
 
-def test_wrapper_ergaenzt_praefix_und_buchfuehrung() -> None:
-    import torch
+@pytest.fixture
+def fake_torch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ersetzt torch durch eine Attrappe, die über pickle schreibt und liest.
 
+    Zu prüfen ist die Struktur, die Cloney ablegt -- nicht Torchs
+    Serialisierung. Torch nur dafür zu installieren kostete die CI ein
+    Vielfaches der Laufzeit für nichts.
+    """
+    modul = types.ModuleType("torch")
+    modul.tensor = lambda wert: ("tensor", wert)
+    modul.save = lambda obj, pfad: Path(pfad).write_bytes(pickle.dumps(obj))
+    modul.load = lambda pfad, **kwargs: pickle.loads(Path(pfad).read_bytes())
+    monkeypatch.setitem(sys.modules, "torch", modul)
+
+
+def test_wrapper_ergaenzt_praefix_und_buchfuehrung(fake_torch: None) -> None:
     from cloney.core.finetune import EMA_BUCHFUEHRUNG, ema_wrapped
 
-    gewrappt = ema_wrapped({"transformer.proj_out.weight": torch.zeros(2, 2)})
+    gewrappt = ema_wrapped({"transformer.proj_out.weight": "gewicht"})
 
     assert set(EMA_BUCHFUEHRUNG) <= set(gewrappt)
     assert "ema_model.transformer.proj_out.weight" in gewrappt
     assert "transformer.proj_out.weight" not in gewrappt
 
 
-def test_pretrain_wird_nur_bei_bedarf_umgeschrieben(tmp_path: Path) -> None:
+def test_pretrain_wird_nur_bei_bedarf_umgeschrieben(fake_torch: None, tmp_path: Path) -> None:
     """Die offiziellen F5-Checkpoints tragen die Struktur bereits. Sie zu
     kopieren kostete über ein Gigabyte für nichts."""
     import torch
@@ -383,19 +399,19 @@ def test_pretrain_wird_nur_bei_bedarf_umgeschrieben(tmp_path: Path) -> None:
     from cloney.core.finetune import ema_wrapped, write_trainer_pretrain
 
     passend = tmp_path / "schon_gut.pt"
-    torch.save({"ema_model_state_dict": ema_wrapped({"transformer.w": torch.zeros(2)})}, passend)
+    torch.save({"ema_model_state_dict": ema_wrapped({"transformer.w": "gewicht"})}, passend)
 
     assert write_trainer_pretrain(passend, tmp_path / "kopie.pt") == passend
     assert not (tmp_path / "kopie.pt").exists()
 
 
-def test_nackter_export_wird_ladbar_geschrieben(tmp_path: Path) -> None:
+def test_nackter_export_wird_ladbar_geschrieben(fake_torch: None, tmp_path: Path) -> None:
     import torch
 
     from cloney.core.finetune import write_trainer_pretrain
 
     quelle = tmp_path / "model_420000.pt"
-    torch.save({"transformer.proj_out.weight": torch.zeros(2, 2)}, quelle)
+    torch.save({"transformer.proj_out.weight": "gewicht"}, quelle)
 
     ziel = write_trainer_pretrain(quelle, tmp_path / "pretrain_model_420000.pt")
 

@@ -861,9 +861,9 @@ Inferenz-Export behandelt:
 
 ```python
 if latest_checkpoint.endswith(".safetensors"):  # always a pretrained checkpoint
-    checkpoint = {"ema_model_state_dict": load_file(...)}   # nackte Schlüssel
+    checkpoint = {"ema_model_state_dict": load_file(...)}  # nackte Schlüssel
 ...
-self.ema_model.load_state_dict(checkpoint["ema_model_state_dict"])   # scheitert hier
+self.ema_model.load_state_dict(checkpoint["ema_model_state_dict"])  # scheitert hier
 ```
 
 Der Wrapper erwartet `initted`, `step` und `ema_model.<...>`. Der deutsche
