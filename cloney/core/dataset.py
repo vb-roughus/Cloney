@@ -76,6 +76,17 @@ SILENCE_MARGIN_DB = 10.0
 #: durchweg laute Aufnahme mitten in leisen Wörtern.
 MAX_SILENCE_DB = -20.0
 
+#: Abstand unter dem Sprechpegel, ab dem eine Stelle als Pause gilt.
+#:
+#: Die Schwelle allein am Grundpegel festzumachen reicht nicht. Eine Aufnahme
+#: kann irgendwo eine sehr leise Stelle haben -- am Rand, an einer Schnittkante --
+#: und trotzdem Sprechpausen enthalten, die viel höher liegen, weil in ihnen
+#: geatmet wird oder der Raum nachklingt. Gemessen an einer echten Lesung:
+#: Grundpegel -63 dBFS, Sprechpegel -12 dBFS, die Pausen aber erst ab -50
+#: aufwärts. Grund+10 ergab -53 und fand genau eine Pause auf 42 Sekunden;
+#: Sprech-25 ergibt -37 und findet fünf.
+SPEECH_DROP_DB = 25.0
+
 #: Und nicht tiefer. Ohne diese Grenze kippt die Rechnung ins Gegenteil: eine
 #: bearbeitete Aufnahme mit exakt stillen Stellen ergibt einen Grundpegel von
 #: -240 dBFS, eine Schwelle von -230 -- und damit gilt jedes Rauschen als
@@ -258,7 +269,7 @@ def find_segments(
         # die Aufnahme als jede Zahl, die wir selbst gewählt hätten.
         levels[:] = [LevelReport(grundpegel, sprechpegel, hat_digitale_stille)]
     if silence_db is None:
-        silence_db = min(max(grundpegel + SILENCE_MARGIN_DB, MIN_SILENCE_DB), MAX_SILENCE_DB)
+        silence_db = threshold_for(grundpegel, sprechpegel)
         if sprechpegel < SILENCE_FLOOR_DB:
             # Nichts zu hören. Kein Befund, sondern schlicht keine Aufnahme.
             return [], []
@@ -333,6 +344,21 @@ class LevelReport:
         if self.digital_silence:
             return f"Raumton {self.floor_db:.0f} dBFS, dazu geschnittene Stille"
         return f"Raumton {self.floor_db:.0f} dBFS"
+
+
+def threshold_for(floor_db: float, speech_db: float) -> float:
+    """Ab welchem Pegel eine Stelle in dieser Aufnahme als still gilt.
+
+    Zwei Anker, und es gewinnt der höhere: ein Mindestabstand über dem
+    Grundpegel, damit Rauschen nicht als Sprache zählt, und ein Mindestabstand
+    unter dem Sprechpegel, damit eine Pause auch dann erkannt wird, wenn in ihr
+    geatmet wird. Der zweite fehlte -- und ohne ihn blieb eine Lesung mit
+    ruhigen Rändern und gefüllten Sprechpausen unzerlegbar.
+    """
+    return min(
+        max(floor_db + SILENCE_MARGIN_DB, speech_db - SPEECH_DROP_DB, MIN_SILENCE_DB),
+        MAX_SILENCE_DB,
+    )
 
 
 def silence_levels(pegel: np.ndarray) -> tuple[float, float]:
@@ -525,10 +551,18 @@ class Probe:
         """Keine einzige Schwelle trennt Sprache von Pause."""
         return not any(row.brauchbar for row in self.rows)
 
-    def beste_schwelle(self) -> float | None:
-        """Die niedrigste Schwelle, die tatsächlich Pausen trennt."""
+    def verwendete_zeile(self) -> ProbeRow | None:
+        """Was die tatsächlich verwendete Schwelle findet."""
+        return next((r for r in self.rows if r.threshold_db == self.threshold_db), None)
+
+    def beste_zeile(self) -> ProbeRow | None:
+        """Die brauchbare Schwelle mit den meisten Pausen."""
         brauchbar = [row for row in self.rows if row.brauchbar]
-        return brauchbar[0].threshold_db if brauchbar else None
+        return max(brauchbar, key=lambda r: r.pauses_split) if brauchbar else None
+
+    def beste_schwelle(self) -> float | None:
+        zeile = self.beste_zeile()
+        return zeile.threshold_db if zeile else None
 
     def benoetigte_pausen(self, max_seconds: float = MAX_SECONDS) -> int:
         """Wie viele Schnittstellen die Aufnahme mindestens braucht.
@@ -539,9 +573,14 @@ class Probe:
         return max(0, int(np.ceil(self.duration_s / max_seconds)) - 1)
 
     def gefundene_pausen(self) -> int:
-        """Die meisten Pausen, die eine brauchbare Schwelle findet."""
-        brauchbar = [row.pauses_split for row in self.rows if row.brauchbar]
-        return max(brauchbar) if brauchbar else 0
+        """Pausen bei der Schwelle, die tatsächlich verwendet wird.
+
+        Bewusst nicht das Beste aus der Tabelle: was eine andere Schwelle fände,
+        hilft niemandem, solange sie nicht verwendet wird. Genau diese
+        Verwechslung ließ eine unzerlegbare Aufnahme als in Ordnung durchgehen.
+        """
+        zeile = self.verwendete_zeile()
+        return zeile.pauses_split if zeile else 0
 
     def genug_pausen(self, max_seconds: float = MAX_SECONDS) -> bool:
         return self.gefundene_pausen() >= self.benoetigte_pausen(max_seconds)
@@ -562,7 +601,7 @@ def probe_audio(
 
     grund, sprech = silence_levels(pegel)
     anteil_null = float(np.mean(pegel <= DIGITAL_ZERO_DB))
-    schwelle = min(max(grund + SILENCE_MARGIN_DB, MIN_SILENCE_DB), MAX_SILENCE_DB)
+    schwelle = threshold_for(grund, sprech)
 
     kandidaten = sorted({schwelle, *(float(w) for w in range(-60, -14, 5))})
     zeilen = [

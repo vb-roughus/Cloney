@@ -663,7 +663,15 @@ misst deshalb den Grundpegel als leiseste *anhaltende* Stelle und setzt die
 Schwelle zehn Dezibel darüber. An synthetischen Aufnahmen mit Raumton von -70
 bis -30 dBFS findet das durchgehend genau die echten Pausen.
 
-Zwei Fallen sind dabei umgangen, in die beide Richtungen führen:
+Zwei Anker, und es gewinnt der höhere: ein Mindestabstand **über dem
+Grundpegel**, damit Rauschen nicht als Sprache zählt, und ein Mindestabstand
+**unter dem Sprechpegel**, damit eine Pause auch dann erkannt wird, wenn in ihr
+geatmet wird. Der zweite ist aus einer echten Lesung entstanden: Grundpegel
+-63 dBFS, Sprechpegel -12, die Sprechpausen aber erst ab -50 aufwärts. Allein
+am Grundpegel gemessen lag die Schwelle bei -53 und fand genau eine Pause auf
+42 Sekunden.
+
+Dazu zwei Fallen, in die beide Richtungen führen:
 
 - **Exakt stille Stellen zählen nicht mit.** Eine halbe Sekunde harte Null am
   Dateianfang -- was jedes Schnittprogramm hinterlässt -- ergäbe einen

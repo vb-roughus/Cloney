@@ -491,7 +491,22 @@ def dataset_probe(
                 "Stelle, notfalls im Wort.",
                 fg=typer.colors.YELLOW,
             )
-        elif not befund.genug_pausen():
+        elif befund.genug_pausen():
+            typer.echo(
+                f"  {befund.gefundene_pausen()} Pausen auf {befund.duration_s:.0f}s "
+                "-- das reicht für die Zerlegung."
+            )
+        elif (beste := befund.beste_zeile()) and beste.pauses_split >= befund.benoetigte_pausen():
+            typer.secho(
+                f"  Die verwendete Schwelle ({befund.threshold_db:.0f} dBFS) findet nur "
+                f"{befund.gefundene_pausen()} Pause(n), bei {beste.threshold_db:.0f} dBFS "
+                f"wären es {beste.pauses_split}.\n"
+                "  Die Pausen liegen also höher als erwartet -- vermutlich wird in ihnen "
+                "geatmet. Bitte melden:\n"
+                "  daraus gehört eine bessere Regel, keine Handeinstellung.",
+                fg=typer.colors.YELLOW,
+            )
+        else:
             typer.secho(
                 f"  Nur {befund.gefundene_pausen()} Pause(n) auf {befund.duration_s:.0f}s. "
                 f"Für Segmente von höchstens 15s bräuchte es mindestens "
@@ -502,19 +517,6 @@ def dataset_probe(
                 "'cloney dataset build --force-split'.",
                 fg=typer.colors.YELLOW,
             )
-        else:
-            beste = befund.beste_schwelle()
-            if beste is not None and beste > befund.threshold_db:
-                typer.secho(
-                    f"  Ab {beste:.0f} dBFS werden Pausen getrennt, die verwendete "
-                    f"Schwelle liegt bei {befund.threshold_db:.0f} dBFS.",
-                    fg=typer.colors.YELLOW,
-                )
-            else:
-                typer.echo(
-                    f"  {befund.gefundene_pausen()} Pausen auf {befund.duration_s:.0f}s "
-                    "-- das reicht für die Zerlegung."
-                )
 
 
 @datasets_app.command("list")
