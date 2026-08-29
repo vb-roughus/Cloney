@@ -6,8 +6,8 @@
     <p class="muted">
       Sätze, deren Sprechfassung wörtlich gleich bleibt, behalten Ton, Seed und Messwerte
       &mdash; ein Tippfehler in Satz drei kostet also nicht die Arbeit an Satz siebzehn.
-      Ein Wechsel von Stimme oder Engine verwirft dagegen allen Ton: er stammte von einem
-      anderen Sprecher.
+      Ein Wechsel von Stimme, Engine oder Modell verwirft dagegen allen Ton: er stammte
+      von einem anderen Sprecher.
     </p>
     <form method="post" action="/projects/{{ project.id }}/configure">
       <label>Text
@@ -31,6 +31,21 @@
           </select>
         </label>
       </div>
+      {% if models or project.model %}
+      <label>Modell
+        <select name="model">
+          <option value="" {% if not project.model %}selected{% endif %}>
+            Pretrain &mdash; das mitgelieferte Modell</option>
+          {% for m in models %}
+            <option value="{{ m.name }}" {% if m.name == project.model %}selected{% endif %}
+              {% if not m.exists %}disabled{% endif %}>
+              {{ m.name }}{% if m.note %} &mdash; {{ m.note }}{% endif %}
+              {%- if not m.exists %} (Datei fehlt){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
       <button type="submit">Vorlage übernehmen</button>
     </form>
   </div>
@@ -50,6 +65,10 @@
     <table class="kv">
       <tr><th>Engine</th>
         <td>{{ project.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
+      <tr><th>Modell</th>
+        <td>{% if project.model %}{{ project.model }}
+              <span class="muted">&mdash; selbst trainierter Stand</span>
+            {% else %}<span class="muted">Pretrain aus der Konfiguration</span>{% endif %}</td></tr>
       {% if voice %}
       <tr><th>Aufnahme</th>
         <td>{{ "%.1f"|format(voice.duration_s) }}&nbsp;s

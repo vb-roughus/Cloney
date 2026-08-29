@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from cloney.config import Settings, get_settings
 from cloney.core.audio import describe_audio, media_type
 from cloney.core.compare import MAX_VARIANTS, Comparison
+from cloney.core.models import ModelError, ModelStore, settings_for
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
@@ -54,6 +55,7 @@ def create_app(
     runner = JobRunner(settings)
     vergleiche = ComparisonRunner(settings)
     voices = VoiceStore(settings.voices_dir)
+    modelle = ModelStore(settings.models_dir)
 
     def load(project_id: str) -> Project:
         try:
@@ -67,6 +69,27 @@ def create_app(
     def guard_idle(project_id: str) -> None:
         if runner.is_running(project_id):
             raise HTTPException(409, "Es läuft gerade ein Renderlauf")
+
+    def modell_settings(name: str) -> Settings:
+        """Einstellungen, die auf einen trainierten Stand zeigen.
+
+        Ohne Namen bleibt es beim Pretrain aus der Konfiguration. Ein Eintrag,
+        dessen Checkpoint nicht mehr liegt, muss hier auffallen -- sonst
+        renderte der Klick stillschweigend gegen ein anderes Modell.
+        """
+        if not name:
+            return settings
+        try:
+            return settings_for(modelle.get(name), settings)
+        except ModelError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    def pruefe_modell(name: str | None) -> str | None:
+        """Leerer Name heißt Pretrain, gar keiner heißt: lass ihn, wie er ist."""
+        if name and not modelle.exists(name):
+            eingetragen = ", ".join(m.name for m in modelle.list_all()) or "keins"
+            raise HTTPException(400, f"Modell '{name}' gibt es nicht. Eingetragen: {eingetragen}")
+        return name
 
     def _reference_context(project: Project) -> dict[str, object]:
         """Referenzstimme samt Sprechtempo.
@@ -106,6 +129,7 @@ def create_app(
                 "projects": Project.list_all(settings.projects_dir),
                 "voices": voices.list_all(),
                 "engines": available_engines(),
+                "models": modelle.list_all(),
                 "default_engine": settings.engine,
             },
         )
@@ -116,6 +140,7 @@ def create_app(
         text: str = Form(...),
         voice: str = Form(...),
         engine: str = Form(...),
+        model: str = Form(""),
     ) -> RedirectResponse:
         if not text.strip():
             raise HTTPException(400, "Der Text ist leer")
@@ -136,6 +161,7 @@ def create_app(
             text=text,
             voice=voice,
             engine=info,
+            model=pruefe_modell(model) or "",
             projects_dir=settings.projects_dir,
             reference_seconds=reference.duration_s,
             chars_per_second=settings.chars_per_second,
@@ -157,6 +183,7 @@ def create_app(
                 "threshold": settings.cer_threshold,
                 "voices": voices.list_all(),
                 "engines": available_engines(),
+                "models": modelle.list_all(),
                 **_reference_context(project),
                 **extra,
             },
@@ -173,8 +200,9 @@ def create_app(
         text: str = Form(...),
         voice: str = Form(...),
         engine: str = Form(...),
+        model: str | None = Form(None),
     ) -> HTMLResponse:
-        """Text, Stimme oder Engine eines bestehenden Projekts ändern.
+        """Text, Stimme, Engine oder trainierten Stand eines Projekts ändern.
 
         Dieselben Angaben wie beim Anlegen -- nur dass hier nicht alles neu
         entsteht: Sätze, deren Sprechfassung gleich bleibt, behalten ihren Ton.
@@ -199,6 +227,7 @@ def create_app(
             text=text,
             voice=voice,
             engine=info,
+            model=pruefe_modell(model),
             reference_seconds=reference.duration_s,
             chars_per_second=settings.chars_per_second,
             target_seconds=settings.target_chunk_seconds,
@@ -293,6 +322,7 @@ def create_app(
                 "engine": info,
                 "voices": voices.list_all(),
                 "engines": available_engines(),
+                "models": modelle.list_all(),
                 **_reference_context(project),
             },
         )
@@ -325,11 +355,15 @@ def create_app(
         nur im Serverlog.
         """
         try:
+            # Gegen denselben Stand wie der volle Lauf. Ohne das würfelte ein
+            # einzelner Satz gegen den Pretrain und klänge neben seinen
+            # Nachbarn nach einem anderen Sprecher.
+            eigene = modell_settings(project.model)
             synthesize_chunks(
                 project,
                 [project.chunks[index]],
                 voices,
-                lambda: create_engine(project.engine, settings, project.engine_options),
+                lambda: create_engine(project.engine, eigene, project.engine_options),
             )
         except FileNotFoundError as exc:
             raise HTTPException(
@@ -494,6 +528,7 @@ def create_app(
                 "comparisons": Comparison.list_all(settings.comparisons_dir),
                 "voices": voices.list_all(),
                 "engines": available_engines(),
+                "models": modelle.list_all(),
                 "default_engine": gewaehlt,
                 "engine": engine_info(gewaehlt),
                 "max_variants": MAX_VARIANTS,
@@ -527,6 +562,9 @@ def create_app(
                 f"'{voice}' hat aber keinen hinterlegt.",
             )
 
+        # Mehrfachauswahl: der leere Wert steht für den Pretrain, damit sich ein
+        # Finetune gegen den Stand messen lässt, von dem er ausging.
+        staende = [pruefe_modell(str(m)) for m in formular.getlist("models")]
         try:
             comparison = Comparison.create(
                 name=str(formular.get("name") or "").strip() or "Vergleich",
@@ -534,6 +572,7 @@ def create_app(
                 voice=voice,
                 engine=info,
                 grid=_grid(formular, info),
+                models=staende,
                 comparisons_dir=settings.comparisons_dir,
             )
         except ValueError as exc:

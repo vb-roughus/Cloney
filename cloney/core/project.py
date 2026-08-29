@@ -96,6 +96,7 @@ class Project(BaseModel):
         voice: str,
         engine: EngineInfo,
         projects_dir: Path,
+        model: str = "",
         reference_seconds: float = 0.0,
         chars_per_second: float = 14.0,
         target_seconds: float = 20.0,
@@ -128,6 +129,7 @@ class Project(BaseModel):
             sample_rate=engine.sample_rate,
             source_text=text,
             target_chunk_seconds=budget,
+            model=model,
             chunks=chunks,
             root=root,
         )
@@ -218,6 +220,7 @@ class Project(BaseModel):
         text: str,
         voice: str,
         engine: EngineInfo,
+        model: str | None = None,
         reference_seconds: float = 0.0,
         chars_per_second: float = 14.0,
         target_seconds: float = 20.0,
@@ -232,13 +235,17 @@ class Project(BaseModel):
         normalisierte Fassung, nicht der Rohtext -- wer nur die Schreibweise
         einer Zahl ändert, hört dasselbe und soll nicht neu rendern müssen.
 
-        Stimme oder Engine gewechselt heißt dagegen: alles neu. Vorhandener Ton
-        stammt dann von einem anderen Sprecher oder Modell, und ihn stehen zu
-        lassen ergäbe eine Spur aus zwei Stimmen.
+        Stimme, Engine oder trainierter Stand gewechselt heißt dagegen: alles
+        neu. Vorhandener Ton stammt dann von einem anderen Sprecher oder Modell,
+        und ihn stehen zu lassen ergäbe eine Spur aus zwei Stimmen.
 
         Gibt zurück, wie viele Sätze behalten, neu angelegt und verworfen wurden.
         """
-        uebernehmbar = voice == self.voice and engine.name == self.engine
+        # Kein Name heißt: der Stand bleibt, wie er ist. Sonst löschte ein
+        # Aufrufer, der das Feld nicht kennt, stillschweigend den Finetune --
+        # und das Projekt spräche danach mit einer anderen Stimme.
+        stand = self.model if model is None else model
+        uebernehmbar = voice == self.voice and engine.name == self.engine and stand == self.model
         budget, roh = _plan_chunks(
             text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds
         )
@@ -283,6 +290,7 @@ class Project(BaseModel):
         self.source_text = text
         self.voice = voice
         self.engine = engine.name
+        self.model = stand
         self.sample_rate = engine.sample_rate
         self.target_chunk_seconds = budget
         # Regler, die die neue Engine nicht kennt, fallen weg statt still

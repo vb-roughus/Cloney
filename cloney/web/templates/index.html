@@ -26,6 +26,21 @@
       </select>
     </label>
   </div>
+  {% if models %}
+  <label>Modell
+    <select name="model">
+      <option value="">Pretrain &mdash; das mitgelieferte Modell</option>
+      {% for m in models %}
+        <option value="{{ m.name }}" {% if not m.exists %}disabled{% endif %}>
+          {{ m.name }}{% if m.note %} &mdash; {{ m.note }}{% endif %}
+          {%- if not m.exists %} (Datei fehlt){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <span class="muted">Ein selbst trainierter Stand spricht die Stimme, auf die er
+      trainiert wurde &mdash; die Referenzaufnahme braucht er trotzdem.</span>
+  </label>
+  {% endif %}
   <label>Text
     <textarea name="text" rows="12" required
       placeholder="Absätze durch eine Leerzeile trennen."></textarea>
@@ -52,11 +67,12 @@
 <h2>Projekte</h2>
 {% if projects %}
 <table class="projects">
-  <tr><th>Name</th><th>Stimme</th><th>Engine</th><th>Chunks</th><th>Angelegt</th></tr>
+  <tr><th>Name</th><th>Stimme</th><th>Engine</th><th>Modell</th><th>Chunks</th><th>Angelegt</th></tr>
   {% for p in projects %}
   <tr>
     <td><a href="/projects/{{ p.id }}">{{ p.name }}</a></td>
     <td>{{ p.voice }}</td><td>{{ p.engine }}</td>
+    <td>{% if p.model %}{{ p.model }}{% else %}<span class="muted">Pretrain</span>{% endif %}</td>
     <td>{{ p.progress[0] }}/{{ p.progress[1] }}</td>
     <td class="muted">{{ p.created_at }}</td>
   </tr>

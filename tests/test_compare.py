@@ -260,6 +260,15 @@ def test_ein_einzelnes_modell_ist_keine_achse() -> None:
     assert variants[0].label == "Sprechtempo 0.8"
 
 
+def test_doppelt_genannter_stand_ergibt_eine_zeile() -> None:
+    """Zwei gleiche Zeilen kosteten nur Rechenzeit -- dieselbe Regel wie bei
+    doppelten Reglerwerten. Im Web ist der Pretrain ankreuzbar, in der CLI
+    mehrfach nennbar; beide Wege führen hierher."""
+    variants = build_variants(DummyEngine.info, {}, models=["", "anna-ft", ""])
+
+    assert [v.label for v in variants] == ["Pretrain", "anna-ft"]
+
+
 def test_vergleich_nur_ueber_modelle_braucht_keine_regler() -> None:
     variants = build_variants(DummyEngine.info, {}, models=["", "anna-ft"])
 
