@@ -10,6 +10,11 @@ und genau dort liegen die Fallen:
    Datensatz führt relative Pfade ohne Kopfzeile, weil das für alles andere
    handlicher ist. Übersetzt wird beim Vorbereiten.
 
+   Übergeben wird dabei die **Datei**, nicht ihr Ordner -- der Parameter heißt
+   zwar ``inp_dir``, das Skript prüft aber auf die Endung ``.csv`` und liest die
+   Tonpfade unverändert aus der Tabelle. Dem Namen zu folgen statt dem Hilfetext
+   endet in ``ValueError: input must be a .csv file``.
+
 2. **Das Vokabular muss vom Pretrain stammen.** F5 kopiert im Finetune-Zweig
    sein eigenes, fest eingetragenes Vokabular -- das des englisch-chinesischen
    Basismodells. Beim Finetune eines *deutschen* Modells passt das nicht zu den
@@ -193,8 +198,12 @@ def write_f5_metadata(dataset: Dataset, target: Path) -> Path:
     return ziel
 
 
-def prepare_command(input_dir: Path, output_dir: Path) -> list[str]:
+def prepare_command(metadata_csv: Path, output_dir: Path) -> list[str]:
     """Aufruf von F5s Vorbereitung.
+
+    Erstes Argument ist die **CSV-Datei**, obwohl der Parameter dort ``inp_dir``
+    heißt: das Skript prüft auf die Endung und liest die Tonpfade unverändert
+    aus der Tabelle.
 
     ``--pretrain`` trotz Finetune: das Flag steuert im Skript allein die Herkunft
     des Vokabulars. Ohne es prüft der Finetune-Zweig mit einem ``assert`` auf
@@ -206,7 +215,7 @@ def prepare_command(input_dir: Path, output_dir: Path) -> list[str]:
         sys.executable,
         "-m",
         "f5_tts.train.datasets.prepare_csv_wavs",
-        str(input_dir),
+        str(metadata_csv),
         str(output_dir),
         "--pretrain",
     ]

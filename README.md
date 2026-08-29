@@ -773,6 +773,11 @@ Kopfzeile `audio_file|text` und **absoluten** Pfaden und prüft ausdrücklich
 darauf. Cloneys eigene `metadata.csv` führt relative Pfade ohne Kopfzeile, weil
 das für alles andere handlicher ist. Übersetzt wird beim Vorbereiten.
 
+Übergeben wird dabei die **Datei**, nicht ihr Ordner. Der Parameter heißt dort
+`inp_dir`, das Skript prüft aber auf die Endung und liest die Tonpfade
+unverändert aus der Tabelle -- dem Namen zu folgen endet in
+`ValueError: input must be a .csv file`.
+
 **Das Vokabular muss vom Pretrain stammen.** F5 kopiert im Finetune-Zweig sein
 eigenes, fest eingetragenes Vokabular -- das des englisch-chinesischen
 Basismodells. Beim Weitertrainieren eines *deutschen* Modells passt das nicht zu

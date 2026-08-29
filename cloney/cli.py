@@ -748,14 +748,13 @@ def finetune_prepare(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
 
-    eingang = dataset.root / "f5"
-    write_f5_metadata(dataset, eingang)
+    tabelle = write_f5_metadata(dataset, dataset.root / "f5")
     typer.echo(f"{len(dataset.utterances)} Segmente, {dataset.total_seconds / 60:.1f} Minuten")
-    typer.echo(f"Eingabe:  {eingang}")
+    typer.echo(f"Eingabe:  {tabelle}")
     typer.echo(f"Ausgabe:  {ziel}")
     typer.echo("")
 
-    befehl = prepare_command(eingang, ziel)
+    befehl = prepare_command(tabelle, ziel)
     typer.echo(" ".join(befehl))
     ergebnis = subprocess.run(befehl, check=False)
     if ergebnis.returncode != 0:

@@ -176,11 +176,15 @@ def test_aufwaermen_ist_fuer_ein_finetune_bemessen(tmp_path: Path) -> None:
     assert int(befehl[befehl.index("--save_per_updates") + 1]) <= 5000
 
 
-def test_vorbereitungsbefehl_nennt_ein_und_ausgabe(tmp_path: Path) -> None:
-    befehl = prepare_command(tmp_path / "rein", tmp_path / "raus")
+def test_vorbereitungsbefehl_uebergibt_die_datei_nicht_den_ordner(tmp_path: Path) -> None:
+    """Der Parameter heißt 'inp_dir', das Skript prüft aber auf die Endung .csv
+    und liest die Tonpfade unverändert aus der Tabelle. Dem Namen zu folgen
+    endet in 'ValueError: input must be a .csv file'."""
+    befehl = prepare_command(tmp_path / "f5" / "metadata.csv", tmp_path / "raus")
+
     assert "f5_tts.train.datasets.prepare_csv_wavs" in befehl
-    assert str(tmp_path / "rein") in befehl
-    assert str(tmp_path / "raus") in befehl
+    assert befehl[3].endswith("metadata.csv")
+    assert befehl[4] == str(tmp_path / "raus")
 
 
 def test_vorbereitung_umgeht_die_pruefung_auf_das_emilia_vokabular(tmp_path: Path) -> None:
