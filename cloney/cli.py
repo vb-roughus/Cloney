@@ -594,6 +594,183 @@ def _print_dataset(dataset, ausfuehrlich: bool = False) -> None:  # noqa: ANN001
                 )
 
 
+finetune_app = typer.Typer(
+    help="Ein eigenes Modell auf eine Stimme trainieren.", no_args_is_help=True
+)
+app.add_typer(finetune_app, name="finetune")
+
+
+def _lade_datensatz(name: str):  # noqa: ANN202
+    from cloney.core.dataset import Dataset
+
+    settings = get_settings()
+    root = Dataset.resolve(settings.datasets_dir, name)
+    if not (root / "dataset.json").exists():
+        typer.secho(f"Datensatz '{name}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    return Dataset.load(root)
+
+
+def _pretrain_dateien() -> tuple[Path, Path]:
+    """Checkpoint und Vokabular des deutschen Pretrains."""
+    from cloney.engines.base import EngineError
+    from cloney.engines.f5_german import resolve_model_files
+
+    settings = get_settings()
+    if settings.f5_ckpt_path and settings.f5_vocab_path:
+        return Path(settings.f5_ckpt_path), Path(settings.f5_vocab_path)
+    try:
+        ckpt, vocab = resolve_model_files(
+            settings.f5_repo_id, settings.f5_ckpt_filename, settings.f5_vocab_filename
+        )
+    except EngineError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    return Path(ckpt), Path(vocab)
+
+
+@finetune_app.command("prepare")
+def finetune_prepare(
+    name: str = typer.Argument(..., help="Name des Datensatzes."),
+    f5_dir: Path = typer.Option(
+        None, "--f5-dir", help="Wurzel von F5-TTS. Standard: aus dem installierten Paket."
+    ),
+) -> None:
+    """Datensatz in das Format bringen, das F5-TTS zum Training einliest.
+
+    Zwei Dinge passieren dabei, die man leicht übersieht: die Pfadliste bekommt
+    eine Kopfzeile und absolute Pfade, und das Vokabular wird durch das des
+    deutschen Pretrains ersetzt -- F5 legt sonst sein eigenes hin, das zum
+    englisch-chinesischen Basismodell gehört.
+    """
+    import subprocess
+
+    from cloney.core.finetune import (
+        FinetuneError,
+        check_prepared,
+        data_dir_for,
+        install_vocab,
+        prepare_command,
+        write_f5_metadata,
+    )
+
+    dataset = _lade_datensatz(name)
+    if not dataset.utterances:
+        typer.secho("Der Datensatz ist leer.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    _, vocab = _pretrain_dateien()
+    try:
+        ziel = data_dir_for(dataset.root.name, root=f5_dir)
+    except FinetuneError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+
+    eingang = dataset.root / "f5"
+    write_f5_metadata(dataset, eingang)
+    typer.echo(f"{len(dataset.utterances)} Segmente, {dataset.total_seconds / 60:.1f} Minuten")
+    typer.echo(f"Eingabe:  {eingang}")
+    typer.echo(f"Ausgabe:  {ziel}")
+    typer.echo("")
+
+    befehl = prepare_command(eingang, ziel)
+    typer.echo(" ".join(befehl))
+    ergebnis = subprocess.run(befehl, check=False)
+    if ergebnis.returncode != 0:
+        typer.secho("\nVorbereiten fehlgeschlagen.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    try:
+        install_vocab(vocab, ziel)
+        check_prepared(ziel)
+    except FinetuneError as exc:
+        typer.secho(f"\n{exc}", fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+
+    typer.secho(
+        f"\nBereit. Vokabular des Pretrains übernommen ({vocab.name}).", fg=typer.colors.GREEN
+    )
+    typer.echo(f"Weiter mit: cloney finetune train {name}")
+
+
+@finetune_app.command("train")
+def finetune_train(
+    name: str = typer.Argument(..., help="Name des Datensatzes."),
+    batch_frames: int = typer.Option(
+        0, help="batch_size_per_gpu in Frames. 0 = Vorschlag für 16 GB."
+    ),
+    epochs: int = typer.Option(100, help="Durchläufe über den Datensatz."),
+    learning_rate: float = typer.Option(1e-5, help="Lernrate."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Nur den Befehl zeigen."),
+    f5_dir: Path = typer.Option(
+        None, "--f5-dir", help="Wurzel von F5-TTS. Standard: aus dem installierten Paket."
+    ),
+) -> None:
+    """Das Finetune starten. Braucht eine GPU und läuft Stunden."""
+    import subprocess
+
+    from cloney.core.finetune import (
+        BATCH_FRAMES_16GB,
+        FinetuneError,
+        check_prepared,
+        plan_training,
+    )
+
+    dataset = _lade_datensatz(name)
+    ckpt, vocab = _pretrain_dateien()
+    try:
+        plan = plan_training(
+            dataset,
+            ckpt,
+            vocab,
+            batch_frames=batch_frames or BATCH_FRAMES_16GB,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            f5_dir=f5_dir,
+        )
+        if not dry_run:
+            check_prepared(plan.data_dir)
+    except FinetuneError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+
+    typer.echo(f"Datensatz:   {plan.dataset_name}, {plan.total_seconds / 60:.1f} Minuten")
+    typer.echo(f"Daten:       {plan.data_dir}")
+    typer.echo(f"Checkpoints: {plan.checkpoint_dir}")
+    typer.echo(f"Pretrain:    {plan.pretrain_ckpt.name}")
+    typer.echo("")
+    typer.echo(
+        f"{plan.batch_frames} Frames je Schritt sind {plan.seconds_per_step:.1f}s Ton; "
+        f"eine Epoche braucht rund {plan.steps_per_epoch} Schritte,"
+    )
+    typer.echo(f"{plan.epochs} Epochen also etwa {plan.total_steps} Schritte.")
+    typer.secho(
+        "Der Vorschlag für den Speicher ist ein Ausgangspunkt, kein Befund -- "
+        "bei einem Speicherfehler --batch-frames halbieren.",
+        fg=typer.colors.YELLOW,
+    )
+    if plan.knappes_material:
+        typer.secho(
+            f"Nur {plan.total_seconds / 60:.1f} Minuten Material. F5s eigene Angabe für "
+            "diesen Fall lautet 10 bis 100 Stunden,\n"
+            "die dokumentierten Erfolge einzelner Sprecher liegen bei zwölf Stunden und "
+            "darüber. Für weniger gibt es\n"
+            "keinen belegten Fall. Der Lauf kostet wenig -- die Erwartung sollte "
+            "entsprechend sein.",
+            fg=typer.colors.YELLOW,
+        )
+    typer.echo("")
+    typer.echo(" ".join(plan.command()))
+    if dry_run:
+        return
+    typer.echo("")
+    ergebnis = subprocess.run(plan.command(), check=False)
+    if ergebnis.returncode != 0:
+        typer.secho("\nTraining abgebrochen.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.secho(f"\nFertig. Checkpoints in {plan.checkpoint_dir}", fg=typer.colors.GREEN)
+
+
 @app.command()
 def compare(
     text: Path = typer.Option(..., exists=True, help="Kurze Textprobe."),
