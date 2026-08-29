@@ -777,8 +777,22 @@ das für alles andere handlicher ist. Übersetzt wird beim Vorbereiten.
 eigenes, fest eingetragenes Vokabular -- das des englisch-chinesischen
 Basismodells. Beim Weitertrainieren eines *deutschen* Modells passt das nicht zu
 den geladenen Gewichten: `text_num_embeds` ist die Vokabulargröße, und eine
-andere Größe heißt eine andere Embedding-Matrix. Cloney ersetzt die Datei
-anschließend durch die des deutschen Pretrains.
+andere Größe heißt eine andere Embedding-Matrix.
+
+Schlimmer noch: derselbe Zweig prüft die Datei mit einem `assert`, und sie liegt
+unter `<f5>/data/Emilia_ZH_EN_pinyin/vocab.txt` -- ein Pfad in die
+Trainingsdaten, die bei einer Installation über pip nicht mitkommen:
+
+```
+AssertionError: pretrained vocab.txt not found:
+  ...\site-packages\f5_tts\..\..\data\Emilia_ZH_EN_pinyin\vocab.txt
+```
+
+Cloney gibt deshalb `--pretrain` mit. Der Name führt in die Irre: das Flag
+steuert im Skript ausschließlich, ob das Vokabular aus den eigenen Texten
+erzeugt oder das fest eingetragene kopiert wird -- alles andere ist in beiden
+Zweigen identisch. Anschließend wird die Datei durch die des deutschen Pretrains
+ersetzt, das einzige Vokabular, das zu den Gewichten passt.
 
 **Die Ordner liegen bei F5, nicht bei Cloney.** Der Datenlader sucht unter
 `<f5>/data/<name>_<tokenizer>`, die Checkpoints landen unter `<f5>/ckpts/<name>`,
@@ -826,6 +840,38 @@ Nur 0.7 Minuten Material. F5s eigene Angabe für diesen Fall lautet 10 bis 100 S
 die dokumentierten Erfolge einzelner Sprecher liegen bei zwölf Stunden und darüber.
 Für weniger gibt es keinen belegten Fall.
 ```
+
+### Das Ergebnis benutzen
+
+Ein Trainingslauf hinterlässt `model_last.pt` und `model_<schritt>.pt` in F5s
+Ordnern. Damit ist das Modell noch nicht *verwendbar*: die Engine liest ihren
+Checkpoint aus der Konfiguration, und dort ist Platz für genau einen. Trainierte
+Stände bekommen deshalb einen Namen:
+
+```bash
+cloney models list
+cloney models add --name anna-4000 --ckpt <pfad>/model_4000.pt --note "Zwischenstand"
+```
+
+Den jüngsten Stand trägt `finetune train` nach einem erfolgreichen Lauf selbst
+ein -- ein Checkpoint, der nirgends steht, lässt sich nicht anhören. Das
+Vokabular gehört dazu: ein Finetune ist auf dem Vokabular seines Pretrains
+trainiert, und mit einem anderen passt die Embedding-Matrix nicht zu den
+Gewichten.
+
+Damit wird gerendert und verglichen:
+
+```bash
+cloney render --text kapitel.txt --voice anna --model anna-ft
+
+# Pretrain gegen Finetune, gleiche Probe, gleiche Seeds
+cloney compare --text probe.txt --voice anna -m "" -m anna-ft -g speed=1.0
+```
+
+Ein leerer Modellname steht für den Pretrain. Mit mehreren Ständen wird das
+Modell zu einer Achse des Vergleichs, und die Tabelle beantwortet die Frage, die
+ein Finetune aufwirft: **ist er besser als das, was vorher da war?** -- an
+Fehlerrate und Stimmähnlichkeit, statt am Eindruck.
 
 ### 4. In der Weboberfläche (geplant)### 4. In der Weboberfläche (geplant)
 

@@ -270,6 +270,7 @@ def render(
     option: list[str] = typer.Option(
         None, "--option", "-o", help="Regler der Engine, etwa -o speed=0.85. Mehrfach möglich."
     ),
+    model: str = typer.Option("", help="Trainierter Stand. Standard: der Pretrain."),
 ) -> None:
     """Text zu einer fertigen Spur rendern."""
     settings = get_settings()
@@ -305,11 +306,15 @@ def render(
         target_seconds=settings.target_chunk_seconds,
         max_seconds=settings.max_chunk_seconds,
     )
+    project.model = model
     if options:
         project.engine_options = options
+    if options or model:
         project.save()
         gesetzt = ", ".join(f"{k}={v:g}" for k, v in sorted(options.items()))
         typer.echo(f"Regler: {gesetzt}")
+    if model:
+        typer.echo(f"Modell: {model}")
     typer.echo(
         f"Projekt {project.id} mit {len(project.chunks)} Chunks angelegt "
         f"(bis {project.target_chunk_seconds:.0f}s je Chunk)."
@@ -337,12 +342,13 @@ def resume(
 
 def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> None:
     store = VoiceStore(settings.voices_dir)
+    modell_settings = _modell_einstellungen(settings, project.model)
     try:
         run_project(
             project,
             settings,
             store,
-            lambda: create_engine(engine_name, settings, project.engine_options),
+            lambda: create_engine(engine_name, modell_settings, project.engine_options),
             _asr_factory(settings, qc),
             _echo,
             _embedder_factory(settings, qc),
@@ -594,6 +600,82 @@ def _print_dataset(dataset, ausfuehrlich: bool = False) -> None:  # noqa: ANN001
                 )
 
 
+models_app = typer.Typer(help="Trainierte Modelle verwalten.", no_args_is_help=True)
+app.add_typer(models_app, name="models")
+
+
+@models_app.command("add")
+def model_add(
+    name: str = typer.Option(..., help="Name des Modells."),
+    ckpt: Path = typer.Option(..., exists=True, help="Checkpoint aus dem Training."),
+    vocab: Path = typer.Option(
+        None, help="Vokabular. Standard: das des Pretrains aus der Konfiguration."
+    ),
+    note: str = typer.Option("", help="Notiz, etwa Datensatz und Schrittzahl."),
+) -> None:
+    """Einen trainierten Stand eintragen, damit er auswählbar wird."""
+    from cloney.core.models import ModelError, ModelStore
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    if vocab is None:
+        _, vocab = _pretrain_dateien()
+
+    try:
+        modell = ModelStore(settings.models_dir).add(name, ckpt, vocab, note)
+    except ModelError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    typer.secho(f"'{modell.name}' eingetragen.", fg=typer.colors.GREEN)
+    typer.echo(f"  Checkpoint: {modell.ckpt_path}")
+    typer.echo(f"  Vokabular:  {modell.vocab_path}")
+    typer.echo("")
+    typer.echo(f"Rendern damit:  cloney render --text kapitel.txt --voice <stimme> --model {name}")
+    typer.echo(f"Vergleichen:    cloney compare --text probe.txt --voice <stimme> --model {name}")
+
+
+@models_app.command("list")
+def model_list() -> None:
+    """Eingetragene Modelle."""
+    from cloney.core.models import ModelStore
+
+    settings = get_settings()
+    gefunden = ModelStore(settings.models_dir).list_all()
+    if not gefunden:
+        typer.echo("Noch keine Modelle eingetragen.")
+        return
+    for modell in gefunden:
+        zustand = "" if modell.exists else "  (Datei fehlt)"
+        typer.echo(f"{modell.name:24} {modell.note or Path(modell.ckpt_path).name}{zustand}")
+
+
+@models_app.command("remove")
+def model_remove(name: str = typer.Argument(..., help="Name des Modells.")) -> None:
+    """Eintrag entfernen. Der Checkpoint selbst bleibt liegen."""
+    from cloney.core.models import ModelStore
+
+    settings = get_settings()
+    store = ModelStore(settings.models_dir)
+    if not store.exists(name):
+        typer.secho(f"Modell '{name}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    store.delete(name)
+    typer.echo(f"'{name}' entfernt. Der Checkpoint selbst bleibt liegen.")
+
+
+def _modell_einstellungen(settings: Settings, name: str) -> Settings:
+    """Einstellungen, die auf einen trainierten Stand zeigen."""
+    from cloney.core.models import ModelError, ModelStore, settings_for
+
+    if not name:
+        return settings
+    try:
+        return settings_for(ModelStore(settings.models_dir).get(name), settings)
+    except ModelError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+
+
 finetune_app = typer.Typer(
     help="Ein eigenes Modell auf eine Stimme trainieren.", no_args_is_help=True
 )
@@ -768,7 +850,41 @@ def finetune_train(
     if ergebnis.returncode != 0:
         typer.secho("\nTraining abgebrochen.", fg=typer.colors.RED)
         raise typer.Exit(1)
+
+    # Ein Checkpoint, der nirgends eingetragen ist, lässt sich nicht anhören.
+    # Deshalb wird der jüngste Stand gleich verwendbar gemacht.
+    from cloney.core.models import ModelError, ModelStore, find_checkpoints
+
     typer.secho(f"\nFertig. Checkpoints in {plan.checkpoint_dir}", fg=typer.colors.GREEN)
+    staende = find_checkpoints(plan.checkpoint_dir)
+    if not staende:
+        typer.secho("Kein Checkpoint gefunden -- nichts einzutragen.", fg=typer.colors.YELLOW)
+        return
+
+    settings = get_settings()
+    modellname = f"{plan.dataset_name}-ft"
+    try:
+        ModelStore(settings.models_dir).add(
+            modellname,
+            staende[0],
+            plan.vocab_path,
+            note=f"{plan.dataset_name}, {plan.total_seconds / 60:.0f} min, {staende[0].name}",
+        )
+    except ModelError as exc:
+        typer.secho(str(exc), fg=typer.colors.YELLOW)
+        return
+
+    typer.echo(f"Als '{modellname}' eingetragen ({staende[0].name}).")
+    if len(staende) > 1:
+        typer.echo(
+            f"Weitere Zwischenstände: {', '.join(p.name for p in staende[1:5])} "
+            "-- mit 'cloney models add' eintragen, um sie gegeneinander zu hören."
+        )
+    typer.echo("")
+    typer.echo("Gegen den Pretrain messen:")
+    typer.echo(
+        f'  cloney compare --text probe.txt --voice <stimme> -m "" -m {modellname} -g speed=1.0'
+    )
 
 
 @app.command()
@@ -782,6 +898,13 @@ def compare(
         "--grid",
         "-g",
         help="Achse des Rasters, etwa -g speed=0.8,1.0,1.2. Mehrfach möglich.",
+    ),
+    model: list[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Trainierter Stand. Mehrfach möglich; leer heißt Pretrain. "
+        "Mit mehreren wird auch über die Stände verglichen.",
     ),
     qc: bool = typer.Option(True, help="Qualitätskontrolle per Spracherkennung."),
 ) -> None:
@@ -815,6 +938,7 @@ def compare(
             engine=info,
             grid=_parse_grid(grid, info),
             comparisons_dir=settings.comparisons_dir,
+            models=_parse_models(model, settings),
         )
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
@@ -835,12 +959,38 @@ def compare(
         comparison,
         settings,
         store,
-        lambda options: create_engine(engine_name, settings, options),
+        lambda options, modell: create_engine(
+            engine_name, _modell_einstellungen(settings, modell), options
+        ),
         _asr_factory(settings, qc),
         _echo,
         _embedder_factory(settings, qc),
     )
     _print_comparison(comparison)
+
+
+def _parse_models(namen: list[str] | None, settings: Settings) -> list[str]:
+    """Modellnamen prüfen, bevor der Lauf beginnt.
+
+    Ein leerer Eintrag steht für den Pretrain -- so lässt sich 'Pretrain gegen
+    Finetune' als '-m "" -m anna-ft' schreiben. Wird gar keiner genannt, bleibt
+    es beim Pretrain, und das Modell ist keine Achse des Vergleichs.
+    """
+    from cloney.core.models import ModelStore
+
+    if not namen:
+        return []
+    store = ModelStore(settings.models_dir)
+    geprueft = []
+    for name in namen:
+        if name and not store.exists(name):
+            vorhanden = ", ".join(m.name for m in store.list_all()) or "keine"
+            typer.secho(
+                f"Modell '{name}' gibt es nicht. Eingetragen: {vorhanden}", fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        geprueft.append(name)
+    return geprueft
 
 
 def _parse_grid(rohwerte: list[str] | None, info) -> dict[str, list[float]]:  # noqa: ANN001

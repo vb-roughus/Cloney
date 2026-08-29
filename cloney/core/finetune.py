@@ -14,8 +14,19 @@ und genau dort liegen die Fallen:
    sein eigenes, fest eingetragenes Vokabular -- das des englisch-chinesischen
    Basismodells. Beim Finetune eines *deutschen* Modells passt das nicht zu den
    geladenen Gewichten: ``text_num_embeds`` ist die Vokabulargröße, und eine
-   andere Größe heißt eine andere Embedding-Matrix. Deshalb wird die vocab.txt
-   nach dem Vorbereiten durch die des deutschen Pretrains ersetzt.
+   andere Größe heißt eine andere Embedding-Matrix.
+
+   Schlimmer noch: der Finetune-Zweig prüft die Datei mit einem ``assert``, und
+   sie liegt unter ``<f5>/data/Emilia_ZH_EN_pinyin/vocab.txt`` -- ein Pfad in
+   den Trainingsdaten, die bei einer Installation über pip gar nicht mitkommen.
+   Der Aufruf bricht dort also ab, bevor er irgendetwas tut.
+
+   Deshalb wird ``--pretrain`` mitgegeben. Der Name führt in die Irre: das Flag
+   steuert im Skript ausschließlich, ob das Vokabular aus den eigenen Texten
+   erzeugt (``--pretrain``) oder das fest eingetragene kopiert wird. Alles
+   andere ist in beiden Zweigen identisch. Erzeugt wird also zunächst ein
+   Vokabular aus unseren Texten, und danach ersetzt Cloney es durch das des
+   deutschen Pretrains -- das einzige, das zu den Gewichten passt.
 
 3. **Die Ordner liegen bei F5, nicht bei Cloney.** Der Datenlader sucht unter
    ``<f5>/data/<name>_<tokenizer>``, die Checkpoints landen unter
@@ -183,12 +194,21 @@ def write_f5_metadata(dataset: Dataset, target: Path) -> Path:
 
 
 def prepare_command(input_dir: Path, output_dir: Path) -> list[str]:
+    """Aufruf von F5s Vorbereitung.
+
+    ``--pretrain`` trotz Finetune: das Flag steuert im Skript allein die Herkunft
+    des Vokabulars. Ohne es prüft der Finetune-Zweig mit einem ``assert`` auf
+    eine Datei in den Emilia-Trainingsdaten, die bei einer pip-Installation nicht
+    vorhanden ist -- der Aufruf bricht dann ab, ohne etwas getan zu haben. Das
+    passende Vokabular legt ``install_vocab`` danach hin.
+    """
     return [
         sys.executable,
         "-m",
         "f5_tts.train.datasets.prepare_csv_wavs",
         str(input_dir),
         str(output_dir),
+        "--pretrain",
     ]
 
 

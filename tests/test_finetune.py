@@ -179,7 +179,20 @@ def test_aufwaermen_ist_fuer_ein_finetune_bemessen(tmp_path: Path) -> None:
 def test_vorbereitungsbefehl_nennt_ein_und_ausgabe(tmp_path: Path) -> None:
     befehl = prepare_command(tmp_path / "rein", tmp_path / "raus")
     assert "f5_tts.train.datasets.prepare_csv_wavs" in befehl
-    assert befehl[-2:] == [str(tmp_path / "rein"), str(tmp_path / "raus")]
+    assert str(tmp_path / "rein") in befehl
+    assert str(tmp_path / "raus") in befehl
+
+
+def test_vorbereitung_umgeht_die_pruefung_auf_das_emilia_vokabular(tmp_path: Path) -> None:
+    """Der Finetune-Zweig von prepare_csv_wavs.py prüft mit einem assert auf
+    <f5>/data/Emilia_ZH_EN_pinyin/vocab.txt -- eine Datei aus den
+    Trainingsdaten, die bei einer Installation über pip nicht mitkommt. Der
+    Aufruf bricht dort ab, bevor er irgendetwas tut.
+
+    '--pretrain' steuert im Skript ausschließlich die Herkunft des Vokabulars,
+    sonst ist beides identisch. Das richtige legt install_vocab danach hin.
+    """
+    assert "--pretrain" in prepare_command(tmp_path / "rein", tmp_path / "raus")
 
 
 def test_ordnername_kommt_vom_datensatz_nicht_von_der_anzeige(tmp_path: Path) -> None:
@@ -222,3 +235,73 @@ def test_f5_wurzel_laesst_sich_vorgeben(tmp_path: Path) -> None:
 
     assert data_dir_for("anna", root=tmp_path) == tmp_path / "data" / "anna_custom"
     assert checkpoint_dir_for("anna", root=tmp_path) == tmp_path / "ckpts" / "anna"
+
+
+# -- Vom Checkpoint zum auswählbaren Modell ---------------------------------
+
+
+def test_checkpoints_werden_gefunden_juengster_zuerst(tmp_path: Path) -> None:
+    """model_last.pt steht vorn -- es ist der Stand, den man zuerst hören will."""
+    from cloney.core.models import find_checkpoints
+
+    for name in ("model_1000.pt", "model_12000.pt", "model_4000.pt", "model_last.pt"):
+        (tmp_path / name).write_bytes(b"")
+    (tmp_path / "pretrained_base.pt").write_bytes(b"")
+
+    gefunden = [p.name for p in find_checkpoints(tmp_path)]
+    assert gefunden == ["model_last.pt", "model_12000.pt", "model_4000.pt", "model_1000.pt"]
+
+
+def test_modell_zeigt_die_engine_auf_den_trainierten_stand(tmp_path: Path) -> None:
+    """Kein neuer Weg in die Engine, sondern derselbe wie bisher: sie liest
+    Checkpoint und Vokabular aus der Konfiguration."""
+    from cloney.config import Settings
+    from cloney.core.models import ModelStore, settings_for
+
+    ckpt = tmp_path / "model_last.pt"
+    ckpt.write_bytes(b"")
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("a\n", encoding="utf-8")
+
+    store = ModelStore(tmp_path / "models")
+    modell = store.add("anna-ft", ckpt, vocab, note="anna, 62 min")
+
+    settings = Settings(data_dir=tmp_path / "data")
+    angepasst = settings_for(modell, settings)
+    assert angepasst.f5_ckpt_path == str(ckpt)
+    assert angepasst.f5_vocab_path == str(vocab)
+    # Ohne Modell bleibt alles, wie es ist.
+    assert settings_for(None, settings) is settings
+
+
+def test_verschobener_checkpoint_wird_benannt(tmp_path: Path) -> None:
+    """Sonst startet ein Lauf und scheitert erst beim Laden des Modells."""
+    from cloney.config import Settings
+    from cloney.core.models import ModelError, ModelStore, settings_for
+
+    ckpt = tmp_path / "model_last.pt"
+    ckpt.write_bytes(b"")
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("a\n", encoding="utf-8")
+    modell = ModelStore(tmp_path / "models").add("anna-ft", ckpt, vocab)
+    ckpt.unlink()
+
+    with pytest.raises(ModelError, match="verschoben oder gelöscht"):
+        settings_for(modell, Settings(data_dir=tmp_path / "data"))
+
+
+def test_eintrag_loeschen_laesst_den_checkpoint_liegen(tmp_path: Path) -> None:
+    """Er gehört F5, ist Gigabyte groß, und ihn beim Aufräumen einer Liste
+    mitzulöschen wäre eine böse Überraschung."""
+    from cloney.core.models import ModelStore
+
+    ckpt = tmp_path / "model_last.pt"
+    ckpt.write_bytes(b"x")
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("a\n", encoding="utf-8")
+    store = ModelStore(tmp_path / "models")
+    store.add("anna-ft", ckpt, vocab)
+
+    store.delete("anna-ft")
+    assert not store.exists("anna-ft")
+    assert ckpt.exists()

@@ -351,7 +351,7 @@ def run_comparison(
     comparison: Comparison,
     settings: Settings,
     voice_store: VoiceStore,
-    engine_factory: Callable[[dict[str, float]], TTSEngine],
+    engine_factory: Callable[[dict[str, float], str], TTSEngine],
     asr_factory: ASRFactory | None = None,
     on_event: ProgressCallback = _noop,
     embedder_factory: EmbedderFactory | None = None,
@@ -385,7 +385,9 @@ def run_comparison(
                 project,
                 messsettings,
                 voice_store,
-                lambda opts=dict(variant.options): engine_factory(opts),
+                lambda opts=dict(variant.options), modell=variant.model: engine_factory(
+                    opts, modell
+                ),
                 asr_factory,
                 on_event,
                 embedder_factory,

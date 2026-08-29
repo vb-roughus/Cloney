@@ -62,6 +62,9 @@ class Variant(BaseModel):
     slug: str
     label: str
     options: dict[str, float] = Field(default_factory=dict)
+    #: Trainierter Stand, gegen den gerendert wird. Leer = der Pretrain aus der
+    #: Konfiguration.
+    model: str = ""
     #: Kennung des Projekts, das diese Variante gerendert hat. Leer = noch keins.
     project_id: str = ""
     status: VariantStatus = VariantStatus.PENDING
@@ -82,6 +85,8 @@ class Comparison(BaseModel):
     voice: str
     engine: str
     text: str
+    #: Trainierte Stände, die verglichen werden. Leer = nur der Pretrain.
+    models: list[str] = Field(default_factory=list)
     variants: list[Variant] = Field(default_factory=list)
     root: Path = Field(default=Path("."), exclude=True)
 
@@ -99,8 +104,9 @@ class Comparison(BaseModel):
         engine: EngineInfo,
         grid: dict[str, list[float]],
         comparisons_dir: Path,
+        models: list[str] | None = None,
     ) -> Comparison:
-        variants = build_variants(engine, grid)
+        variants = build_variants(engine, grid, models=models)
         if not variants:
             raise ValueError("Kein Raster: es wurde kein einziger Reglerwert angegeben.")
 
@@ -115,6 +121,7 @@ class Comparison(BaseModel):
             voice=voice,
             engine=engine.name,
             text=text,
+            models=list(models or []),
             variants=variants,
             root=root,
         )
@@ -280,13 +287,16 @@ def _best(variants: list[Variant], feld: str, *, niedriger_ist_besser: bool) -> 
     return set() if len(spitze) == len(kandidaten) else spitze
 
 
-def build_variants(engine: EngineInfo, grid: dict[str, list[float]]) -> list[Variant]:
+def build_variants(
+    engine: EngineInfo, grid: dict[str, list[float]], models: list[str] | None = None
+) -> list[Variant]:
     """Kreuzprodukt der angegebenen Reglerwerte.
 
     Unbekannte Regler und Werte außerhalb der Grenzen fallen weg -- dieselbe
     Regel wie bei ``EngineInfo.clean_options``, damit ein Vergleich nichts
     misst, was so gar nicht eingestellt werden kann.
     """
+    modelle = models
     achsen: list[tuple[str, list[float]]] = []
     for option in engine.options:
         werte = grid.get(option.key)
@@ -301,23 +311,37 @@ def build_variants(engine: EngineInfo, grid: dict[str, list[float]]) -> list[Var
                 eindeutig.append(geklemmt)
         achsen.append((option.key, eindeutig))
 
-    if not achsen:
+    # Ohne Regler, aber mit mehreren Modellen ist der Vergleich trotzdem
+    # sinnvoll -- dann ist das Modell die einzige Achse.
+    staende = list(modelle or [])
+    if not achsen and len(staende) < 2:
         return []
 
     #: Nur die Regler, die sich tatsächlich ändern, gehören in die Beschriftung.
-    variabel = {key for key, werte in achsen if len(werte) > 1} or {key for key, _ in achsen}
+    #: Ändert sich keiner, wären alle Zeilen gleich benannt -- dann müssen alle
+    #: hinein. Es sei denn, das Modell unterscheidet die Zeilen ohnehin.
+    variabel = {key for key, werte in achsen if len(werte) > 1}
+    if not variabel and len(staende) < 2:
+        variabel = {key for key, _ in achsen}
 
+    kombinationen = list(itertools.product(*(werte for _, werte in achsen))) or [()]
     variants: list[Variant] = []
-    for kombination in itertools.product(*(werte for _, werte in achsen)):
-        options = {key: wert for (key, _), wert in zip(achsen, kombination, strict=True)}
-        label = " · ".join(
-            f"{_label(engine, key)} {_zahl(engine, key, wert)}"
-            for key, wert in options.items()
-            if key in variabel
-        )
-        variants.append(Variant(slug=_slugify(label), label=label, options=options))
-        if len(variants) == MAX_VARIANTS:
-            break
+    for modell in staende or [""]:
+        for kombination in kombinationen:
+            options = {key: wert for (key, _), wert in zip(achsen, kombination, strict=True)}
+            teile = [
+                f"{_label(engine, key)} {_zahl(engine, key, wert)}"
+                for key, wert in options.items()
+                if key in variabel
+            ]
+            if len(staende) > 1:
+                teile.insert(0, modell or "Pretrain")
+            label = " · ".join(teile) or (modell or "Pretrain")
+            variants.append(
+                Variant(slug=_slugify(label), label=label, options=options, model=modell)
+            )
+            if len(variants) == MAX_VARIANTS:
+                return variants
     return variants
 
 
