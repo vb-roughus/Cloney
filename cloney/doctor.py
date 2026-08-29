@@ -330,34 +330,55 @@ def check_f5(report: Report, settings: Settings) -> None:
     report.add("Engine f5-de", "ok", f"{settings.f5_repo_id}: {ckpt} + {vocab}")
 
 
-def check_higgs(report: Report, settings: Settings) -> None:
+def served_models(base_url: str, timeout: float = 3.0) -> list[str] | None:
+    """Welche Modelle der Server anbietet. None heißt: nicht erreichbar."""
     import httpx
 
-    if platform.system() == "Windows":
-        report.add(
-            "Engine higgs",
-            "warn",
-            "SGLang-Omni läuft nicht nativ unter Windows",
-            "Für Higgs v3 wird WSL2 gebraucht. Unter Windows ist f5-de die Engine der Wahl.",
-        )
-        return
-
     try:
-        response = httpx.get(
-            f"{settings.higgs_base_url.rstrip('/')}/models", timeout=3.0, trust_env=False
-        )
-        alive = response.status_code < 500
-    except Exception:
-        alive = False
+        response = httpx.get(f"{base_url.rstrip('/')}/models", timeout=timeout, trust_env=False)
+        if response.status_code >= 500:
+            return None
+        daten = response.json().get("data") or []
+    except Exception:  # noqa: BLE001 - jede Störung heißt hier schlicht "nicht erreichbar"
+        return None
+    return [str(eintrag.get("id", "")) for eintrag in daten if eintrag.get("id")]
 
-    if alive:
-        report.add("Engine higgs", "ok", f"Server erreichbar unter {settings.higgs_base_url}")
-    else:
+
+def check_higgs(report: Report, settings: Settings) -> None:
+    """Server erreichbar, und heißt das Modell dort so wie hier?
+
+    Der zweite Teil ist der Grund für diese Prüfung. Ein OpenAI-kompatibler
+    Server lehnt eine Anfrage mit unbekanntem Modellnamen ab, und die Meldung
+    dazu taucht sonst erst mitten in einem Renderlauf auf.
+    """
+    modelle = served_models(settings.higgs_base_url)
+    if modelle is None:
         report.add(
             "Engine higgs",
             "warn",
             f"kein Server unter {settings.higgs_base_url}",
-            "Starten mit: sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000",
+            "In WSL starten mit: "
+            "sgl-omni serve --model-path bosonai/higgs-audio-v3-tts-4b --port 8000",
+        )
+        return
+
+    if modelle and settings.higgs_model not in modelle:
+        report.add(
+            "Engine higgs",
+            "fail",
+            f"Server kennt '{settings.higgs_model}' nicht. Angeboten: {', '.join(modelle)}",
+            f"CLONEY_HIGGS_MODEL={modelle[0]}",
+        )
+        return
+
+    report.add("Engine higgs", "ok", f"Server erreichbar, Modell '{settings.higgs_model}'")
+    if platform.system() == "Windows" and settings.higgs_reference_mode in ("auto", "wsl"):
+        # Kein Mangel, sondern die Erklärung, warum der Pfad in der Anfrage
+        # anders aussieht als auf der Platte.
+        report.add(
+            "Higgs-Referenz",
+            "ok",
+            "Pfade werden für WSL nach /mnt/<laufwerk>/... übersetzt",
         )
 
 

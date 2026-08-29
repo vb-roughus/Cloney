@@ -9,7 +9,6 @@ Langform-Produktion sonst scheitert.
 
 from __future__ import annotations
 
-import mimetypes
 from html import escape
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from cloney.config import Settings, get_settings
-from cloney.core.audio import describe_audio
+from cloney.core.audio import describe_audio, media_type
 from cloney.core.compare import MAX_VARIANTS, Comparison
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
@@ -453,10 +452,7 @@ def create_app(
         if not voices.exists(name):
             raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
         pfad = voices.get(name).audio_path
-        # mimetypes nennt WAV je nach System 'audio/x-wav'. Der eingetragene
-        # Name ist 'audio/wav', und den verstehen alle Browser.
-        typ = "audio/wav" if pfad.suffix.lower() == ".wav" else mimetypes.guess_type(pfad.name)[0]
-        return FileResponse(pfad, media_type=typ or "application/octet-stream")
+        return FileResponse(pfad, media_type=media_type(pfad))
 
     # -- Vergleichsläufe --------------------------------------------------
 

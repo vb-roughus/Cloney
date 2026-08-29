@@ -253,33 +253,53 @@ def assemble_output(
 ) -> None:
     """Phase ASSEMBLE. Alle vorhandenen Chunks zur fertigen Spur."""
     segments = []
+    raten: set[int] = set()
     for chunk in project.chunks:
         path = project.chunk_path(chunk.index)
         if not path.exists():
             continue
-        audio, _ = read_wav(path)
+        audio, rate = read_wav(path)
+        raten.add(rate)
         segments.append((audio, chunk.ends_paragraph))
 
     if not segments:
         on_event(ProgressEvent("assemble", "Nichts zusammenzubauen -- kein Chunk erzeugt"))
         return
 
+    # Maßgeblich ist, was in den Dateien steht, nicht was beim Anlegen des
+    # Projekts angenommen wurde. Eine Engine hinter einem Server kann eine
+    # andere Rate liefern als ihre EngineInfo verspricht; würde hier die
+    # Annahme gelten, liefe die fertige Spur zu langsam oder zu schnell.
+    if len(raten) > 1:
+        on_event(
+            ProgressEvent(
+                "assemble",
+                f"Chunks haben verschiedene Abtastraten ({sorted(raten)}) -- "
+                "die betroffenen Sätze neu rendern",
+            )
+        )
+        return
+    sample_rate = raten.pop()
+    if sample_rate != project.sample_rate:
+        project.sample_rate = sample_rate
+        project.save()
+
     track = assemble(
         segments,
-        project.sample_rate,
+        sample_rate,
         target_lufs=settings.target_lufs,
         pause_sentence_ms=settings.pause_sentence_ms,
         pause_paragraph_ms=settings.pause_paragraph_ms,
         edge_fade_ms=settings.edge_fade_ms,
         trim_threshold_db=settings.trim_threshold_db,
     )
-    write_wav(project.output_path, track, project.sample_rate)
+    write_wav(project.output_path, track, sample_rate)
     project.output_file = project.output_path.name
     project.save()
     on_event(
         ProgressEvent(
             "assemble",
-            f"{len(segments)} Chunks, {len(track) / project.sample_rate:.1f}s geschrieben",
+            f"{len(segments)} Chunks, {len(track) / sample_rate:.1f}s geschrieben",
         )
     )
 

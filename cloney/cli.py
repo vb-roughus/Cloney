@@ -427,6 +427,12 @@ def compare(
         typer.secho(str(exc), fg=typer.colors.RED)
         raise typer.Exit(1) from None
 
+    if not info.reproducible_seed:
+        typer.secho(
+            f"Hinweis: '{engine_name}' nimmt keinen Seed entgegen. Die Varianten "
+            "unterscheiden sich zusätzlich im Zufall, nicht allein im Regler.",
+            fg=typer.colors.YELLOW,
+        )
     typer.echo(f"Vergleich {comparison.id} mit {len(comparison.variants)} Varianten:")
     for variant in comparison.variants:
         typer.echo(f"  {variant.label}")

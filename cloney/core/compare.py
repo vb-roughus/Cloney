@@ -19,6 +19,11 @@ Zwei Entscheidungen tragen das:
    Tabelle beantwortete nicht mehr die gestellte Frage. Aus demselben Grund
    läuft ein Vergleich ohne Wiederholungsversuche: ein neuer Seed nach einem
    auffälligen Satz würde genau das verwischen, was gemessen werden soll.
+
+   Das setzt voraus, dass die Engine überhaupt einen Seed entgegennimmt. Wo sie
+   das nicht tut (``EngineInfo.reproducible_seed``), bleibt der Vergleich
+   brauchbar, aber ein kleiner Unterschied zwischen zwei Zeilen kann auch aus
+   dem Zufall stammen -- Oberfläche und Kommandozeile sagen das dazu.
 """
 
 from __future__ import annotations

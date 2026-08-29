@@ -219,3 +219,50 @@ def test_vorhandene_bibliotheken_sind_in_ordnung(monkeypatch) -> None:  # noqa: 
     report = Report()
     check_ffmpeg(report)
     assert report.results[0].status == "ok"
+
+
+# -- Higgs hinter einem Server ----------------------------------------------
+
+
+def test_higgs_meldet_wenn_der_modellname_nicht_passt(monkeypatch) -> None:  # noqa: ANN001
+    """Ein OpenAI-kompatibler Server lehnt unbekannte Modellnamen ab. Ohne diese
+    Prüfung taucht die Meldung erst mitten in einem Renderlauf auf."""
+    from cloney.doctor import Report, check_higgs
+
+    monkeypatch.setattr(
+        "cloney.doctor.served_models", lambda *_a, **_k: ["bosonai/higgs-audio-v3-tts-4b"]
+    )
+    report = Report()
+    check_higgs(report, Settings(higgs_model="higgs-audio-v3-tts"))
+
+    eintrag = next(e for e in report.results if e.name == "Engine higgs")
+    assert eintrag.status == "fail"
+    assert "bosonai/higgs-audio-v3-tts-4b" in eintrag.remedy
+
+
+def test_higgs_ist_unter_windows_kein_ausschlusskriterium(monkeypatch) -> None:  # noqa: ANN001
+    """Mit WSL läuft der Server auch dort. Früher hat die Prüfung hier
+    grundsätzlich abgewunken."""
+    from cloney.doctor import Report, check_higgs
+
+    monkeypatch.setattr("cloney.doctor.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "cloney.doctor.served_models", lambda *_a, **_k: ["bosonai/higgs-audio-v3-tts-4b"]
+    )
+    report = Report()
+    check_higgs(report, Settings())
+
+    assert next(e for e in report.results if e.name == "Engine higgs").status == "ok"
+    assert any("WSL" in e.detail for e in report.results)
+
+
+def test_higgs_ohne_server_nennt_den_startbefehl(monkeypatch) -> None:  # noqa: ANN001
+    from cloney.doctor import Report, check_higgs
+
+    monkeypatch.setattr("cloney.doctor.served_models", lambda *_a, **_k: None)
+    report = Report()
+    check_higgs(report, Settings())
+
+    eintrag = next(e for e in report.results if e.name == "Engine higgs")
+    assert eintrag.status == "warn"
+    assert "sgl-omni serve" in eintrag.remedy
