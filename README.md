@@ -617,6 +617,100 @@ Cloney ist davon unabhängig.
 
 Voice Cloning nur mit Einverständnis der Person, deren Stimme geklont wird.
 
+## Finetuning: der andere Mechanismus
+
+Zero-Shot-Klonen *lernt* keine Stimme. Bei F5-TTS ist die Referenz ein Präfix,
+das das Modell fortsetzt -- und dabei gilt aus dem Quelltext:
+
+```python
+if len(aseg) > 12000:
+    aseg = aseg[:12000]          # alles über 12 s wird abgeschnitten
+max_chars = int(len(ref_text.encode("utf-8")) / ref_sekunden * (22 - ref_sekunden) * speed)
+```
+
+Mehr Referenzmaterial hilft also nicht, es schadet: Überlänge wird gekappt, und
+jede Sekunde Referenz verkleinert zugleich, was pro Durchgang erzeugt werden
+kann. Wer Vielfalt über viele Sätze will, braucht den anderen Weg -- ein
+Finetune, das die Gewichte selbst auf die Stimme zieht.
+
+Der Weg dorthin in vier Schritten. **Schritt 1 ist gebaut**, die übrigen sind
+geplant:
+
+### 1. Datensatz — aus Aufnahmen wird Trainingsmaterial
+
+```bash
+cloney dataset build --audio lesungen/ --name anna
+cloney dataset show anna
+```
+
+Lange Aufnahmen werden in Segmente von 3 bis 15 Sekunden zerlegt, mit Whisper
+transkribiert und geprüft. Heraus kommt das Format, das F5-TTS erwartet: ein
+`wavs`-Ordner und eine `metadata.csv` aus `pfad|text`.
+
+Drei Entscheidungen tragen das:
+
+**Geschnitten wird an Pausen, nie mitten im Klang.** Ein Segment, das mitten im
+Wort beginnt, bringt dem Modell einen Anfang bei, den es nachher produziert. Ist
+ein Bereich zu lang, wird er an seiner längsten inneren Pause geteilt -- dafür
+genügt ein Atemzug, denn die Alternative wäre, zwanzig Sekunden brauchbare
+Sprache wegzuwerfen. Findet sich gar keine, wird verworfen statt hart geschnitten.
+
+**Der Text durchläuft dieselbe Normalisierung wie bei der Synthese.** Die
+Spracherkennung schreibt „3. Mai", gesprochen wurde „dritten Mai". Trainiert
+werden muss auf der Form, die später auch hineingeht -- sonst lernt das Modell,
+Ziffern anders auszusprechen, als Cloney sie ihm vorlegt. Der Wortlaut der
+Erkennung bleibt daneben im Manifest stehen.
+
+**Was durchfällt, wird benannt.** Zu kurz, übersteuert, zu leise, keine
+Rückschrift, oder ein Text, der nicht zur Länge passt (fast immer eine
+Fehltranskription). Jeder verworfene Abschnitt steht mit Sekunde und Grund im
+Manifest:
+
+```
+Datensatz 'anna' in data/datasets/anna
+  6 Segmente, 0.7 Minuten, 24000 Hz
+  Median: 7.1s je Segment, 14.0 Zeichen/s
+  Verworfen: 2 Abschnitte (0.1 Minuten)
+       1x nur 1.5s
+       1x übersteuert
+```
+
+Ein Datensatz, der stillschweigend die Hälfte wegwirft, ist sonst nicht von
+einem zu unterscheiden, bei dem die Aufnahme schlecht war.
+
+### 2. Vorbereiten (geplant)
+
+`prepare_csv_wavs.py` aus F5-TTS erzeugt aus dem Ordner `raw.arrow`,
+`duration.json` und `vocab.txt`. Wichtig dabei: beim Finetune eines **deutschen**
+Modells muss das Vokabular des Pretrains übernommen werden (`--tokenizer custom
+--tokenizer_path <vocab des Pretrains>`), sonst passt die Embedding-Matrix nicht
+zu den geladenen Gewichten.
+
+### 3. Training (geplant)
+
+`finetune_cli.py --finetune --pretrain <deutscher Checkpoint>`. Die Grenzen der
+16-GB-Karte liegen bei `--batch_size_per_gpu`, das in **Frames** zählt (Standard
+3200) und für 16 GB heruntergesetzt werden muss. `--num_warmup_updates` steht
+standardmäßig auf 20000 -- das ist für einen Trainingslauf von Grund auf
+gedacht, nicht für ein Finetune auf eine Stimme.
+
+### 4. In der Weboberfläche (geplant)
+
+Datensätze ansehen, ein Training starten, den Verlauf verfolgen, Checkpoints
+gegeneinander hören. Der Vergleichslauf ist dafür schon da: ein Checkpoint ist
+nichts anderes als eine weitere Variante, die dieselbe Probe rendert.
+
+### Was offen ist
+
+**Wie viel Material nötig ist, weiß ich nicht belegt.** Die Angaben in der
+Community reichen von Minuten bis Stunden, eine belastbare Zahl für Deutsch habe
+ich nicht gefunden. Der Datensatzschritt liefert deshalb zuerst die Kennzahlen --
+Gesamtdauer, Segmentlängen, Sprechtempo --, damit die Entscheidung auf Zahlen
+steht statt auf einer Faustregel.
+
+**Ob ein Finetune auf 16 GB durchläuft, ist ebenfalls unbelegt.** Hier gibt es
+keine GPU, um es zu prüfen.
+
 ## Konfiguration
 
 Alle Werte lassen sich über `CLONEY_*`-Umgebungsvariablen oder eine `.env`-Datei
@@ -660,13 +754,15 @@ Modell zu laden.
 
 Fertig: deutsche Normalisierung, Segmentierung, Projekt-Manifest mit
 Wiederaufnahme, Phasenmodell, Qualitätskontrolle mit Retry-Schleife,
-Stimmähnlichkeit, Vergleichslauf, Zusammenbau mit Lautheitsangleichung, CLI und
-Weboberfläche mit Satz-Editor.
+Stimmähnlichkeit, Vergleichslauf, Zusammenbau mit Lautheitsangleichung,
+Datensatzbau fürs Finetuning, CLI und Weboberfläche mit Satz-Editor.
 
-Als Nächstes: LLM-gestützte Textvorbereitung für das, was Regeln nicht können
-(Fremdwörter, Eigennamen), und der Emotions-Director. Der Vergleichslauf
-vergleicht bislang Reglerstellungen einer Engine; ihn über mehrere Engines
-laufen zu lassen, ist der nächste Schritt zum Benchmark-Harness.
+Als Nächstes: die weiteren Schritte des Finetunings (Vorbereiten, Training,
+Verwaltung in der Oberfläche). Danach LLM-gestützte Textvorbereitung für das,
+was Regeln nicht können (Fremdwörter, Eigennamen), und der Emotions-Director.
+Der Vergleichslauf vergleicht bislang Reglerstellungen einer Engine; ihn über
+mehrere Engines und über Checkpoints laufen zu lassen, ist der nächste Schritt
+zum Benchmark-Harness.
 
 Das Anfrageschema der Higgs-Engine folgt dem Kochbuch von SGLang-Omni und ist
 gegen einen nachgebildeten Server geprüft (`tests/test_higgs.py`), aber nicht
