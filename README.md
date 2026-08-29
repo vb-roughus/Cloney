@@ -855,6 +855,24 @@ die dokumentierten Erfolge einzelner Sprecher liegen bei zwölf Stunden und dar�
 Für weniger gibt es keinen belegten Fall.
 ```
 
+**Der Pretrain muss die EMA-Struktur tragen.** `Trainer.load_checkpoint` ruft
+`self.ema_model.load_state_dict(...)` *bevor* der Zweig greift, der einen reinen
+Inferenz-Export behandelt:
+
+```python
+if latest_checkpoint.endswith(".safetensors"):  # always a pretrained checkpoint
+    checkpoint = {"ema_model_state_dict": load_file(...)}  # nackte Schlüssel
+...
+self.ema_model.load_state_dict(checkpoint["ema_model_state_dict"])  # scheitert hier
+```
+
+Der Wrapper erwartet `initted`, `step` und `ema_model.<...>`. Der deutsche
+Finetune bringt einen Export mit nackten `transformer.<...>`-Schlüsseln mit --
+das endet in einer seitenlangen Liste fehlender Schlüssel. Cloney legt deshalb
+vor dem Training eine Fassung an, die diese Struktur trägt, und übergibt sie als
+`--pretrain`. Trägt ein Checkpoint sie bereits, bleibt er unangetastet: ihn zu
+kopieren kostete über ein Gigabyte für nichts.
+
 ### Das Ergebnis benutzen
 
 Ein Trainingslauf hinterlässt `model_last.pt` und `model_<schritt>.pt` in F5s
