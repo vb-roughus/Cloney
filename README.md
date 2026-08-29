@@ -633,8 +633,8 @@ jede Sekunde Referenz verkleinert zugleich, was pro Durchgang erzeugt werden
 kann. Wer Vielfalt über viele Sätze will, braucht den anderen Weg -- ein
 Finetune, das die Gewichte selbst auf die Stimme zieht.
 
-Der Weg dorthin in vier Schritten. **Schritt 1 ist gebaut**, die übrigen sind
-geplant:
+Der Weg dorthin in vier Schritten. **Die Schritte 1 bis 3 sind gebaut**, die
+Verwaltung in der Oberfläche steht noch aus:
 
 ### 1. Datensatz — aus Aufnahmen wird Trainingsmaterial
 
@@ -757,23 +757,77 @@ Das trennt zu lange Bereiche an ihrer leisesten Stelle, auch ohne echte Pause --
 kein guter Schnitt, aber besser, als den ganzen Bereich zu verlieren. Bewusst
 nicht der Normalfall.
 
-### 2. Vorbereiten (geplant)
+### 2. Vorbereiten
 
-`prepare_csv_wavs.py` aus F5-TTS erzeugt aus dem Ordner `raw.arrow`,
-`duration.json` und `vocab.txt`. Wichtig dabei: beim Finetune eines **deutschen**
-Modells muss das Vokabular des Pretrains übernommen werden (`--tokenizer custom
---tokenizer_path <vocab des Pretrains>`), sonst passt die Embedding-Matrix nicht
-zu den geladenen Gewichten.
+```bash
+cloney finetune prepare anna
+```
 
-### 3. Training (geplant)
+Ruft `prepare_csv_wavs.py` aus F5-TTS auf, das aus dem Datensatz `raw.arrow`,
+`duration.json` und `vocab.txt` erzeugt. Cloney trainiert nicht selbst und baut
+auch das Datenformat nicht nach -- das hieße, es bei jeder Änderung nachzuziehen.
+Was Cloney beisteuert, ist alles davor, und genau dort liegen die Fallen:
 
-`finetune_cli.py --finetune --pretrain <deutscher Checkpoint>`. Die Grenzen der
-16-GB-Karte liegen bei `--batch_size_per_gpu`, das in **Frames** zählt (Standard
-3200) und für 16 GB heruntergesetzt werden muss. `--num_warmup_updates` steht
-standardmäßig auf 20000 -- das ist für einen Trainingslauf von Grund auf
-gedacht, nicht für ein Finetune auf eine Stimme.
+**Das Eingabeformat weicht ab.** `prepare_csv_wavs.py` will eine CSV mit der
+Kopfzeile `audio_file|text` und **absoluten** Pfaden und prüft ausdrücklich
+darauf. Cloneys eigene `metadata.csv` führt relative Pfade ohne Kopfzeile, weil
+das für alles andere handlicher ist. Übersetzt wird beim Vorbereiten.
 
-### 4. In der Weboberfläche (geplant)
+**Das Vokabular muss vom Pretrain stammen.** F5 kopiert im Finetune-Zweig sein
+eigenes, fest eingetragenes Vokabular -- das des englisch-chinesischen
+Basismodells. Beim Weitertrainieren eines *deutschen* Modells passt das nicht zu
+den geladenen Gewichten: `text_num_embeds` ist die Vokabulargröße, und eine
+andere Größe heißt eine andere Embedding-Matrix. Cloney ersetzt die Datei
+anschließend durch die des deutschen Pretrains.
+
+**Die Ordner liegen bei F5, nicht bei Cloney.** Der Datenlader sucht unter
+`<f5>/data/<name>_<tokenizer>`, die Checkpoints landen unter `<f5>/ckpts/<name>`,
+beides abgeleitet aus dem Ort des installierten Pakets. Wer F5 als Auscheckstand
+statt über pip hat, gibt `--f5-dir` an.
+
+### 3. Training
+
+```bash
+cloney finetune train anna              # startet den Lauf
+cloney finetune train anna --dry-run    # zeigt nur, was liefe
+```
+
+```
+Datensatz:   anna, 62.0 Minuten
+Daten:       .../data/anna_custom
+Checkpoints: .../ckpts/anna
+Pretrain:    model_last.safetensors
+
+1600 Frames je Schritt sind 17.1s Ton; eine Epoche braucht rund 218 Schritte,
+100 Epochen also etwa 21800 Schritte.
+```
+
+Die Umrechnung ist der Punkt: `batch_size_per_gpu` zählt **Frames**, keine
+Beispiele, und 1600 Frames sind bei 24 kHz und Hop 256 rund 17 Sekunden Ton je
+Schritt. Erst damit lässt sich abschätzen, wie lange ein Lauf dauert -- und
+sofort sehen, ob der Datensatz überhaupt trägt.
+
+Zwei Voreinstellungen weichen bewusst von F5 ab:
+
+- **`num_warmup_updates` 200 statt 20000.** Der Standard ist für einen Lauf von
+  Grund auf gedacht; ein Finetune auf eine Stimme wäre vorbei, bevor die
+  Lernrate oben angekommen ist.
+- **`save_per_updates` 1000 statt 50000.** Sonst gibt es bei einem kurzen Lauf
+  keinen einzigen Zwischenstand zum Anhören.
+
+Was **nicht** gemessen ist: welche `batch_size_per_gpu` auf 16 GB durchläuft.
+Der Vorschlag von 1600 ist die Hälfte von F5s Standard, der auf einer 24-GB-Karte
+erprobt ist. Bei einem Speicherfehler `--batch-frames` halbieren.
+
+Bei wenig Material sagt der Befehl es vorher:
+
+```
+Nur 0.7 Minuten Material. F5s eigene Angabe für diesen Fall lautet 10 bis 100 Stunden,
+die dokumentierten Erfolge einzelner Sprecher liegen bei zwölf Stunden und darüber.
+Für weniger gibt es keinen belegten Fall.
+```
+
+### 4. In der Weboberfläche (geplant)### 4. In der Weboberfläche (geplant)
 
 Datensätze ansehen, ein Training starten, den Verlauf verfolgen, Checkpoints
 gegeneinander hören. Der Vergleichslauf ist dafür schon da: ein Checkpoint ist
@@ -834,10 +888,11 @@ Modell zu laden.
 Fertig: deutsche Normalisierung, Segmentierung, Projekt-Manifest mit
 Wiederaufnahme, Phasenmodell, Qualitätskontrolle mit Retry-Schleife,
 Stimmähnlichkeit, Vergleichslauf, Zusammenbau mit Lautheitsangleichung,
-Datensatzbau fürs Finetuning, CLI und Weboberfläche mit Satz-Editor.
+Datensatzbau und Trainingsstart fürs Finetuning, CLI und Weboberfläche mit
+Satz-Editor.
 
-Als Nächstes: die weiteren Schritte des Finetunings (Vorbereiten, Training,
-Verwaltung in der Oberfläche). Danach LLM-gestützte Textvorbereitung für das,
+Als Nächstes: die Verwaltung des Finetunings in der Oberfläche. Danach
+LLM-gestützte Textvorbereitung für das,
 was Regeln nicht können (Fremdwörter, Eigennamen), und der Emotions-Director.
 Der Vergleichslauf vergleicht bislang Reglerstellungen einer Engine; ihn über
 mehrere Engines und über Checkpoints laufen zu lassen, ist der nächste Schritt
