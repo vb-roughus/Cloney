@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Aussprache &mdash; Cloney{% endblock %}
+{% block content %}
+<h1>Aussprache</h1>
+<p class="muted">
+  Was sich ausrechnen lässt, rechnet Cloney aus: Ziffern, Datumsangaben,
+  Abkürzungen mit Punkt. Wie <strong>SWIFT</strong>, <strong>ACID</strong> oder
+  <strong>Journal</strong> klingen sollen, lässt sich nicht ausrechnen &mdash; das
+  hängt an der Herkunft des Worts und daran, wie geläufig es ist. Hier steht es
+  deshalb als Eintrag: geschrieben, wie es gesprochen werden soll, in deutscher
+  Schreibung.
+</p>
+
+{% if bericht %}<p class="notice">{{ bericht }}</p>{% endif %}
+
+<form method="post" action="/lexicon" class="card">
+  <div class="row">
+    <label>Wort
+      <input type="text" name="word" required placeholder="Journal">
+    </label>
+    <label>Sprechweise
+      <input type="text" name="spoken" required placeholder="Schurnahl">
+    </label>
+  </div>
+  <button type="submit">Eintragen</button>
+  <p class="muted">
+    Groß- und Kleinschreibung spielt beim Finden keine Rolle &mdash; eingesetzt wird,
+    was hier steht. Die Sprechweise wird anschließend selbst normalisiert:
+    <code>Em-Pe-3</code> wird zu <code>Em-Pe-drei</code>.
+  </p>
+</form>
+
+{% if kandidaten %}
+<h2>Kandidaten aus den Projekten</h2>
+<p class="muted">
+  Ketten aus Großbuchstaben, zu denen noch kein Eintrag besteht. Ob eine davon
+  buchstabiert oder als Wort gesprochen wird, sagt der Text nicht &mdash; deshalb
+  steht hier eine Liste, keine Entscheidung. Der Vorschlag ist die
+  Buchstabierung; wer sie will, übernimmt sie mit einem Klick.
+</p>
+<div class="liste">
+  {% for wort, buchstabiert, woher in kandidaten %}
+  <div class="eintrag">
+    <span class="kopf">
+      <strong>{{ wort }}</strong>
+      <span class="muted">{{ woher | join(", ") }}</span>
+    </span>
+    <form method="post" action="/lexicon" class="kandidat">
+      <input type="hidden" name="word" value="{{ wort }}">
+      <input type="text" name="spoken" value="{{ buchstabiert }}"
+             aria-label="Sprechweise für {{ wort }}">
+      <button class="small" type="submit">Übernehmen</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h2>Eingetragen</h2>
+{% if lexikon.entries %}
+<table class="projects">
+  <tr><th>Wort</th><th>Sprechweise</th><th></th></tr>
+  {% for wort, sprechweise in lexikon.sorted_entries() %}
+  <tr>
+    <td><strong>{{ wort }}</strong></td>
+    <td>{{ sprechweise }}</td>
+    <td>
+      <form method="post" action="/lexicon/{{ wort }}/delete">
+        <button class="small secondary gefahr" type="submit">Entfernen</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="muted">
+  Einträge wirken auf neu angelegte Projekte. In einem bestehenden greifen sie,
+  sobald unter <em>Einstellungen</em> die Vorlage erneut übernommen wird &mdash;
+  die Sprechfassung steht im Manifest, und dort ändert sich nichts von selbst.
+</p>
+{% else %}
+<p class="muted">Noch nichts eingetragen.</p>
+{% endif %}
+{% endblock %}

@@ -12,6 +12,10 @@ zuerst konsumieren.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from cloney.core.lexicon import Lexicon as Lexikon
 
 from num2words import num2words
 
@@ -541,8 +545,15 @@ _PIPELINE = (
 )
 
 
-def normalize_german(text: str) -> str:
-    """Wandelt Ziffern, Symbole und Abkürzungen in ausgeschriebene deutsche Wörter."""
+def normalize_german(text: str, lexicon: Lexikon | None = None) -> str:
+    """Wandelt Ziffern, Symbole und Abkürzungen in ausgeschriebene deutsche Wörter.
+
+    Das Aussprache-Wörterbuch greift vor allen Regeln: was dort eingetragen ist,
+    wird ersetzt und die Ersetzung anschließend selbst normalisiert. Wer 'MP3'
+    als 'Em-Pe-3' einträgt, bekommt am Ende 'Em-Pe-drei'.
+    """
+    if lexicon is not None:
+        text = lexicon.apply(text)
     for rule in _PIPELINE:
         text = rule(text)
     return text

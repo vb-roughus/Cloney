@@ -1022,3 +1022,64 @@ def test_uebersicht_laedt_nur_bei_laufenden_nach(
     laufend = client.get("/uebersicht").text
     assert 'hx-get="/uebersicht"' in laufend
     assert "Läuft gerade" in laufend
+
+
+# -- Aussprache --------------------------------------------------------------
+
+
+def test_eingetragene_aussprache_landet_in_der_sprechfassung(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der ganze Zweck: was eingetragen ist, geht so ins Modell."""
+    client = _client(settings)
+    antwort = client.post("/lexicon", data={"word": "SWIFT", "spoken": "Ssuift"})
+    assert antwort.status_code == 200
+
+    project_id = _create_project(client, text="Die SWIFT-Nachricht kam an.")
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert "Ssuift" in project.chunks[0].normalized_text
+    assert "SWIFT" in project.chunks[0].raw_text  # der Rohtext bleibt, wie er ist
+
+
+def test_kandidaten_kommen_aus_den_projekttexten(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Wer entscheiden soll, muss sehen, worüber -- samt Vorschlag fürs
+    Buchstabieren und dem Projekt, in dem das Wort steht."""
+    client = _client(settings)
+    _create_project(client, name="Kapitel 1", text="Die USB-Verbindung stand.")
+
+    seite = client.get("/lexicon").text
+    assert "USB" in seite
+    assert "U-Es-Be" in seite
+    assert "Kapitel 1" in seite
+
+
+def test_eingetragenes_wort_ist_kein_kandidat_mehr(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    _create_project(client, text="Die USB-Verbindung stand.")
+    client.post("/lexicon", data={"word": "USB", "spoken": "U-Es-Be"})
+
+    seite = client.get("/lexicon").text
+    assert "Kandidaten aus den Projekten" not in seite
+
+
+def test_eintrag_laesst_sich_entfernen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    client.post("/lexicon", data={"word": "Journal", "spoken": "Schurnahl"})
+
+    antwort = client.post("/lexicon/Journal/delete")
+
+    assert antwort.status_code == 200
+    # Der Platzhalter im Formular nennt dasselbe Wort -- geprüft wird die Liste.
+    assert "Noch nichts eingetragen" in antwort.text
+    assert client.post("/lexicon/Journal/delete").status_code == 404
+
+
+def test_leere_sprechweise_wird_abgelehnt(settings: Settings, voice_store: VoiceStore) -> None:
+    """Sonst verschwände das Wort, und niemand merkte es bis zum Hören."""
+    client = _client(settings)
+    assert client.post("/lexicon", data={"word": "SWIFT", "spoken": "  "}).status_code == 400

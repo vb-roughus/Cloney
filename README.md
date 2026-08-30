@@ -647,6 +647,63 @@ Satzliste. Abschaltbar über `CLONEY_TRIM_REFERENCE_BLEED=false`.
 Dafür muss die Qualitätskontrolle laufen — ohne `faster-whisper` gibt es keine
 Rückschrift und damit keine Erkennung.
 
+### Fremdwörter und Abkürzungen
+
+`SWIFT`, `ACID`, `Journal` klingen schlecht, und dafür gibt es einen Grund im
+Modell. F5-TTS tokenisiert zeichenweise, und Groß- und Kleinbuchstaben sind
+**verschiedene Tokens** -- im mitgelieferten Vokabular etwa `'A'` → 33 und
+`'a'` → 62. Eine Kette aus Großbuchstaben ist damit eine Folge, die im deutschen
+Trainingsmaterial kaum vorkommt: das Modell hat sie selten gehört und spricht sie
+entsprechend.
+
+Dazu kommt ein stiller Verlust. Ein Zeichen, das nicht im Vokabular steht, wird
+nicht gemeldet, sondern zu Index 0 -- und das ist das Leerzeichen
+(`src/f5_tts/model/utils.py`):
+
+```python
+list_idx_tensors = [torch.tensor([vocab_char_map.get(c, 0) for c in t]) for t in text]
+...
+assert vocab_char_map[" "] == 0, (
+    "make sure space is of idx 0 in vocab.txt, cuz 0 is used for unknown char"
+)
+```
+
+Ein unbekanntes Zeichen ist für das Modell also von einer Wortlücke nicht zu
+unterscheiden. Cloneys Typografie-Regel fängt die häufigsten Fälle vorher ab --
+deutsche Anführungszeichen etwa (`„` steht im Vokabular nicht) werden zu `"`.
+
+**Was sich daraus ergibt.** Wie ein Fremdwort klingen soll, ist keine Rechnung:
+es hängt an der Herkunft des Worts und daran, wie geläufig es im Deutschen ist.
+Zwei Menschen können es verschieden wollen, und beide haben recht. Deshalb
+liefert Cloney bewusst **keine** vorgefertigten Aussprachen mit -- eine geratene
+Lautschrift sähe aus wie eine Regel, wäre aber ein unbelegter Vorschlag.
+
+Stattdessen ein Wörterbuch, das man selbst führt:
+
+```bash
+cloney lexicon set Journal Schurnahl   # als Wort, in deutscher Schreibung
+cloney lexicon set USB --spell         # buchstabiert: U-Es-Be
+cloney lexicon scan --text kapitel.txt # Kandidaten im Text finden
+cloney lexicon list
+```
+
+Buchstabieren ist der eine Fall, den Cloney ausrechnen kann: die deutschen
+Buchstabennamen stehen fest. Der Bindestrich hält sie als ein Wort zusammen --
+mit Leerzeichen liest die Engine drei einzelne Wörter, jedes mit eigener
+Betonung.
+
+In der Oberfläche steht das unter **Aussprache**, dort samt Kandidatenliste: alle
+Ketten aus Großbuchstaben aus den Projekttexten, zu denen noch kein Eintrag
+besteht, mit der Buchstabierung als Vorschlag. Ob `ACID` buchstabiert oder als
+Wort gesprochen wird, sagt der Text nicht -- deshalb steht dort eine Liste, keine
+Entscheidung.
+
+Die Ersetzung geschieht **vor** allen anderen Regeln, damit die Sprechweise
+selbst noch normalisiert wird: `Em-Pe-3` wird zu „Em-Pe-drei". Der Rohtext bleibt
+unangetastet; geändert wird nur die Sprechfassung, und die steht im Satz-Editor
+unter jedem Satz. Ein neuer Eintrag wirkt auf neu angelegte Projekte -- in einem
+bestehenden greift er, sobald die Vorlage erneut übernommen wird.
+
 ### Titel und Kapitelüberschriften
 
 Eine Überschrift ist kein Satz, und genau daran scheitert sie beim Vorlesen: sie

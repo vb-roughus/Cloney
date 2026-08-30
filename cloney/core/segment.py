@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from cloney.core.lexicon import Lexicon
 from cloney.core.normalize import ABBREVIATION_TOKENS, MONTH_NAMES, normalize_german
 
 #: Ab dieser Zahl gilt "<Zahl>." eher als Satzende denn als Ordinalzahl.
@@ -108,7 +109,7 @@ def _is_sentence_end(text: str, punct_end: int) -> bool:
     return True
 
 
-def split_sentences(text: str) -> list[Sentence]:
+def split_sentences(text: str, lexicon: Lexicon | None = None) -> list[Sentence]:
     """Zerlegt Text in Sätze und normalisiert jeden Satz einzeln."""
     sentences: list[Sentence] = []
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
@@ -122,7 +123,7 @@ def split_sentences(text: str) -> list[Sentence]:
             titel = heading_text(zeilen[0], zeilen[1] if len(zeilen) > 1 else "")
             if titel is None:
                 break
-            sentences.append(_heading_sentence(titel))
+            sentences.append(_heading_sentence(titel, lexicon))
             zeilen = zeilen[1:]
 
         body = " ".join(" ".join(zeilen).split())
@@ -140,7 +141,7 @@ def split_sentences(text: str) -> list[Sentence]:
             pieces.append(tail)
 
         for index, piece in enumerate(pieces):
-            normalized = normalize_german(piece)
+            normalized = normalize_german(piece, lexicon)
             if not normalized:
                 continue
             sentences.append(
@@ -157,20 +158,22 @@ def split_sentences(text: str) -> list[Sentence]:
     return sentences
 
 
-def _heading_sentence(titel: str) -> Sentence:
+def _heading_sentence(titel: str, lexicon: Lexicon | None = None) -> Sentence:
     """Eine Überschrift als eigener Satz.
 
     Der Punkt in der Sprechfassung ist der Kern: ohne Satzzeichen setzt die
     Engine nicht ab und hetzt die Zeile herunter. Im Rohtext steht er nicht --
     dort steht, was dasteht.
     """
-    normalisiert = normalize_german(titel)
+    normalisiert = normalize_german(titel, lexicon)
     if normalisiert and normalisiert[-1] not in ".!?":
         normalisiert += "."
     return Sentence(raw=titel, normalized=normalisiert, ends_paragraph=True, is_heading=True)
 
 
-def _split_long_sentence(sentence: Sentence, max_chars: int) -> list[Sentence]:
+def _split_long_sentence(
+    sentence: Sentence, max_chars: int, lexicon: Lexicon | None = None
+) -> list[Sentence]:
     """Notfall-Trennung überlanger Sätze an Teilsatzgrenzen (Komma, Semikolon)."""
     parts = _CLAUSE_BREAK.split(sentence.raw)
     if len(parts) == 1:
@@ -180,13 +183,13 @@ def _split_long_sentence(sentence: Sentence, max_chars: int) -> list[Sentence]:
     buffer = ""
     for part in parts:
         candidate = f"{buffer} {part}".strip()
-        if buffer and len(normalize_german(candidate)) > max_chars:
-            out.append(Sentence(buffer, normalize_german(buffer), False))
+        if buffer and len(normalize_german(candidate, lexicon)) > max_chars:
+            out.append(Sentence(buffer, normalize_german(buffer, lexicon), False))
             buffer = part
         else:
             buffer = candidate
     if buffer:
-        out.append(Sentence(buffer, normalize_german(buffer), False))
+        out.append(Sentence(buffer, normalize_german(buffer, lexicon), False))
 
     if out:
         out[-1] = Sentence(out[-1].raw, out[-1].normalized, sentence.ends_paragraph)
@@ -198,6 +201,7 @@ def build_chunks(
     chars_per_second: float = 14.0,
     target_seconds: float = 20.0,
     max_seconds: float = 25.0,
+    lexicon: Lexicon | None = None,
 ) -> list[TextChunk]:
     """Gruppiert Sätze zu Chunks von etwa ``target_seconds`` Sprechzeit.
 
@@ -208,9 +212,9 @@ def build_chunks(
     max_chars = int(max_seconds * chars_per_second)
 
     sentences: list[Sentence] = []
-    for sentence in split_sentences(text):
+    for sentence in split_sentences(text, lexicon):
         if len(sentence.normalized) > max_chars:
-            sentences.extend(_split_long_sentence(sentence, max_chars))
+            sentences.extend(_split_long_sentence(sentence, max_chars, lexicon))
         else:
             sentences.append(sentence)
 

@@ -322,6 +322,10 @@ a.eintrag:hover { border-color: var(--accent); }
 .karteikopf { margin: 0 0 .4rem; font-size: .95rem; }
 ol.einstieg { margin: .4rem 0 .8rem; padding-left: 1.2rem; line-height: 1.7; }
 
+form.kandidat { display: flex; gap: .5rem; align-items: center; margin-top: .4rem; }
+form.kandidat input { margin-top: 0; }
+form.kandidat button { margin-top: 0; }
+
 /* --- Modelle als Achse --------------------------------------------------- */
 
 .modelle { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: .3rem 0 .2rem; }
