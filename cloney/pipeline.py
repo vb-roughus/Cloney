@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from cloney.asr.base import ASREngine
 from cloney.config import Settings
-from cloney.core.audio import assemble, read_wav, write_wav
+from cloney.core.audio import Segment, assemble, read_wav, write_wav
 from cloney.core.bleed import find_content_start
 from cloney.core.compare import Comparison, Variant, VariantStatus
 from cloney.core.metrics import cer, cosine_similarity
@@ -260,7 +260,7 @@ def assemble_output(
             continue
         audio, rate = read_wav(path)
         raten.add(rate)
-        segments.append((audio, chunk.ends_paragraph))
+        segments.append(Segment(audio, chunk.ends_paragraph, chunk.is_heading))
 
     if not segments:
         on_event(ProgressEvent("assemble", "Nichts zusammenzubauen -- kein Chunk erzeugt"))
@@ -290,6 +290,7 @@ def assemble_output(
         target_lufs=settings.target_lufs,
         pause_sentence_ms=settings.pause_sentence_ms,
         pause_paragraph_ms=settings.pause_paragraph_ms,
+        pause_heading_ms=settings.pause_heading_ms,
         edge_fade_ms=settings.edge_fade_ms,
         trim_threshold_db=settings.trim_threshold_db,
     )

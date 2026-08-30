@@ -622,6 +622,36 @@ Satzliste. Abschaltbar über `CLONEY_TRIM_REFERENCE_BLEED=false`.
 Dafür muss die Qualitätskontrolle laufen — ohne `faster-whisper` gibt es keine
 Rückschrift und damit keine Erkennung.
 
+### Titel und Kapitelüberschriften
+
+Eine Überschrift ist kein Satz, und genau daran scheitert sie beim Vorlesen: sie
+ist kurz und endet ohne Satzzeichen. Die Engine hat damit nichts, woran sie
+absetzen könnte -- die Zeile wird heruntergehetzt und, wenn sie mit einfachem
+Zeilenumbruch über dem Absatz steht, gleich in den ersten Satz hineingelesen.
+Denn der Absatz wird zum Segmentieren zu einer Zeile zusammengezogen; ein
+einzelner Umbruch wird dabei zu einem Leerzeichen wie jedes andere.
+
+Cloney erkennt Überschriften und behandelt sie in drei Punkten anders:
+
+* Sie werden **vor** dem Zusammenziehen des Absatzes herausgelöst und bleiben
+  ein eigener Chunk -- nie mit Fließtext zusammen.
+* Die **Sprechfassung bekommt einen Punkt**: `Kapitel 3` wird zu
+  „Kapitel drei." Der Rohtext bleibt, wie er ist.
+* Beim Zusammenbau steht dahinter die **längste Pause** (`pause_heading_ms`,
+  1200 ms gegenüber 800 für einen Absatz). Im Hörbuch trennt genau sie den Titel
+  vom Text.
+
+Erkannt wird an der Form, nicht an einer Wortliste: eine Zeile bis 70 Zeichen,
+die für sich steht und nicht mit `.!?…:,;` endet -- dazu Markdown-`#`, das die
+Prüfung sticht. Die Falle dabei ist der harte Zeilenumbruch: ein auf 72 Zeichen
+umbrochener Absatz besteht aus lauter Zeilen ohne Satzzeichen und zerfiele sonst
+in Bruchstücke. Deshalb zählt die Fortsetzung mit -- geht es klein weiter oder
+mit einem Komma, war es ein umbrochener Satz, keine Überschrift.
+
+Was erkannt wurde, steht in der Satztabelle als **Titel** neben dem Satz. Eine
+Regel, die man nicht sieht, lässt sich nicht widerlegen; liegt sie einmal
+daneben, ist der Text an dieser Stelle zu ändern.
+
 ### Warum die Chunk-Länge von der Engine abhängt
 
 F5-TTS teilt zu lange Eingaben selbst auf und blendet die Teile ineinander. Das

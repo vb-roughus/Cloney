@@ -180,33 +180,56 @@ def apply_edge_fade(audio: np.ndarray, sample_rate: int, fade_ms: int = 12) -> n
     return out
 
 
-def assemble(
-    segments: list[tuple[np.ndarray, bool]],
+@dataclass(frozen=True)
+class Segment:
+    """Ein Chunk auf dem Weg in die fertige Spur.
+
+    Getragen wird nur, was die Pause dahinter bestimmt -- der Rest steht im
+    Manifest und hat hier nichts verloren.
+    """
+
+    audio: np.ndarray
+    ends_paragraph: bool = False
+    is_heading: bool = False
+
+
+def assemble(  # noqa: PLR0913
+    segments: list[Segment],
     sample_rate: int,
     target_lufs: float = -16.0,
     pause_sentence_ms: int = 350,
     pause_paragraph_ms: int = 800,
+    pause_heading_ms: int = 1200,
     edge_fade_ms: int = 12,
     trim_threshold_db: float = -45.0,
 ) -> np.ndarray:
     """Fügt Chunks zur fertigen Spur zusammen.
 
-    ``segments`` ist eine Liste aus (Audio, endet_am_Absatz). Jeder Chunk wird
-    einzeln getrimmt und auf die Ziel-Lautheit gebracht -- das ist der Grund,
-    warum die Stimme über ein ganzes Kapitel gleich laut bleibt, auch wenn
-    einzelne Chunks neu gerendert wurden.
+    Jeder Chunk wird einzeln getrimmt und auf die Ziel-Lautheit gebracht -- das
+    ist der Grund, warum die Stimme über ein ganzes Kapitel gleich laut bleibt,
+    auch wenn einzelne Chunks neu gerendert wurden.
+
+    Die Pause richtet sich danach, was gerade endete: ein Satz, ein Absatz oder
+    eine Überschrift. Nach einer Überschrift steht die längste -- im Hörbuch
+    trennt genau sie den Titel vom Text, und ohne sie klingt das Kapitel, als
+    hätte jemand vergessen abzusetzen.
     """
     if not segments:
         return np.zeros(0, dtype=np.float32)
 
     parts: list[np.ndarray] = []
-    for index, (audio, ends_paragraph) in enumerate(segments):
-        cleaned = trim_silence(audio, sample_rate, trim_threshold_db)
+    for index, segment in enumerate(segments):
+        cleaned = trim_silence(segment.audio, sample_rate, trim_threshold_db)
         cleaned = normalize_lufs(cleaned, sample_rate, target_lufs)
         cleaned = apply_edge_fade(cleaned, sample_rate, edge_fade_ms)
         parts.append(cleaned)
         if index < len(segments) - 1:
-            pause_ms = pause_paragraph_ms if ends_paragraph else pause_sentence_ms
+            if segment.is_heading:
+                pause_ms = pause_heading_ms
+            elif segment.ends_paragraph:
+                pause_ms = pause_paragraph_ms
+            else:
+                pause_ms = pause_sentence_ms
             parts.append(silence(pause_ms / 1000.0, sample_rate))
 
     return np.concatenate(parts).astype(np.float32)

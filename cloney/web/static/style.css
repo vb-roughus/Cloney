@@ -70,6 +70,7 @@ button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
 .badge.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
 .badge.fail { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); }
 .badge.pending { color: var(--muted); }
+.badge.titel { color: var(--muted); border-style: dashed; }
 
 /* --- Seitenkopf und Statusleiste ---------------------------------------- */
 

@@ -7,6 +7,7 @@ import pytest
 
 from cloney.core.audio import (
     PEAK_CEILING_DBFS,
+    Segment,
     assemble,
     duration_seconds,
     measure_lufs,
@@ -55,7 +56,7 @@ def test_zu_kurzes_audio_bleibt_unberuehrt() -> None:
 def test_pausen_richten_sich_nach_der_absatzgrenze() -> None:
     segment = _tone(1.0)
     track = assemble(
-        [(segment, False), (segment, True), (segment, False)],
+        [Segment(segment), Segment(segment, ends_paragraph=True), Segment(segment)],
         SR,
         pause_sentence_ms=300,
         pause_paragraph_ms=900,
@@ -69,9 +70,29 @@ def test_assemble_ohne_segmente() -> None:
     assert assemble([], SR).size == 0
 
 
+def test_nach_einer_ueberschrift_steht_die_laengste_pause() -> None:
+    """Im Hörbuch trennt genau diese Pause den Titel vom Text. Ohne sie klingt
+    das Kapitel, als hätte jemand vergessen abzusetzen."""
+    segment = _tone(1.0)
+    mit_titel = assemble(
+        [Segment(segment, ends_paragraph=True, is_heading=True), Segment(segment)],
+        SR,
+        pause_paragraph_ms=800,
+        pause_heading_ms=1600,
+    )
+    ohne_titel = assemble(
+        [Segment(segment, ends_paragraph=True), Segment(segment)],
+        SR,
+        pause_paragraph_ms=800,
+        pause_heading_ms=1600,
+    )
+
+    assert len(mit_titel) - len(ohne_titel) == pytest.approx(0.8 * SR, abs=SR // 100)
+
+
 def test_ausgabe_uebersteuert_nicht() -> None:
     loud = _tone(2.0, amplitude=0.9)
-    track = assemble([(loud, False), (loud, True)], SR, target_lufs=-16.0)
+    track = assemble([Segment(loud), Segment(loud, ends_paragraph=True)], SR, target_lufs=-16.0)
     assert np.max(np.abs(track)) <= 1.0
 
 

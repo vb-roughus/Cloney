@@ -39,6 +39,9 @@ class Chunk(BaseModel):
     raw_text: str
     normalized_text: str
     ends_paragraph: bool = False
+    #: Titel oder Kapitelüberschrift. Wird für sich gesprochen und
+    #: bekommt beim Zusammenbau eine längere Pause.
+    is_heading: bool = False
     seed: int
     status: ChunkStatus = ChunkStatus.PENDING
     audio_file: str | None = None
@@ -115,6 +118,7 @@ class Project(BaseModel):
                 raw_text=c.raw_text,
                 normalized_text=c.normalized_text,
                 ends_paragraph=c.ends_paragraph,
+                is_heading=c.is_heading,
                 seed=derive_seed(project_id, i, 0),
             )
             for i, c in enumerate(roh)
@@ -268,6 +272,7 @@ class Project(BaseModel):
                         raw_text=c.raw_text,
                         normalized_text=c.normalized_text,
                         ends_paragraph=c.ends_paragraph,
+                        is_heading=c.is_heading,
                         seed=derive_seed(self.id, i, 0),
                     )
                 )
@@ -277,6 +282,7 @@ class Project(BaseModel):
                     "index": i,
                     "raw_text": c.raw_text,
                     "ends_paragraph": c.ends_paragraph,
+                    "is_heading": c.is_heading,
                     "audio_file": self.chunk_path(i).name,
                 }
             )

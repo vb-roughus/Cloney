@@ -2,6 +2,10 @@
   <td class="meta">
     <div class="nummer">{{ chunk.index + 1 }}</div>
     <span class="badge {{ status_class(chunk.status) }}">{{ status_label(chunk.status) }}</span>
+    {% if chunk.is_heading %}
+      <span class="badge titel" title="Als Titel erkannt: wird für sich gesprochen,
+mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
+    {% endif %}
     <dl class="messwerte">
       <div>
         <dt>Fehlerrate</dt>
