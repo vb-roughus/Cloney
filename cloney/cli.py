@@ -800,11 +800,21 @@ def finetune_train(
     epochs: int = typer.Option(100, help="Durchläufe über den Datensatz."),
     learning_rate: float = typer.Option(1e-5, help="Lernrate."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Nur den Befehl zeigen."),
+    neu: bool = typer.Option(
+        False,
+        "--neu",
+        help="Vom Pretrain aus neu beginnen. Vorhandene Stände werden beiseitegelegt.",
+    ),
     f5_dir: Path = typer.Option(
         None, "--f5-dir", help="Wurzel von F5-TTS. Standard: aus dem installierten Paket."
     ),
 ) -> None:
-    """Das Finetune starten. Braucht eine GPU und läuft Stunden."""
+    """Das Finetune starten. Braucht eine GPU und läuft Stunden.
+
+    Ein zweiter Lauf mit demselben Datensatznamen setzt fort, wo der erste
+    aufgehört hat -- auch mit erweitertem Material. Wer stattdessen vom Pretrain
+    aus beginnen will, nimmt --neu.
+    """
     import subprocess
 
     from cloney.core.finetune import (
@@ -812,6 +822,8 @@ def finetune_train(
         FinetuneError,
         check_prepared,
         plan_training,
+        staende_beiseite,
+        vorhandene_staende,
         write_trainer_pretrain,
     )
 
@@ -846,6 +858,33 @@ def finetune_train(
     typer.echo(f"Daten:       {plan.data_dir}")
     typer.echo(f"Checkpoints: {plan.checkpoint_dir}")
     typer.echo(f"Pretrain:    {plan.pretrain_ckpt.name}")
+
+    # F5 entscheidet allein nach den Dateien im Checkpoint-Ordner, woher es
+    # lädt -- der Pretrain kommt gar nicht zum Zug, wenn dort schon etwas liegt.
+    # Das gehört vor den Lauf, nicht in die Nachbetrachtung.
+    staende = vorhandene_staende(plan.checkpoint_dir)
+    if staende and neu:
+        if not dry_run:
+            beiseite = staende_beiseite(plan.checkpoint_dir)
+            typer.secho(
+                f"{len(staende)} vorhandene Stände liegen jetzt in {beiseite.name}.",
+                fg=typer.colors.YELLOW,
+            )
+        else:
+            typer.secho(
+                f"--neu würde {len(staende)} vorhandene Stände beiseitelegen.",
+                fg=typer.colors.YELLOW,
+            )
+    elif staende:
+        typer.secho(
+            f"Fortsetzung: im Ordner liegen {len(staende)} Stände ({staende[-1].name}). "
+            "F5 lädt den letzten davon,\n"
+            "der Pretrain bleibt außen vor -- samt Optimierer, Schrittzähler und "
+            "Stelle im Lernratenverlauf.\n"
+            "Eine geänderte --learning-rate wirkt dabei nicht. "
+            "Vom Pretrain aus beginnen: --neu.",
+            fg=typer.colors.YELLOW,
+        )
     typer.echo("")
     typer.echo(
         f"{plan.batch_frames} Frames je Schritt sind {plan.seconds_per_step:.1f}s Ton; "

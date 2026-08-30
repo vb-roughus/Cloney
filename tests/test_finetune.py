@@ -421,3 +421,47 @@ def test_nackter_export_wird_ladbar_geschrieben(fake_torch: None, tmp_path: Path
     assert set(inhalt) == {"ema_model_state_dict"}
     assert {"initted", "step"} <= set(inhalt["ema_model_state_dict"])
     assert "ema_model.transformer.proj_out.weight" in inhalt["ema_model_state_dict"]
+
+
+# -- Fortsetzen oder neu beginnen -------------------------------------------
+
+
+def test_leerer_ordner_hat_keine_staende(tmp_path: Path) -> None:
+    from cloney.core.finetune import vorhandene_staende
+
+    assert vorhandene_staende(tmp_path / "gibt-es-nicht") == []
+    assert vorhandene_staende(tmp_path) == []
+
+
+def test_vorhandene_staende_werden_gefunden(tmp_path: Path) -> None:
+    """F5 entscheidet allein nach den Dateien im Ordner, woher es lädt. Wer das
+    nicht weiß, glaubt vom Pretrain aus zu beginnen, und setzt in Wahrheit fort."""
+    from cloney.core.finetune import vorhandene_staende
+
+    for name in ("model_last.pt", "model_4000.pt", "beiwerk.txt"):
+        (tmp_path / name).write_bytes(b"x")
+
+    assert [p.name for p in vorhandene_staende(tmp_path)] == ["model_4000.pt", "model_last.pt"]
+
+
+def test_staende_werden_verschoben_statt_geloescht(tmp_path: Path) -> None:
+    """Ein Trainingslauf kostet Stunden und Gigabyte. Wer neu beginnt, soll das
+    Bisherige nicht verlieren."""
+    from cloney.core.finetune import staende_beiseite, vorhandene_staende
+
+    (tmp_path / "model_last.pt").write_bytes(b"gewichte")
+    (tmp_path / "model_4000.pt").write_bytes(b"gewichte")
+
+    ziel = staende_beiseite(tmp_path)
+
+    assert ziel is not None and ziel.parent == tmp_path
+    assert sorted(p.name for p in ziel.iterdir()) == ["model_4000.pt", "model_last.pt"]
+    # Der Ordner ist für F5 jetzt leer -- nur so kommt der Pretrain zum Zug.
+    assert vorhandene_staende(tmp_path) == []
+
+
+def test_ohne_staende_gibt_es_nichts_beiseitezulegen(tmp_path: Path) -> None:
+    from cloney.core.finetune import staende_beiseite
+
+    assert staende_beiseite(tmp_path) is None
+    assert list(tmp_path.iterdir()) == []

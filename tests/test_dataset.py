@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from cloney.asr.base import Transcript
+from cloney.config import Settings
 from cloney.core.audio import write_wav
 from cloney.core.dataset import Dataset, build_dataset, find_segments
 
@@ -528,3 +529,22 @@ def test_bewertung_zaehlt_die_verwendete_schwelle_nicht_die_beste() -> None:
     assert befund.gefundene_pausen() == 1
     assert not befund.genug_pausen()
     assert befund.beste_zeile().pauses_split == 11
+
+
+def test_erweitertes_material_ersetzt_den_datensatz(settings: Settings, tmp_path: Path) -> None:
+    """Der Fall aus dem Betrieb: eine Aufnahme wird verlängert und erneut
+    eingelesen. Derselbe Name heißt neu bauen -- die Segmente des vorherigen
+    Laufs dürfen nicht als Karteileichen liegen bleiben."""
+    quelle = tmp_path / "lesung.wav"
+    write_wav(quelle, _aufnahme(*[_sprache(5.0), _stille(0.9)] * 5), SR)
+    erst = build_dataset("anna", [quelle], FesterASR(), settings.datasets_dir)
+    vorher = len(erst.utterances)
+    assert vorher >= 4
+
+    # Dieselbe Aufnahme, gekürzt: der zweite Lauf ergibt weniger Segmente.
+    write_wav(quelle, _aufnahme(_sprache(5.0), _stille(0.9), _sprache(5.0)), SR)
+    zweit = build_dataset("anna", [quelle], FesterASR(), settings.datasets_dir)
+
+    assert len(zweit.utterances) < vorher
+    dateien = sorted(p.name for p in (zweit.root / "wavs").glob("utt_*.wav"))
+    assert dateien == sorted(Path(u.file).name for u in zweit.utterances)
