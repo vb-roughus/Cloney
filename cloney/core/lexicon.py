@@ -61,6 +61,19 @@ class Lexicon(BaseModel):
             raise ValueError(f"Zu '{wort}' fehlt die Sprechweise")
         self.entries[wort] = sprechweise.strip()
 
+    def rename(self, alt: str, neu: str, sprechweise: str) -> None:
+        """Einen vorhandenen Eintrag ändern -- auch das Wort selbst.
+
+        Ein Tippfehler steckt genauso oft im Wort wie in der Sprechweise. Der
+        alte Schlüssel verschwindet dabei, sonst bliebe eine Karteileiche, die
+        weiter auf den Text wirkt.
+        """
+        if alt not in self.entries:
+            raise KeyError(alt)
+        self.set(neu, sprechweise)
+        if neu.strip() != alt:
+            del self.entries[alt]
+
     def remove(self, wort: str) -> bool:
         return self.entries.pop(wort, None) is not None
 

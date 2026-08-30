@@ -694,9 +694,12 @@ Buchstabennamen stehen fest. Der Bindestrich hält sie als ein Wort zusammen --
 mit Leerzeichen liest die Engine drei einzelne Wörter, jedes mit eigener
 Betonung.
 
-In der Oberfläche steht das unter **Aussprache**, dort samt Kandidatenliste: alle
-Ketten aus Großbuchstaben aus den Projekttexten, zu denen noch kein Eintrag
-besteht, mit der Buchstabierung als Vorschlag. Ob `ACID` buchstabiert oder als
+In der Oberfläche steht das unter **Aussprache**. Eingetragene Einträge sind
+dort in beiden Feldern änderbar -- ein Tippfehler steckt genauso oft im Wort wie
+in der Sprechweise; wird das Wort geändert, verschwindet der alte Eintrag, sonst
+bliebe eine Karteileiche, die weiter auf den Text wirkt. Dazu die
+Kandidatenliste: alle Ketten aus Großbuchstaben aus den Projekttexten, zu denen
+noch kein Eintrag besteht, mit der Buchstabierung als Vorschlag. Ob `ACID` buchstabiert oder als
 Wort gesprochen wird, sagt der Text nicht -- deshalb steht dort eine Liste, keine
 Entscheidung.
 

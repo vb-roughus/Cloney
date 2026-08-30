@@ -85,3 +85,35 @@ def test_entfernen_meldet_ob_etwas_da_war() -> None:
 
     assert lexikon.remove("SWIFT") is True
     assert lexikon.remove("SWIFT") is False
+
+
+def test_sprechweise_aendern_behaelt_das_wort() -> None:
+    lexikon = Lexicon(entries={"SWIFT": "Ssuift"})
+
+    lexikon.rename("SWIFT", "SWIFT", "Suift")
+
+    assert lexikon.entries == {"SWIFT": "Suift"}
+
+
+def test_wort_aendern_laesst_keine_karteileiche() -> None:
+    """Bliebe der alte Schlüssel stehen, wirkte er weiter auf den Text -- und
+    niemand sähe, warum eine Stelle noch falsch klingt."""
+    lexikon = Lexicon(entries={"SWFIT": "Ssuift"})
+
+    lexikon.rename("SWFIT", "SWIFT", "Ssuift")
+
+    assert lexikon.entries == {"SWIFT": "Ssuift"}
+
+
+def test_aendern_eines_unbekannten_eintrags_schlaegt_fehl() -> None:
+    with pytest.raises(KeyError):
+        Lexicon().rename("SWIFT", "SWIFT", "Ssuift")
+
+
+def test_aendern_ohne_sprechweise_wird_abgelehnt() -> None:
+    lexikon = Lexicon(entries={"SWIFT": "Ssuift"})
+
+    with pytest.raises(ValueError, match="Sprechweise"):
+        lexikon.rename("SWIFT", "SWIFT", "  ")
+    # Der alte Eintrag steht noch -- eine abgelehnte Änderung ändert nichts.
+    assert lexikon.entries == {"SWIFT": "Ssuift"}
