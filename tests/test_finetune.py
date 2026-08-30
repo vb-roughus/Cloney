@@ -158,7 +158,9 @@ def test_trainingsbefehl_traegt_die_tragenden_angaben(tmp_path: Path) -> None:
     plan = _plan(tmp_path, batch_frames=1200, epochs=42)
     befehl = plan.command()
 
-    assert "f5_tts.train.finetune_cli" in befehl
+    # Gestartet über den eigenen Starter, der die Worker-Zahl setzt; die
+    # Argumente sind unverändert die von F5s finetune_cli.
+    assert "cloney.core.train_launcher" in befehl
     assert "--finetune" in befehl
     # Ohne 'custom' nähme F5 sein eigenes Vokabular.
     assert befehl[befehl.index("--tokenizer") + 1] == "custom"
@@ -465,3 +467,71 @@ def test_ohne_staende_gibt_es_nichts_beiseitezulegen(tmp_path: Path) -> None:
 
     assert staende_beiseite(tmp_path) is None
     assert list(tmp_path.iterdir()) == []
+
+
+# -- Worker des DataLoaders --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("kerne", "erwartet"),
+    [(1, 1), (2, 1), (4, 3), (8, 7), (9, 8), (32, 8)],
+)
+def test_worker_zahl_richtet_sich_nach_den_kernen(kerne: int, erwartet: int) -> None:
+    """F5 legt sechzehn an, auch auf acht Kernen. Einer bleibt hier für den
+    Hauptprozess frei -- er füttert die GPU, und wartet er, wartet sie mit."""
+    from cloney.core.train_launcher import worker_count
+
+    assert worker_count(kerne) == erwartet
+
+
+def test_ohne_f5_wird_nichts_gepatcht() -> None:
+    """Ein Trainingslauf ist zu teuer, um an einer Bequemlichkeit zu scheitern:
+    geht der Patch nicht, läuft das Training mit F5s Vorgabe weiter."""
+    from cloney.core.train_launcher import patch_trainer
+
+    assert patch_trainer(4) is False
+
+
+def test_patch_setzt_die_worker_zahl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gegen ein eingeschleustes Ersatzmodul -- F5 liegt hier nicht vor."""
+    import sys
+    import types
+
+    gesehen: dict[str, object] = {}
+
+    class Trainer:
+        def train(self, train_dataset, num_workers=16, **kwargs):  # noqa: ANN001, ANN202
+            gesehen["workers"] = num_workers
+            gesehen.update(kwargs)
+
+    modul = types.ModuleType("f5_tts.model.trainer")
+    modul.Trainer = Trainer
+    monkeypatch.setitem(sys.modules, "f5_tts", types.ModuleType("f5_tts"))
+    monkeypatch.setitem(sys.modules, "f5_tts.model", types.ModuleType("f5_tts.model"))
+    monkeypatch.setitem(sys.modules, "f5_tts.model.trainer", modul)
+
+    from cloney.core.train_launcher import patch_trainer
+
+    assert patch_trainer(3) is True
+    Trainer().train("datensatz", resumable_with_seed=666)
+
+    assert gesehen["workers"] == 3
+    # Was F5 sonst übergibt, muss durchkommen -- sonst ginge das Fortsetzen kaputt.
+    assert gesehen["resumable_with_seed"] == 666
+
+
+def test_der_lauf_geht_ueber_den_starter() -> None:
+    """Sonst käme F5s Vorgabe von sechzehn Worker-Prozessen zum Zug."""
+    from cloney.core.finetune import TrainingPlan
+
+    plan = TrainingPlan(
+        dataset_name="anna",
+        data_dir=Path("data"),
+        checkpoint_dir=Path("ckpts"),
+        pretrain_ckpt=Path("model.pt"),
+        vocab_path=Path("vocab.txt"),
+    )
+    befehl = plan.command()
+
+    assert "cloney.core.train_launcher" in befehl
+    assert "f5_tts.train.finetune_cli" not in befehl

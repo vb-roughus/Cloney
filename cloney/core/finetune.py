@@ -194,11 +194,16 @@ class TrainingPlan:
         return max(25, min(self.last_per_updates, self.save_interval // 2))
 
     def command(self) -> list[str]:
-        """Der Aufruf von F5s finetune_cli, vollständig und nachvollziehbar."""
+        """Der Aufruf von F5s finetune_cli, vollständig und nachvollziehbar.
+
+        Gestartet über ``cloney.core.train_launcher``: der setzt die Zahl der
+        DataLoader-Worker auf das, was die Maschine hergibt, und ruft dann F5s
+        Skript unverändert auf. F5 legt sonst sechzehn an, auch auf acht Kernen.
+        """
         return [
             sys.executable,
             "-m",
-            "f5_tts.train.finetune_cli",
+            "cloney.core.train_launcher",
             "--exp_name",
             self.exp_name,
             "--dataset_name",

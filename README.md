@@ -1104,6 +1104,29 @@ vor dem Training eine Fassung an, die diese Struktur trägt, und übergibt sie a
 `--pretrain`. Trägt ein Checkpoint sie bereits, bleibt er unangetastet: ihn zu
 kopieren kostete über ein Gigabyte für nichts.
 
+### Wie viele DataLoader-Worker
+
+F5s Trainer legt den DataLoader mit sechzehn Worker-Prozessen an, und
+`finetune_cli.py` reicht dazu nichts durch:
+
+```python
+def train(self, train_dataset: Dataset, num_workers=16, resumable_with_seed=None):
+```
+
+PyTorch warnt dann selbst: *„This DataLoader will create 16 worker processes in
+total. Our suggested max number of worker in current system is 8"*. Unter Linux
+kostet das Kontextwechsel; unter Windows startet jeder Worker einen eigenen
+Interpreter samt Torch-Import -- sechzehn davon sind Gigabyte an Arbeitsspeicher
+und eine Minute Anlauf, für nichts: mehr Worker als Kerne laden keine Datei
+schneller.
+
+Cloney startet das Training deshalb über `cloney.core.train_launcher`. Der setzt
+die Zahl auf `min(8, Kerne - 1)` -- einer bleibt für den Hauptprozess frei, der
+die GPU füttert -- und ruft dann F5s Skript unverändert auf. Geht der Eingriff
+schief, etwa weil eine andere F5-Fassung die Signatur geändert hat, läuft das
+Training trotzdem, nur eben mit F5s Vorgabe. Ein Lauf über Stunden ist zu teuer,
+um an einer Bequemlichkeit zu scheitern.
+
 ### Das Ergebnis benutzen
 
 Ein Trainingslauf hinterlässt `model_last.pt` und `model_<schritt>.pt` in F5s
