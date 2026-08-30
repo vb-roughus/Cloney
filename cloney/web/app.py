@@ -61,6 +61,15 @@ def create_app(
     voices = VoiceStore(settings.voices_dir)
     modelle = ModelStore(settings.models_dir)
 
+    def datei(path: Path, media_type: str) -> FileResponse:
+        """Eine Tondatei ausliefern, ohne sie im Browser altern zu lassen.
+
+        Ein neu gewürfelter Satz liegt unter derselben Adresse wie der alte.
+        Ohne diese Kopfzeile könnte der Browser den vorherigen Stand aus dem
+        Zwischenspeicher zeigen -- und man hörte, was man gerade ersetzt hat.
+        """
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
+
     def load(project_id: str) -> Project:
         try:
             root = Project.resolve(settings.projects_dir, project_id)
@@ -128,25 +137,37 @@ def create_app(
     def index(request: Request) -> HTMLResponse:
         """Was steht an? Die Startseite beantwortet das, statt ein Formular zu
         zeigen, das man höchstens einmal je Kapitel braucht."""
-        projekte = Project.list_all(settings.projects_dir)
         return templates.TemplateResponse(
             request,
             "dashboard.html",
             {
-                "uebersicht": summarize(
-                    projekte,
-                    running=sum(1 for p in projekte if runner.is_running(p.id)),
-                    voices=len(voices.list_all()),
-                    comparisons=len(Comparison.list_all(settings.comparisons_dir)),
-                    models=len(modelle.list_all()),
-                ),
-                "projects": projekte[:5],
-                "laufend": [p for p in projekte if runner.is_running(p.id)],
+                **_uebersicht_kontext(),
                 "comparisons": Comparison.list_all(settings.comparisons_dir)[:3],
                 "models": modelle.list_all(),
                 "voices": voices.list_all(),
             },
         )
+
+    def _uebersicht_kontext() -> dict[str, object]:
+        """Zahlen und laufende Läufe. Eine Stelle, damit die Seite und ihre
+        Nachlade-Route nicht mit verschiedenen Ständen enden."""
+        projekte = Project.list_all(settings.projects_dir)
+        laufend = [p for p in projekte if runner.is_running(p.id)]
+        return {
+            "uebersicht": summarize(
+                projekte,
+                running=len(laufend),
+                voices=len(voices.list_all()),
+                comparisons=len(Comparison.list_all(settings.comparisons_dir)),
+                models=len(modelle.list_all()),
+            ),
+            "projects": projekte[:5],
+            "laufend": laufend,
+        }
+
+    @app.get("/uebersicht", response_class=HTMLResponse)
+    def uebersicht_teil(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(request, "_uebersicht.html", _uebersicht_kontext())
 
     # -- Projekte ---------------------------------------------------------
 
@@ -307,7 +328,13 @@ def create_app(
     def table(request: Request, project_id: str) -> HTMLResponse:
         project = load(project_id)
         return templates.TemplateResponse(
-            request, "_chunk_table.html", {"project": project, "threshold": settings.cer_threshold}
+            request,
+            "_chunk_table.html",
+            {
+                "project": project,
+                "threshold": settings.cer_threshold,
+                "running": runner.is_running(project_id),
+            },
         )
 
     @app.post("/projects/{project_id}/rename", response_class=HTMLResponse)
@@ -478,7 +505,7 @@ def create_app(
         path = project.chunk_path(index)
         if not path.exists():
             raise HTTPException(404, "Für diesen Chunk gibt es noch kein Audio")
-        return FileResponse(path, media_type="audio/wav")
+        return datei(path, "audio/wav")
 
     @app.get("/projects/{project_id}/output")
     def output(project_id: str) -> FileResponse:
@@ -532,7 +559,7 @@ def create_app(
         if not voices.exists(name):
             raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
         pfad = voices.get(name).audio_path
-        return FileResponse(pfad, media_type=media_type(pfad))
+        return datei(pfad, media_type(pfad))
 
     # -- Vergleichsläufe --------------------------------------------------
 
@@ -672,7 +699,7 @@ def create_app(
             raise HTTPException(404, str(exc)) from exc
         if not project.output_path.exists():
             raise HTTPException(404, "Für diese Variante gibt es noch keinen Ton")
-        return FileResponse(project.output_path, media_type="audio/wav")
+        return datei(project.output_path, "audio/wav")
 
     @app.post("/comparisons/{comparison_id}/delete")
     def delete_comparison(comparison_id: str) -> RedirectResponse:

@@ -19,6 +19,7 @@ from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
 from cloney.engines.dummy import DummyEngine
 from cloney.web.app import anzahl, create_app, zeitpunkt
+from cloney.web.jobs import JobRunner
 
 TEXT = "Am 3. Mai 2024 begann es.\n\nDr. Meier sagte z.B. nichts dazu. Dann war Ruhe."
 
@@ -954,3 +955,70 @@ def test_vergleich_stellt_pretrain_gegen_finetune(
     assert [v.model for v in comparison.variants] == ["", "anna-ft"]
     seite = client.get(f"/comparisons/{comparison_id}").text
     assert "Pretrain" in seite and "anna-ft" in seite
+
+
+# -- Ansicht hält sich selbst aktuell ---------------------------------------
+
+
+def test_satztabelle_laedt_waehrend_des_laufs_nach(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wer beim Rendern zusieht, soll fertige Sätze sehen und anhören können,
+    ohne die Seite neu zu laden.
+
+    Der Lauf wird dafür nicht wirklich gestartet, sondern als laufend gemeldet:
+    ein Dummy-Lauf ist schneller vorbei, als der Abruf hier ankäme.
+    """
+    client = _client(settings)
+    project_id = _create_project(client)
+    monkeypatch.setattr(JobRunner, "is_running", lambda self, key: True)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+
+    assert f'hx-get="/projects/{project_id}/table"' in tabelle
+    assert "every 2000ms" in tabelle
+
+
+def test_satztabelle_hoert_auf_nachzuladen(settings: Settings, voice_store: VoiceStore) -> None:
+    """Sonst liefe die Abfrage endlos weiter -- und ein leeres hx-trigger fiele
+    auf den Standard zurück, bei einem div also auf den Klick."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+    assert 'id="chunks"' in tabelle
+    assert "hx-trigger" not in tabelle
+    assert "hx-get" not in tabelle
+
+
+def test_fertige_saetze_sind_waehrend_des_laufs_hoerbar(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der eigentliche Wunsch: nicht bis zum Ende warten müssen."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    # Nach dem Lauf steht jeder Satz einzeln bereit -- derselbe Weg, den die
+    # Tabelle während des Laufs für die schon fertigen anbietet.
+    antwort = client.get(f"/projects/{project_id}/chunks/0/audio")
+    assert antwort.status_code == 200
+    # Ohne diese Kopfzeile zeigte der Browser nach dem Neuwürfeln den alten Ton.
+    assert antwort.headers["cache-control"] == "no-cache"
+
+
+def test_uebersicht_laedt_nur_bei_laufenden_nach(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _client(settings)
+    _create_project(client)
+
+    ruhig = client.get("/uebersicht")
+    assert ruhig.status_code == 200
+    assert "hx-trigger" not in ruhig.text
+
+    monkeypatch.setattr(JobRunner, "is_running", lambda self, key: True)
+    laufend = client.get("/uebersicht").text
+    assert 'hx-get="/uebersicht"' in laufend
+    assert "Läuft gerade" in laufend

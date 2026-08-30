@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,9 +84,18 @@ def read_wav(path: Path | str) -> tuple[np.ndarray, int]:
 def write_wav(
     path: Path | str, audio: np.ndarray, sample_rate: int, subtype: str = DEFAULT_SUBTYPE
 ) -> None:
+    """Atomar schreiben -- dieselbe Regel wie beim Manifest.
+
+    Während eines Laufs wird mitgehört, und die Qualitätskontrolle schreibt
+    einen Chunk noch einmal, wenn sie ihm den Referenz-Vorspann abschneidet.
+    Wer in dem Moment auf Abspielen drückt, bekäme sonst eine halbe Datei.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(str(path), np.clip(audio, -1.0, 1.0).astype(np.float32), sample_rate, subtype=subtype)
+    # Die Endung bleibt stehen: soundfile leitet das Format daraus ab.
+    tmp = path.with_name(f".{path.stem}.tmp{path.suffix}")
+    sf.write(str(tmp), np.clip(audio, -1.0, 1.0).astype(np.float32), sample_rate, subtype=subtype)
+    os.replace(tmp, path)
 
 
 def duration_seconds(audio: np.ndarray, sample_rate: int) -> float:

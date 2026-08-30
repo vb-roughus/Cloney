@@ -386,6 +386,31 @@ anlegen zu müssen.
 **Projekt** sammelt Umbenennen, Kopie, Ton verwerfen und Löschen an einer
 Stelle, weg von den Dingen, die man ständig braucht.
 
+### Während des Laufs mithören
+
+Die Ansicht hält sich selbst aktuell: solange ein Lauf läuft, holen sich
+Statusleiste und Satztabelle alle paar Sekunden den neuen Stand. Fertige Sätze
+erscheinen samt Abspieler, während die übrigen noch entstehen -- man muss nicht
+bis zum Ende warten, um zu hören, ob die Reglerstellung sitzt. Ist der Lauf
+vorbei, hören die Abfragen von selbst auf.
+
+Beides zusammen hat einen Haken: Wird die Tabelle ausgetauscht, während man
+einen Satz anhört, ist der Abspieler danach ein anderes Element -- der Ton
+beginnt von vorn zu laden. Der Versuch, Zeitpunkt und Wiedergabe danach
+wiederherzustellen, funktioniert zwar (im Browser gemessen), aber mit einem
+hörbaren Aussetzer alle zwei Sekunden.
+
+Deshalb gilt die einfachere Regel: **Zuhören geht vor.** Solange etwas
+abgespielt wird, wird die wiederkehrende Abfrage übersprungen; sobald die
+Wiedergabe endet oder pausiert, holt die nächste alles nach. Ein Klick -- „Neu
+würfeln", „Text übernehmen" -- wird davon nie zurückgestellt.
+
+Dazu zwei Dinge, die sonst leise stören würden: Tondateien werden atomar
+geschrieben, sodass ein Satz, der gerade neu entsteht, nie halb ausgeliefert
+wird; und sie tragen `Cache-Control: no-cache`, damit nach dem Neuwürfeln nicht
+der vorherige Stand aus dem Zwischenspeicher kommt -- die Adresse bleibt ja
+dieselbe.
+
 Die Reiter sind reines CSS über versteckte Radioknöpfe. Ohne Skript heißt: der
 gewählte Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber
 austauscht.
