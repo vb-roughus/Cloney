@@ -332,6 +332,22 @@ unterscheiden sich zusätzlich im Zufall. Cloney führt das als
 `EngineInfo.reproducible_seed` und schreibt den Hinweis an beide Stellen, statt
 eine Reproduzierbarkeit zu versprechen, die es hier nicht gibt.
 
+## Die Oberfläche
+
+Vier Ansichten: **Übersicht**, **Projekte**, **Vergleiche**, **Stimmen**.
+
+Die Übersicht beantwortet „was steht an?“ und nicht „was kann ich anlegen?“ --
+Anzahl Projekte, wie viele Sätze gerendert sind, wie viele auf Durchsicht
+warten, was gerade läuft, dazu die zuletzt bearbeiteten Projekte und Vergleiche.
+Von den Kennzahlen ist eine handlungsleitend: **zur Durchsicht**. Sie zählt die
+Sätze mit erhöhter Fehlerrate oder gescheiterter Synthese über alle Projekte --
+die Arbeit, die ohne Nachsehen liegen bleibt. Ist noch nichts angelegt, steht
+dort statt Kacheln der Weg zum ersten Kapitel.
+
+Das Anlegen eines Projekts hat eine eigene Seite und ist von der Liste aus über
+einen Knopf erreichbar. Auf der Liste stünde ein Formular, das man je Kapitel
+einmal braucht, dauerhaft im Weg -- und aufgeklappt wäre es eine Klappbox mehr.
+
 ## Die Projektseite
 
 Oben der Kopf mit den Kennzahlen, darunter eine Statusleiste, die beim Scrollen

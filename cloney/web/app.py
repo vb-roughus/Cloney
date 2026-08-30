@@ -9,6 +9,7 @@ Langform-Produktion sonst scheitert.
 
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
 from cloney.pipeline import quality_check, synthesize_chunks
 from cloney.web.jobs import ComparisonRunner, JobRunner
+from cloney.web.overview import summarize
 
 _HERE = Path(__file__).parent
 
@@ -49,6 +51,8 @@ def create_app(
     app.mount("/static", StaticFiles(directory=_HERE / "static"), name="static")
     templates = Jinja2Templates(directory=_HERE / "templates")
     templates.env.globals["typical_rate"] = TYPICAL_CHARS_PER_SECOND
+    templates.env.globals["anzahl"] = anzahl
+    templates.env.filters["zeitpunkt"] = zeitpunkt
     templates.env.globals["status_label"] = lambda s: STATUS_LABEL[s][0]
     templates.env.globals["status_class"] = lambda s: STATUS_LABEL[s][1]
 
@@ -118,15 +122,57 @@ def create_app(
             request, "_chunk_row.html", {"project": project, "chunk": project.chunks[index]}
         )
 
-    # -- Projekte ---------------------------------------------------------
+    # -- Übersicht --------------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
+        """Was steht an? Die Startseite beantwortet das, statt ein Formular zu
+        zeigen, das man höchstens einmal je Kapitel braucht."""
+        projekte = Project.list_all(settings.projects_dir)
         return templates.TemplateResponse(
             request,
-            "index.html",
+            "dashboard.html",
+            {
+                "uebersicht": summarize(
+                    projekte,
+                    running=sum(1 for p in projekte if runner.is_running(p.id)),
+                    voices=len(voices.list_all()),
+                    comparisons=len(Comparison.list_all(settings.comparisons_dir)),
+                    models=len(modelle.list_all()),
+                ),
+                "projects": projekte[:5],
+                "laufend": [p for p in projekte if runner.is_running(p.id)],
+                "comparisons": Comparison.list_all(settings.comparisons_dir)[:3],
+                "models": modelle.list_all(),
+                "voices": voices.list_all(),
+            },
+        )
+
+    # -- Projekte ---------------------------------------------------------
+
+    @app.get("/projects", response_class=HTMLResponse)
+    def project_index(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "projects.html",
             {
                 "projects": Project.list_all(settings.projects_dir),
+                "voices": voices.list_all(),
+            },
+        )
+
+    @app.get("/projects/new", response_class=HTMLResponse)
+    def new_project(request: Request) -> HTMLResponse:
+        """Das Anlegen hat eine eigene Seite.
+
+        Auf der Liste stünde ein Formular, das man je Kapitel einmal braucht,
+        dauerhaft im Weg -- und aufgeklappt wäre es eine Klappbox mehr. Die
+        Route steht vor '/projects/{project_id}', sonst finge die Kennung sie ab.
+        """
+        return templates.TemplateResponse(
+            request,
+            "project_new.html",
+            {
                 "voices": voices.list_all(),
                 "engines": available_engines(),
                 "models": modelle.list_all(),
@@ -277,7 +323,7 @@ def create_app(
         project = load(project_id)
         guard_idle(project_id)
         project.delete()
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/projects", status_code=303)
 
     @app.post("/projects/{project_id}/duplicate")
     def duplicate_project(project_id: str) -> RedirectResponse:
@@ -680,6 +726,22 @@ def create_app(
         return templates.TemplateResponse(request, "voices.html", _voice_context(check=check))
 
     return app
+
+
+def anzahl(wert: int, eins: str, viele: str) -> str:
+    """'1 Vergleich' statt '1 Vergleiche'."""
+    return f"{wert} {eins if wert == 1 else viele}"
+
+
+def zeitpunkt(iso: str) -> str:
+    """ISO-Zeitstempel lesbar machen, in der Zeitzone des Rechners.
+
+    Gespeichert wird in UTC -- angezeigt gehört, was auf der Uhr im Raum stand.
+    """
+    try:
+        return datetime.fromisoformat(iso).astimezone().strftime("%d.%m.%Y, %H:%M")
+    except ValueError:
+        return iso
 
 
 def get_app() -> FastAPI:

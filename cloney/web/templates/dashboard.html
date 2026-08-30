@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Übersicht &mdash; Cloney{% endblock %}
+{% block content %}
+<h1>Übersicht</h1>
+
+{% if uebersicht.leer %}
+<div class="card">
+  <p>Noch nichts angelegt. Der Weg zum ersten Kapitel geht über drei Schritte:</p>
+  <ol class="einstieg">
+    <li><a href="/voices">Eine Referenzstimme anlegen</a> &mdash; sechs bis fünfzehn
+      Sekunden sauber vorgelesener Text genügen.</li>
+    <li><a href="/projects/new">Ein Projekt anlegen</a> und den Text einsetzen.</li>
+    <li>Rendern, dann Satz für Satz durchhören.</li>
+  </ol>
+  <p class="muted">Wer erst wissen will, welche Reglerstellung zur Stimme passt,
+    beginnt mit einem <a href="/comparisons">Vergleichslauf</a>: dieselbe kurze
+    Probe je Einstellung einmal, nebeneinander gemessen.</p>
+</div>
+{% else %}
+
+<div class="kacheln">
+  <div class="kachel">
+    <span class="zahl">{{ uebersicht.projects }}</span>
+    <span class="was">{{ "Projekt" if uebersicht.projects == 1 else "Projekte" }}</span>
+    <span class="muted">{{ uebersicht.complete }} fertig &middot;
+      {{ uebersicht.in_arbeit }} in Arbeit</span>
+  </div>
+  <div class="kachel">
+    <span class="zahl">{{ uebersicht.chunks_done }}</span>
+    <span class="was">Sätze gerendert</span>
+    <span class="muted">von {{ uebersicht.chunks_total }} insgesamt</span>
+  </div>
+  <div class="kachel {% if uebersicht.review %}achtung{% endif %}">
+    <span class="zahl">{{ uebersicht.review }}</span>
+    <span class="was">zur Durchsicht</span>
+    <span class="muted">
+      {%- if uebersicht.review %}auffällig oder fehlgeschlagen
+      {%- else %}nichts offen{% endif %}</span>
+  </div>
+  <div class="kachel">
+    <span class="zahl">{{ uebersicht.voices }}</span>
+    <span class="was">{{ "Stimme" if uebersicht.voices == 1 else "Stimmen" }}</span>
+    <span class="muted">{{ anzahl(uebersicht.models, "eigenes Modell", "eigene Modelle") }}
+      &middot; {{ anzahl(uebersicht.comparisons, "Vergleich", "Vergleiche") }}</span>
+  </div>
+</div>
+
+{% if laufend %}
+<div class="card ok">
+  <h2 class="karteikopf">Läuft gerade</h2>
+  {% for p in laufend %}
+  <p><span class="spinner inline" aria-hidden="true"></span>
+    <a href="/projects/{{ p.id }}">{{ p.name }}</a>
+    <span class="muted">{{ p.progress[0] }} von {{ p.progress[1] }} Sätzen</span></p>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not voices %}
+<p class="notice">Noch keine Referenzstimme vorhanden.
+  <a href="/voices">Zuerst eine Stimme anlegen.</a></p>
+{% endif %}
+
+<h2>Zuletzt bearbeitet</h2>
+{% if projects %}
+<div class="liste">
+  {% for p in projects %}
+  {% set done, total = p.progress %}
+  <a class="eintrag" href="/projects/{{ p.id }}">
+    <span class="kopf">
+      <strong>{{ p.name }}</strong>
+      <span class="badge {% if p.is_complete %}ok{% else %}warn{% endif %}">
+        {% if p.is_complete %}fertig{% else %}{{ done }}/{{ total }}{% endif %}</span>
+    </span>
+    <progress class="fortschritt" value="{{ done }}" max="{{ total or 1 }}">
+      {{ done }} von {{ total }}</progress>
+    <span class="muted">{{ p.voice }} &middot; {{ p.engine }}
+      {%- if p.model %} &middot; {{ p.model }}{% endif %}
+      {%- if p.median_cer() is not none %} &middot;
+        {{ "%.1f"|format(p.median_cer() * 100) }}&nbsp;% Fehlerrate{% endif %}</span>
+  </a>
+  {% endfor %}
+</div>
+<p><a href="/projects">Alle Projekte</a></p>
+{% else %}
+<p class="muted">Noch keine Projekte. <a href="/projects/new">Eins anlegen.</a></p>
+{% endif %}
+
+{% if comparisons %}
+<h2>Letzte Vergleiche</h2>
+<div class="liste">
+  {% for c in comparisons %}
+  <a class="eintrag" href="/comparisons/{{ c.id }}">
+    <span class="kopf"><strong>{{ c.name }}</strong>
+      <span class="badge {% if c.is_complete %}ok{% else %}warn{% endif %}">
+        {{ c.progress[0] }}/{{ c.progress[1] }}</span></span>
+    <span class="muted">{{ c.voice }} &middot; {{ c.engine }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if models %}
+<h2>Eigene Modelle</h2>
+<div class="liste">
+  {% for m in models %}
+  <span class="eintrag">
+    <span class="kopf"><strong>{{ m.name }}</strong>
+      {% if not m.exists %}<span class="badge fail">Datei fehlt</span>{% endif %}</span>
+    <span class="muted">{% if m.note %}{{ m.note }} &middot; {% endif %}{{ m.created_at | zeitpunkt }}</span>
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
