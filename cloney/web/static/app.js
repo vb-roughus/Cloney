@@ -52,6 +52,34 @@
     melden("Keine Verbindung zum Server. Läuft 'cloney web' noch?", "error");
   });
 
+  // Während eines Laufs holt sich die Satztabelle alle zwei Sekunden den neuen
+  // Stand. Wer dabei einen fertigen Satz anhört, verlöre ihn bei jedem Tausch:
+  // das Element wird ersetzt, der Ton beginnt von vorn zu laden.
+  //
+  // Versucht wurde zuerst, Zeitpunkt und Wiedergabe danach wiederherzustellen.
+  // Im Browser gemessen hat das zwar funktioniert, aber mit einem hörbaren
+  // Aussetzer je Tausch -- alle zwei Sekunden. Deshalb gilt hier die einfachere
+  // Regel: Zuhören geht vor. Solange etwas läuft, wird die wiederkehrende
+  // Abfrage übersprungen; danach holt die nächste alles nach.
+  //
+  // Betroffen sind nur wiederkehrende Abfragen. Ein Klick auf "Neu würfeln"
+  // wird nie zurückgestellt.
+  function spieltEtwas(bereich) {
+    var spieler = bereich.querySelectorAll ? bereich.querySelectorAll("audio") : [];
+    for (var i = 0; i < spieler.length; i++) {
+      if (!spieler[i].paused && !spieler[i].ended) return true;
+    }
+    return false;
+  }
+
+  document.body.addEventListener("htmx:beforeRequest", function (ereignis) {
+    var quelle = ereignis.detail.elt;
+    if (!quelle || !quelle.getAttribute) return;
+    var ausloeser = quelle.getAttribute("hx-trigger") || "";
+    if (ausloeser.indexOf("every") === -1) return;
+    if (spieltEtwas(quelle)) ereignis.preventDefault();
+  });
+
   // Ein laufender Renderlauf soll nicht unbemerkt fertig werden. Gemeldet wird
   // der Übergang von "läuft" nach "fertig", nicht der Zustand selbst -- sonst
   // käme die Meldung bei jedem Seitenaufruf erneut.

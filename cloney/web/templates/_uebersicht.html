@@ -1,0 +1,47 @@
+{#
+  Kennzahlen und laufende Läufe. Solange etwas rendert, holt sich dieses Stück
+  von selbst den neuen Stand -- die Zahlen daneben wären sonst von vorhin.
+  Die Abfrage-Attribute stehen nur da, wenn wirklich etwas läuft.
+#}
+<div id="uebersicht" data-fertig="{{ 0 if laufend else 1 }}"
+     {% if laufend %}hx-get="/uebersicht" hx-trigger="every 2000ms"
+     hx-swap="outerHTML"{% endif %}>
+<div class="kacheln">
+  <div class="kachel">
+    <span class="zahl">{{ uebersicht.projects }}</span>
+    <span class="was">{{ "Projekt" if uebersicht.projects == 1 else "Projekte" }}</span>
+    <span class="muted">{{ uebersicht.complete }} fertig &middot;
+      {{ uebersicht.in_arbeit }} in Arbeit</span>
+  </div>
+  <div class="kachel">
+    <span class="zahl">{{ uebersicht.chunks_done }}</span>
+    <span class="was">Sätze gerendert</span>
+    <span class="muted">von {{ uebersicht.chunks_total }} insgesamt</span>
+  </div>
+  <div class="kachel {% if uebersicht.review %}achtung{% endif %}">
+    <span class="zahl">{{ uebersicht.review }}</span>
+    <span class="was">zur Durchsicht</span>
+    <span class="muted">
+      {%- if uebersicht.review %}auffällig oder fehlgeschlagen
+      {%- else %}nichts offen{% endif %}</span>
+  </div>
+  <div class="kachel">
+    <span class="zahl">{{ uebersicht.voices }}</span>
+    <span class="was">{{ "Stimme" if uebersicht.voices == 1 else "Stimmen" }}</span>
+    <span class="muted">{{ anzahl(uebersicht.models, "eigenes Modell", "eigene Modelle") }}
+      &middot; {{ anzahl(uebersicht.comparisons, "Vergleich", "Vergleiche") }}</span>
+  </div>
+</div>
+
+{% if laufend %}
+<div class="card ok">
+  <h2 class="karteikopf">Läuft gerade</h2>
+  {% for p in laufend %}
+  <p><span class="spinner inline" aria-hidden="true"></span>
+    <a href="/projects/{{ p.id }}">{{ p.name }}</a>
+    <span class="muted">{{ p.progress[0] }} von {{ p.progress[1] }} Sätzen</span></p>
+  {% endfor %}
+</div>
+{% endif %}
+
+</div>
