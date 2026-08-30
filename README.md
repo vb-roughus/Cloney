@@ -198,6 +198,20 @@ cloney web              # öffnet den Browser, sobald der Server antwortet
 cloney web --no-open    # ohne Browser
 ```
 
+Beendet wird mit Strg+C, und zwar zügig. Das ist nicht selbstverständlich:
+uvicorn wartet von sich aus unbegrenzt, erst auf offene Verbindungen, dann auf
+laufende Anfragen. Eine Anfrage, die gerade einen Satz synthetisiert, läuft in
+einem Thread des Standard-Executors -- den bricht niemand ab, und `asyncio.run`
+wartet am Ende noch einmal genau darauf. Uvicorns eigene Notbremse (zweites
+Strg+C) greift dabei nicht durch, weil sie nur die Warteschleifen abbricht.
+Genau so entsteht das Bild `Waiting for connections to close`, bei dem kein
+weiteres Strg+C mehr hilft.
+
+Cloney setzt deshalb eine Frist für das geordnete Beenden und beendet den
+Prozess, wenn sie verstreicht; ein zweites Strg+C wirkt sofort. Ein
+abgebrochener Renderlauf ist kein Verlust -- Manifeste werden atomar
+geschrieben, fortgesetzt wird mit `cloney resume <kennung>`.
+
 Der `asr`-Extra bringt faster-whisper für die Qualitätskontrolle mit. Ohne ihn
 läuft alles außer der Fehlermessung; das Manifest vermerkt dann `cer = null`,
 also „nicht geprüft" statt „fehlerfrei".

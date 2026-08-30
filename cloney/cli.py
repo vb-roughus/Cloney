@@ -1231,10 +1231,8 @@ def web(
     ),
 ) -> None:
     """Web-Oberfläche starten."""
-    import uvicorn
-
     from cloney.web.app import create_app
-    from cloney.web.launch import open_browser_when_ready
+    from cloney.web.launch import open_browser_when_ready, serve
 
     settings = get_settings()
     url = f"http://{host}:{port}"
@@ -1244,7 +1242,7 @@ def web(
         open_browser_when_ready(url)
     anwendung = create_app(settings, _asr_factory(settings, qc), _embedder_factory(settings, qc))
     try:
-        uvicorn.run(anwendung, host=host, port=port)
+        serve(anwendung, host, port)
     except KeyboardInterrupt:
         typer.echo("")
 
