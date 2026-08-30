@@ -151,10 +151,12 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 
 .chunks { table-layout: fixed; }
 .chunks .spalte-meta { width: 9.5rem; }
-.chunks .spalte-ton { width: 15rem; }
 .chunks td { padding-top: .9rem; padding-bottom: .9rem; }
 .chunks textarea { font-size: .9rem; }
-.chunks audio { width: 100%; }
+/* Volle Breite des Satzes: erst damit ist die Suchleiste lang genug, um eine
+   Stelle anzuspringen. Der Abstand hält sie vom Text ab, ohne sie zu lösen --
+   Satz und Ton gehören zusammen. */
+.chunks audio.satzton { display: block; width: 100%; margin: .7rem 0 0; }
 .chunks td.meta .nummer {
   font-size: 1.5rem; font-weight: 300; line-height: 1;
   color: var(--muted); font-variant-numeric: tabular-nums;

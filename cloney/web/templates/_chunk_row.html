@@ -33,26 +33,31 @@ mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
   </td>
 
   <td class="text">
-    <form hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/text"
+    {#
+      Der Abspieler steht unmittelbar unter dem Satz, die Handgriffe darunter in
+      einer Reihe. Der Knopf zum Übernehmen gehört zum Formular, steht aber
+      außerhalb davon -- 'form' verbindet beides, damit er nicht zwischen Satz
+      und Ton geraten muss.
+    #}
+    <form id="satz-{{ chunk.index }}"
+          hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/text"
           hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
-          hx-disabled-elt="find button, find textarea"
+          hx-disabled-elt="find textarea"
           hx-indicator="#chunk-{{ chunk.index }}">
       <textarea name="raw_text" rows="3">{{ chunk.raw_text }}</textarea>
-      <div class="spoken">Gesprochen: {{ chunk.normalized_text }}</div>
-      {% if chunk.asr_text %}<div class="heard">Gehört: {{ chunk.asr_text }}</div>{% endif %}
-      {% if chunk.error %}<div class="error">{{ chunk.error }}</div>{% endif %}
-      <button class="small secondary" type="submit">
-        {% include "_spinner.html" %}Text übernehmen und neu rendern
-      </button>
     </form>
-  </td>
+    <div class="spoken">Gesprochen: {{ chunk.normalized_text }}</div>
+    {% if chunk.asr_text %}<div class="heard">Gehört: {{ chunk.asr_text }}</div>{% endif %}
+    {% if chunk.error %}<div class="error">{{ chunk.error }}</div>{% endif %}
 
-  <td class="ton">
     {% if chunk.audio_file %}
-      <audio controls preload="none"
+      <audio class="satzton" controls preload="none"
              src="/projects/{{ project.id }}/chunks/{{ chunk.index }}/audio"></audio>
     {% endif %}
     <div class="rowactions">
+      <button class="small secondary" type="submit" form="satz-{{ chunk.index }}">
+        {% include "_spinner.html" %}Text übernehmen und neu rendern
+      </button>
       <button class="small"
               hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/reroll"
               hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
