@@ -9,6 +9,10 @@ Installation und Bedienung.
 - **Ist die CI grün, wird der PR sofort gemergt** -- ohne Rückfrage. Beim Öffnen
   wird dafür GitHubs Auto-Merge eingeschaltet: sonst bleibt ein PR liegen, wenn
   die Prüfung länger dauert als die Antwort, in der er angekündigt wurde.
+- **Jeder neu geöffnete PR wird gleich beim Öffnen beobachtet**
+  (`subscribe_pr_activity`). Dann kommt das Ergebnis der Prüfung von selbst an,
+  statt von einer Nachfrage abzuhängen -- und eine rote CI fällt auf, auch wenn
+  gerade niemand hinsieht.
 - Vor jedem Push laufen `pytest`, `ruff check .` und `ruff format --check .`.
   Die Testsuite kommt ohne GPU, ohne Modelldownload und ohne Netz aus.
 
