@@ -370,7 +370,9 @@ drei Reiter:
 
 **Sätze** ist die tragende Ansicht: eine Zeile pro Satz mit Status, Fehlerrate,
 Stimmähnlichkeit, der Rückschrift der Spracherkennung und einem eigenen
-Abspieler. Von dort lässt sich ein einzelner Satz neu würfeln oder umformulieren,
+Abspieler. Der steht unmittelbar unter dem Satz und nimmt dessen ganze Breite
+ein -- in einer eigenen Spalte war die Suchleiste ein paar Pixel lang, und eine
+Stelle anzuspringen war Glückssache. Von dort lässt sich ein einzelner Satz neu würfeln oder umformulieren,
 ohne das ganze Kapitel neu zu rendern. Genau an diesem Arbeitsschritt scheitert
 eine Langform-Produktion sonst.
 

@@ -1,8 +1,9 @@
 {#
-  Drei Spalten statt sieben: Kennzahlen links, der Text als tragende Mitte,
-  Ton und Handgriffe rechts. Vorher standen Fehlerrate, Ähnlichkeit, Text, Ton
-  und zwei Knopfspalten nebeneinander -- zusammen breiter als jeder Bildschirm,
-  sodass die Knöpfe rechts abgeschnitten wurden.
+  Zwei Spalten: Kennzahlen links, alles zum Satz rechts -- Text, Abspieler und
+  Handgriffe untereinander. Der Abspieler stand vorher in einer eigenen Spalte
+  von fünfzehn Zeichen Breite; darin ist die Suchleiste ein paar Pixel lang, und
+  eine Stelle im Satz anzuspringen war Glückssache. Jetzt nimmt er die Breite
+  des Satzes ein, zu dem er gehört.
 #}
 {#
   Während eines Laufs aktualisiert sich die Tabelle von selbst: fertige Sätze
@@ -15,7 +16,7 @@
      hx-trigger="every 2000ms" hx-swap="outerHTML"{% endif %}>
 <table class="chunks">
   <thead>
-    <tr><th class="spalte-meta">Satz</th><th>Text</th><th class="spalte-ton">Ton</th></tr>
+    <tr><th class="spalte-meta">Satz</th><th>Text und Ton</th></tr>
   </thead>
   <tbody>
     {% for chunk in project.chunks %}{% include "_chunk_row.html" %}{% endfor %}

@@ -1083,3 +1083,22 @@ def test_leere_sprechweise_wird_abgelehnt(settings: Settings, voice_store: Voice
     """Sonst verschwände das Wort, und niemand merkte es bis zum Hören."""
     client = _client(settings)
     assert client.post("/lexicon", data={"word": "SWIFT", "spoken": "  "}).status_code == 400
+
+
+def test_abspieler_nimmt_die_breite_des_satzes_ein(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """In einer eigenen Spalte von fünfzehn Zeichen Breite ist die Suchleiste ein
+    paar Pixel lang -- eine Stelle anzuspringen war Glückssache."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    seite = client.get(f"/projects/{project_id}").text
+
+    assert 'class="satzton"' in seite
+    assert "spalte-ton" not in seite
+    # Der Knopf zum Übernehmen gehört zum Formular, steht aber außerhalb davon,
+    # damit er nicht zwischen Satz und Ton gerät.
+    assert 'form="satz-0"' in seite
