@@ -1,6 +1,10 @@
 {% extends "base.html" %}
+{% block title %}Neues Projekt &mdash; Cloney{% endblock %}
 {% block content %}
-<h1>Neues Projekt</h1>
+<div class="seitenkopf">
+  <h1>Neues Projekt</h1>
+  <a class="button secondary" href="/projects">Zurück zur Liste</a>
+</div>
 
 {% if not voices %}
   <p class="notice">Noch keine Referenzstimme vorhanden.
@@ -42,10 +46,12 @@
   </label>
   {% endif %}
   <label>Text
-    <textarea name="text" rows="12" required
+    <textarea name="text" rows="14" required
       placeholder="Absätze durch eine Leerzeile trennen."></textarea>
   </label>
   <button type="submit">Projekt anlegen</button>
+  <p class="muted">Gerendert wird erst auf der Projektseite. Text, Stimme, Engine und
+    Modell lassen sich dort auch nachträglich ändern.</p>
 </form>
 
 <details class="card">
@@ -63,20 +69,4 @@
   </table>
 </details>
 {% endif %}
-
-<h2>Projekte</h2>
-{% if projects %}
-<table class="projects">
-  <tr><th>Name</th><th>Stimme</th><th>Engine</th><th>Modell</th><th>Chunks</th><th>Angelegt</th></tr>
-  {% for p in projects %}
-  <tr>
-    <td><a href="/projects/{{ p.id }}">{{ p.name }}</a></td>
-    <td>{{ p.voice }}</td><td>{{ p.engine }}</td>
-    <td>{% if p.model %}{{ p.model }}{% else %}<span class="muted">Pretrain</span>{% endif %}</td>
-    <td>{{ p.progress[0] }}/{{ p.progress[1] }}</td>
-    <td class="muted">{{ p.created_at }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}<p class="muted">Noch keine Projekte.</p>{% endif %}
 {% endblock %}

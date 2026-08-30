@@ -88,7 +88,7 @@
     <td><a href="/comparisons/{{ c.id }}">{{ c.name }}</a></td>
     <td>{{ c.voice }}</td><td>{{ c.engine }}</td>
     <td>{{ c.progress[0] }}/{{ c.progress[1] }}</td>
-    <td class="muted">{{ c.created_at }}</td>
+    <td class="muted">{{ c.created_at | zeitpunkt }}</td>
   </tr>
   {% endfor %}
 </table>

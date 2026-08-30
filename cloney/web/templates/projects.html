@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Projekte &mdash; Cloney{% endblock %}
+{% block content %}
+<div class="seitenkopf">
+  <h1>Projekte</h1>
+  {% if voices %}<a class="button" href="/projects/new">Neues Projekt</a>{% endif %}
+</div>
+
+{% if not voices %}
+  <p class="notice">Noch keine Referenzstimme vorhanden.
+    <a href="/voices">Zuerst eine Stimme anlegen.</a></p>
+{% endif %}
+
+{% if projects %}
+<table class="projects">
+  <tr><th>Name</th><th>Stimme</th><th>Engine</th><th>Modell</th>
+    <th>Sätze</th><th>Angelegt</th></tr>
+  {% for p in projects %}
+  <tr>
+    <td><a href="/projects/{{ p.id }}">{{ p.name }}</a></td>
+    <td>{{ p.voice }}</td><td>{{ p.engine }}</td>
+    <td>{% if p.model %}{{ p.model }}{% else %}<span class="muted">Pretrain</span>{% endif %}</td>
+    <td>{{ p.progress[0] }}/{{ p.progress[1] }}</td>
+    <td class="muted">{{ p.created_at | zeitpunkt }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">Noch keine Projekte.</p>
+{% endif %}
+{% endblock %}

@@ -27,6 +27,9 @@ body > header {
 nav a { margin-right: 1rem; color: var(--muted); text-decoration: none; }
 nav a:hover { color: var(--accent); }
 main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+/* Das Blau des Browsers steht in keinem der beiden Schemata zur Verfügung --
+   im dunklen ist es auf dem Grund kaum zu lesen. */
+main a { color: var(--accent); }
 h1 { font-size: 1.4rem; margin: 0 0 .3rem; }
 h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .muted { color: var(--muted); font-size: .88rem; }
@@ -273,6 +276,50 @@ label.regler input[type="range"] {
   accent-color: var(--accent); background: none; border: none;
 }
 label.regler .muted { display: block; font-size: .82rem; }
+
+/* --- Übersicht ----------------------------------------------------------- */
+
+.seitenkopf {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+}
+.seitenkopf .button { margin-top: 0; }
+
+.kacheln {
+  display: grid; gap: .8rem; margin: 1rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+.kachel {
+  display: flex; flex-direction: column; gap: .1rem;
+  padding: .9rem 1rem; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+/* Die Zahl trägt Textfarbe, nicht Statusfarbe: farbig ist sie nur, wenn die
+   Farbe etwas bedeutet -- und dann steht das Wort daneben. */
+.kachel .zahl {
+  font-size: 1.9rem; font-weight: 600; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.kachel .was { font-size: .9rem; font-weight: 550; }
+.kachel .muted { font-size: .82rem; }
+.kachel.achtung { border-color: var(--warn); background: var(--warn-bg); }
+.kachel.achtung .zahl { color: var(--warn); }
+
+.liste { display: flex; flex-direction: column; gap: .5rem; }
+.eintrag {
+  display: block; padding: .7rem .9rem; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink); text-decoration: none;
+}
+a.eintrag:hover { border-color: var(--accent); }
+.eintrag .kopf {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+}
+.eintrag .muted { display: block; margin-top: .15rem; }
+.eintrag progress.fortschritt { margin: .45rem 0 .1rem; height: .35rem; }
+
+.karteikopf { margin: 0 0 .4rem; font-size: .95rem; }
+ol.einstieg { margin: .4rem 0 .8rem; padding-left: 1.2rem; line-height: 1.7; }
 
 /* --- Modelle als Achse --------------------------------------------------- */
 

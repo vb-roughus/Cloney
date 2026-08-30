@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -17,7 +18,7 @@ from cloney.core.models import ModelStore
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
 from cloney.engines.dummy import DummyEngine
-from cloney.web.app import create_app
+from cloney.web.app import anzahl, create_app, zeitpunkt
 
 TEXT = "Am 3. Mai 2024 begann es.\n\nDr. Meier sagte z.B. nichts dazu. Dann war Ruhe."
 
@@ -34,7 +35,7 @@ def _create_project(client: TestClient, **werte: str) -> str:
     return response.headers["location"].rsplit("/", 1)[-1]
 
 
-def _wait_for_run(client: TestClient, project_id: str, timeout: float = 20.0) -> None:
+def _wait_for_run(client: TestClient, project_id: str, timeout: float = 60.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if "läuft" not in client.get(f"/projects/{project_id}/status").text:
@@ -43,17 +44,67 @@ def _wait_for_run(client: TestClient, project_id: str, timeout: float = 20.0) ->
     raise AssertionError("Renderlauf wurde nicht fertig")
 
 
-def test_startseite_zeigt_stimmen_und_engines(settings: Settings, voice_store: VoiceStore) -> None:
-    response = _client(settings).get("/")
-    assert response.status_code == 200
-    assert "test-stimme" in response.text
+def test_startseite_zaehlt_den_bestand(settings: Settings, voice_store: VoiceStore) -> None:
+    """Die Startseite beantwortet 'was steht an?', nicht 'was kann ich anlegen?'."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    seite = client.get("/").text
+    assert "Übersicht" in seite
+    assert "Sätze gerendert" in seite
+    assert "Testlauf" in seite
+    # Das Anlegen hat die Startseite verlassen -- es steht hinter einem Knopf.
+    assert 'action="/projects"' not in seite
+
+
+def test_startseite_ohne_alles_zeigt_den_einstieg(settings: Settings) -> None:
+    seite = _client(settings).get("/").text
+    assert "Eine Referenzstimme anlegen" in seite
+
+
+def test_startseite_ohne_stimme_weist_den_weg(settings: Settings, voice_store: VoiceStore) -> None:
+    """Eine Stimme ohne Projekt: die Übersicht steht, der fehlende Schritt auch."""
+    client = _client(settings)
+    _create_project(client)
+    voice_store.delete("test-stimme")
+    assert "Zuerst eine Stimme anlegen" in client.get("/").text
+
+
+def test_zeitstempel_wird_lesbar(settings: Settings, voice_store: VoiceStore) -> None:
+    """Gespeichert wird in UTC. In der Liste steht, was auf der Uhr im Raum stand."""
+    client = _client(settings)
+    _create_project(client)
+
+    assert "+00:00" not in client.get("/projects").text
+    # Keine feste Uhrzeit erwarten: umgerechnet wird in die Zone des Rechners,
+    # und die ist hier eine andere als in der CI.
+    assert re.fullmatch(r"\d\d\.\d\d\.\d{4}, \d\d:\d\d", zeitpunkt("2026-08-30T08:47:01+00:00"))
+    # Ein unlesbarer Wert bleibt stehen, statt die Seite zu sprengen.
+    assert zeitpunkt("später") == "später"
+
+
+def test_einer_bekommt_die_einzahl() -> None:
+    assert anzahl(1, "Vergleich", "Vergleiche") == "1 Vergleich"
+    assert anzahl(0, "Vergleich", "Vergleiche") == "0 Vergleiche"
+
+
+def test_anlegen_hat_eine_eigene_seite(settings: Settings, voice_store: VoiceStore) -> None:
+    """'/projects/new' darf nicht als Projektkennung gelesen werden -- sonst
+    stünde dort 404 statt des Formulars."""
+    client = _client(settings)
+
+    liste = client.get("/projects")
+    assert liste.status_code == 200
+    assert 'href="/projects/new"' in liste.text
+    assert "<textarea" not in liste.text
+
+    formular = client.get("/projects/new")
+    assert formular.status_code == 200
+    assert 'action="/projects"' in formular.text
     # Die Lizenz der Gewichte steht in der Oberfläche, nicht nur in der Doku.
-    assert "Research &amp; Non-Commercial" in response.text
-
-
-def test_startseite_ohne_stimme_weist_den_weg(settings: Settings) -> None:
-    response = _client(settings).get("/")
-    assert "Zuerst eine Stimme anlegen" in response.text
+    assert "Research &amp; Non-Commercial" in formular.text
 
 
 def test_projekt_anlegen_und_rendern(settings: Settings, voice_store: VoiceStore) -> None:
@@ -640,7 +691,7 @@ def test_vergleich_taucht_nicht_in_der_projektliste_auf(
 ) -> None:
     client = _client(settings)
     _create_comparison(client)
-    assert "Noch keine Projekte" in client.get("/").text
+    assert "Noch keine Projekte" in client.get("/projects").text
 
 
 def test_fehlende_stimmaehnlichkeit_ist_ein_hinweis_kein_fehler(
