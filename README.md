@@ -717,6 +717,47 @@ auffrischen**; er merkt genau die Sätze zum Neurendern vor, deren Sprechfassung
 sich durch den Eintrag ändert. Die übrigen behalten ihren Ton -- ein einzelnes
 Wort kostet nicht das ganze Kapitel.
 
+### Wenn am Ende eine Silbe fehlt
+
+Bei kurzen Sätzen -- Überschriften vor allem -- kam es vor, dass der Schluss
+abbrach: statt „eins" hörte man „ein". Das liegt an F5s Dauerrechnung. Sie ist
+byteproportional zur Referenz:
+
+```python
+duration = ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / local_speed)
+```
+
+Bei einem gewöhnlichen Satz mitteln sich Ungenauigkeiten aus. Bei drei Wörtern
+schlägt jede voll durch, und ist die Referenz zügig gelesen, bleibt schlicht zu
+wenig Zeit. Gerechnet für eine Referenz mit siebzehn Zeichen je Sekunde bekommt
+„Kapitel eins." **0,76 Sekunden** -- gesprochen braucht es gut eine.
+
+F5 kennt das und fängt es ab, aber erst unterhalb von zehn Byte:
+
+```python
+local_speed = speed
+if len(gen_text.encode("utf-8")) < 10:
+    local_speed = 0.3
+```
+
+„Kapitel eins." hat dreizehn und fällt durch die Lücke. Cloney gibt deshalb für
+kurze Texte eine Dauer vor (`fix_duration`), die eine gewöhnliche Sprechdauer
+samt Auslaut umfasst -- aber nur, wenn F5s eigene Rechnung knapper ausfiele.
+Mehr Zeit als nötig zu geben brächte nichts als Nachhall.
+
+### Was Cloney nicht lösen kann: falsche Betonung
+
+„Atomarität" klingt beim deutschen Finetune eher wie „Atom-arität". Das ist
+**kein** Tokenisierungsfehler -- nachgemessen an F5s eigener Segmentierung geht
+das Wort unverändert durch, anders als etwa `Bäume` (wird zu `Bä ume`) oder
+`beträgt` (zu `beträ gt`), wo an Umlauten getrennt wird. Es ist schlicht die
+Prosodie des Modells, das ein Kompositum vermutet.
+
+Dagegen gibt es keine Regel, die sich schreiben ließe: wo die Betonung liegt,
+hängt am einzelnen Wort. Dafür ist das Aussprache-Wörterbuch da -- eine andere
+Schreibung ausprobieren, an einem einzelnen Satz mit „Neu würfeln" anhören, und
+wenn sie sitzt, stehen lassen.
+
 ### Titel und Kapitelüberschriften
 
 Eine Überschrift ist kein Satz, und genau daran scheitert sie beim Vorlesen: sie
@@ -1062,6 +1103,29 @@ das endet in einer seitenlangen Liste fehlender Schlüssel. Cloney legt deshalb
 vor dem Training eine Fassung an, die diese Struktur trägt, und übergibt sie als
 `--pretrain`. Trägt ein Checkpoint sie bereits, bleibt er unangetastet: ihn zu
 kopieren kostete über ein Gigabyte für nichts.
+
+### Wie viele DataLoader-Worker
+
+F5s Trainer legt den DataLoader mit sechzehn Worker-Prozessen an, und
+`finetune_cli.py` reicht dazu nichts durch:
+
+```python
+def train(self, train_dataset: Dataset, num_workers=16, resumable_with_seed=None):
+```
+
+PyTorch warnt dann selbst: *„This DataLoader will create 16 worker processes in
+total. Our suggested max number of worker in current system is 8"*. Unter Linux
+kostet das Kontextwechsel; unter Windows startet jeder Worker einen eigenen
+Interpreter samt Torch-Import -- sechzehn davon sind Gigabyte an Arbeitsspeicher
+und eine Minute Anlauf, für nichts: mehr Worker als Kerne laden keine Datei
+schneller.
+
+Cloney startet das Training deshalb über `cloney.core.train_launcher`. Der setzt
+die Zahl auf `min(8, Kerne - 1)` -- einer bleibt für den Hauptprozess frei, der
+die GPU füttert -- und ruft dann F5s Skript unverändert auf. Geht der Eingriff
+schief, etwa weil eine andere F5-Fassung die Signatur geändert hat, läuft das
+Training trotzdem, nur eben mit F5s Vorgabe. Ein Lauf über Stunden ist zu teuer,
+um an einer Bequemlichkeit zu scheitern.
 
 ### Das Ergebnis benutzen
 

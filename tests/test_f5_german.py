@@ -273,3 +273,64 @@ def test_wurzelvokabular_wenn_daneben_keines_liegt() -> None:
 
     files = ["vocab.txt", "F5TTS_Base/model_420000.safetensors"]
     assert choose_model_files(files)[1] == "vocab.txt"
+
+
+# -- Dauer kurzer Texte -----------------------------------------------------
+
+
+def _referenz(sekunden: float, zeichen: int) -> VoiceRef:
+    return VoiceRef(
+        name="anna",
+        audio_path=Path("referenz.wav"),
+        transcript="a" * zeichen,
+        duration_s=sekunden,
+    )
+
+
+def test_kurzer_text_bekommt_eine_dauer_vorgegeben(
+    fake_f5: list[tuple[str, dict]], model_files: tuple[str, str]
+) -> None:
+    """Der gemeldete Fall: aus 'eins' wurde 'ein'. F5 veranschlagt die Dauer
+    byteproportional zur Referenz -- bei einer zügig gelesenen bleibt für eine
+    Überschrift zu wenig Zeit."""
+    engine = _engine(model_files)
+    # 8 Sekunden, 136 Zeichen: rund siebzehn Zeichen je Sekunde.
+    engine.synthesize("Kapitel eins.", _referenz(8.0, 136), seed=1)
+
+    dauer = dict(fake_f5[-1][1])["fix_duration"]
+    assert dauer is not None
+    # Die Referenz ist mitgezählt -- fix_duration ist die Gesamtlänge.
+    assert dauer > 8.0
+    assert 1.0 < dauer - 8.0 < 2.0
+
+
+def test_langer_text_bleibt_bei_f5s_eigener_rechnung(
+    fake_f5: list[tuple[str, dict]], model_files: tuple[str, str]
+) -> None:
+    """Bei einem gewöhnlichen Satz mitteln sich Ungenauigkeiten aus. Dort eine
+    Dauer vorzugeben brächte nichts als Nachhall."""
+    engine = _engine(model_files)
+    engine.synthesize("Ein gewöhnlicher Satz " * 5, _referenz(8.0, 136), seed=1)
+
+    assert dict(fake_f5[-1][1])["fix_duration"] is None
+
+
+def test_ruhige_referenz_braucht_keine_vorgabe(
+    fake_f5: list[tuple[str, dict]], model_files: tuple[str, str]
+) -> None:
+    """Rechnet F5 großzügig genug, bleibt seine Rechnung stehen."""
+    engine = _engine(model_files)
+    # 8 Sekunden für 40 Zeichen: sehr ruhig gelesen, also viel Zeit je Byte.
+    engine.synthesize("Kapitel eins.", _referenz(8.0, 40), seed=1)
+
+    assert dict(fake_f5[-1][1])["fix_duration"] is None
+
+
+def test_ohne_referenzdauer_wird_nichts_vorgegeben(
+    fake_f5: list[tuple[str, dict]], model_files: tuple[str, str]
+) -> None:
+    """Ohne Dauer ließe sich nicht rechnen -- dann gilt F5s Schätzung."""
+    engine = _engine(model_files)
+    engine.synthesize("Kapitel eins.", _referenz(0.0, 136), seed=1)
+
+    assert dict(fake_f5[-1][1])["fix_duration"] is None
