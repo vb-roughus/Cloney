@@ -6,7 +6,9 @@ Installation und Bedienung.
 ## Arbeitsweise
 
 - Entwickelt wird auf einem Branch, gemergt wird über einen Pull Request gegen `main`.
-- **Ist die CI grün, wird der PR sofort gemergt** -- ohne Rückfrage.
+- **Ist die CI grün, wird der PR sofort gemergt** -- ohne Rückfrage. Beim Öffnen
+  wird dafür GitHubs Auto-Merge eingeschaltet: sonst bleibt ein PR liegen, wenn
+  die Prüfung länger dauert als die Antwort, in der er angekündigt wurde.
 - Vor jedem Push laufen `pytest`, `ruff check .` und `ruff format --check .`.
   Die Testsuite kommt ohne GPU, ohne Modelldownload und ohne Netz aus.
 
