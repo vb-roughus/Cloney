@@ -324,6 +324,12 @@ a.eintrag:hover { border-color: var(--accent); }
 .karteikopf { margin: 0 0 .4rem; font-size: .95rem; }
 ol.einstieg { margin: .4rem 0 .8rem; padding-left: 1.2rem; line-height: 1.7; }
 
+table.lexikon input { margin-top: 0; }
+table.lexikon td { vertical-align: middle; }
+.eintragsknoepfe { display: flex; gap: .4rem; align-items: center; }
+.eintragsknoepfe form { margin: 0; }
+.eintragsknoepfe button { margin-top: 0; }
+
 form.kandidat { display: flex; gap: .5rem; align-items: center; margin-top: .4rem; }
 form.kandidat input { margin-top: 0; }
 form.kandidat button { margin-top: 0; }

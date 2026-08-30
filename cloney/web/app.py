@@ -577,6 +577,23 @@ def create_app(
             request, bericht=f"'{word.strip()}' wird gesprochen: {spoken.strip()}"
         )
 
+    @app.post("/lexicon/{word}/edit", response_class=HTMLResponse)
+    def lexicon_edit(
+        request: Request, word: str, new_word: str = Form(...), spoken: str = Form(...)
+    ) -> HTMLResponse:
+        """Einen Eintrag ändern, Wort inbegriffen."""
+        buch = lexikon()
+        try:
+            buch.rename(word, new_word, spoken)
+        except KeyError as exc:
+            raise HTTPException(404, f"'{word}' ist nicht eingetragen") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        buch.save(settings.data_dir)
+        return _lexikon_seite(
+            request, bericht=f"'{new_word.strip()}' wird gesprochen: {spoken.strip()}"
+        )
+
     @app.post("/lexicon/{word}/delete", response_class=HTMLResponse)
     def lexicon_remove(request: Request, word: str) -> HTMLResponse:
         buch = lexikon()

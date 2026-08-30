@@ -58,13 +58,26 @@
 
 <h2>Eingetragen</h2>
 {% if lexikon.entries %}
-<table class="projects">
+{#
+  Beide Felder sind änderbar: ein Tippfehler steckt genauso oft im Wort wie in
+  der Sprechweise. Wird das Wort geändert, verschwindet der alte Eintrag --
+  sonst bliebe eine Karteileiche, die weiter auf den Text wirkt.
+#}
+<table class="projects lexikon">
   <tr><th>Wort</th><th>Sprechweise</th><th></th></tr>
   {% for wort, sprechweise in lexikon.sorted_entries() %}
   <tr>
-    <td><strong>{{ wort }}</strong></td>
-    <td>{{ sprechweise }}</td>
     <td>
+      <input type="text" name="new_word" value="{{ wort }}"
+             form="eintrag-{{ loop.index }}" aria-label="Wort">
+    </td>
+    <td>
+      <input type="text" name="spoken" value="{{ sprechweise }}"
+             form="eintrag-{{ loop.index }}" aria-label="Sprechweise für {{ wort }}">
+    </td>
+    <td class="eintragsknoepfe">
+      <form method="post" action="/lexicon/{{ wort }}/edit" id="eintrag-{{ loop.index }}"></form>
+      <button class="small" type="submit" form="eintrag-{{ loop.index }}">Speichern</button>
       <form method="post" action="/lexicon/{{ wort }}/delete">
         <button class="small secondary gefahr" type="submit">Entfernen</button>
       </form>

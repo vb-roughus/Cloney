@@ -14,6 +14,7 @@ from cloney.asr.dummy import DummyASR
 from cloney.config import Settings
 from cloney.core.audio import duration_seconds, read_wav
 from cloney.core.compare import Comparison
+from cloney.core.lexicon import Lexicon
 from cloney.core.models import ModelStore
 from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
@@ -1065,6 +1066,26 @@ def test_eingetragenes_wort_ist_kein_kandidat_mehr(
 
     seite = client.get("/lexicon").text
     assert "Kandidaten aus den Projekten" not in seite
+
+
+def test_eintrag_laesst_sich_aendern(settings: Settings, voice_store: VoiceStore) -> None:
+    """Auch das Wort selbst: ein Tippfehler steckt dort genauso oft."""
+    client = _client(settings)
+    client.post("/lexicon", data={"word": "SWFIT", "spoken": "Ssuift"})
+
+    antwort = client.post("/lexicon/SWFIT/edit", data={"new_word": "SWIFT", "spoken": "Suift"})
+
+    assert antwort.status_code == 200
+    lexikon = Lexicon.load(settings.data_dir)
+    assert lexikon.entries == {"SWIFT": "Suift"}
+
+
+def test_aendern_eines_unbekannten_eintrags_meldet_sich(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    antwort = client.post("/lexicon/GIBTESNICHT/edit", data={"new_word": "X", "spoken": "Iks"})
+    assert antwort.status_code == 404
 
 
 def test_eintrag_laesst_sich_entfernen(settings: Settings, voice_store: VoiceStore) -> None:
