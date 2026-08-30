@@ -758,6 +758,16 @@ def build_dataset(
     root.mkdir(parents=True, exist_ok=True)
     (root / _WAVS).mkdir(exist_ok=True)
 
+    # Derselbe Name heißt: neu bauen, nicht ergänzen. Die Segmente werden
+    # durchnummeriert, ein kürzerer Lauf ließe die höheren Nummern des
+    # vorherigen liegen -- Dateien, auf die nichts mehr zeigt und die beim
+    # Nachsehen im Ordner das Bild verfälschen.
+    alt = sorted((root / _WAVS).glob("utt_*.wav"))
+    for datei in alt:
+        datei.unlink()
+    if alt:
+        melde(f"Datensatz wird ersetzt: {len(alt)} Segmente des vorherigen Laufs entfernt")
+
     utterances: list[Utterance] = []
     verworfen: list[Rejection] = []
     raten: set[int] = set()

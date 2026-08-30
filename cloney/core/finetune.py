@@ -58,6 +58,7 @@ import csv
 import shutil
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cloney.core.dataset import Dataset
@@ -334,6 +335,41 @@ def data_dir_for(dataset_name: str, tokenizer: str = "custom", root: Path | None
 
 def checkpoint_dir_for(dataset_name: str, root: Path | None = None) -> Path:
     return (root or f5_root()) / "ckpts" / dataset_name
+
+
+def vorhandene_staende(checkpoint_dir: Path) -> list[Path]:
+    """Checkpoints, die F5 in diesem Ordner schon vorfindet.
+
+    Wichtig vor jedem Start, denn F5 entscheidet allein nach Dateinamen im
+    Ordner, woher es lädt -- der übergebene Pretrain kommt gar nicht erst zum
+    Zug::
+
+        if "model_last.pt" in os.listdir(self.checkpoint_path):
+            latest_checkpoint = "model_last.pt"
+
+    Der Ordner leitet sich aus dem Datensatznamen ab. Zweimal derselbe Name
+    heißt also: fortsetzen, nicht neu beginnen.
+    """
+    if not checkpoint_dir.exists():
+        return []
+    return sorted(p for p in checkpoint_dir.glob("model_*.pt") if p.is_file())
+
+
+def staende_beiseite(checkpoint_dir: Path) -> Path | None:
+    """Vorhandene Stände wegräumen, damit vom Pretrain aus begonnen wird.
+
+    Verschoben, nicht gelöscht: ein Trainingslauf kostet Stunden, und was hier
+    liegt, sind Gigabyte, die niemand versehentlich verlieren will. Gibt den
+    Ordner zurück, in dem sie jetzt liegen.
+    """
+    staende = vorhandene_staende(checkpoint_dir)
+    if not staende:
+        return None
+    ziel = checkpoint_dir / f"zurueckgelegt_{datetime.now(UTC):%Y%m%d-%H%M%S}"
+    ziel.mkdir(parents=True, exist_ok=True)
+    for stand in staende:
+        stand.rename(ziel / stand.name)
+    return ziel
 
 
 def install_vocab(vocab: Path, data_dir: Path) -> Path:

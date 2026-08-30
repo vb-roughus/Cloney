@@ -850,7 +850,31 @@ statt über pip hat, gibt `--f5-dir` an.
 ```bash
 cloney finetune train anna              # startet den Lauf
 cloney finetune train anna --dry-run    # zeigt nur, was liefe
+cloney finetune train anna --neu        # vom Pretrain aus, statt fortzusetzen
 ```
+
+**Material erweitern und noch einmal trainieren geht -- und macht mehr, als man
+erwartet.** Trainingsdaten sind kein Verbrauchsgut: über hundert Epochen sieht
+das Modell dieselben Segmente ohnehin hundertfach. Wer eine Lesung verlängert,
+baut den Datensatz unter demselben Namen einfach neu; er wird ersetzt, nicht
+ergänzt, und es entstehen keine Dubletten.
+
+Beim Training ist dann aber Folgendes zu wissen: F5 entscheidet allein nach den
+Dateien im Checkpoint-Ordner, woher es lädt, und der Ordner leitet sich aus dem
+Datensatznamen ab.
+
+```python
+if "model_last.pt" in os.listdir(self.checkpoint_path):
+    latest_checkpoint = "model_last.pt"
+```
+
+Ein zweiter Lauf **setzt also fort**, wo der erste aufgehört hat -- samt
+Optimierer, Schrittzähler und Stelle im Lernratenverlauf; der übergebene
+Pretrain kommt gar nicht zum Zug, und eine geänderte Lernrate wirkt nicht, weil
+der Optimierer-Zustand sie überschreibt. Meist ist genau das gewollt. Wer vom
+Pretrain aus beginnen will, nimmt `--neu`: die vorhandenen Stände werden in
+einen Unterordner verschoben, nicht gelöscht -- sie kosten Stunden und
+Gigabyte. Cloney schreibt vor jedem Lauf hin, welcher der beiden Fälle vorliegt.
 
 ```
 Datensatz:   anna, 62.0 Minuten
