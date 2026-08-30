@@ -55,6 +55,16 @@ MAX_SECONDS = 15.0
 #: Ab dieser Länge trennt eine Lücke zwei Äußerungen voneinander.
 MIN_PAUSE_MS = 320
 
+#: Bis zu dieser Lücke wird ein zu kurzer Abschnitt mit seinem Nachbarn zu einem
+#: Segment zusammengefasst, statt weggeworfen zu werden.
+#:
+#: Beim Vorlesen dauert eine Kommapause zwei bis vier Zehntel, eine Satzpause
+#: bis etwa acht -- so weit gehören zwei Abschnitte noch zusammen, und die Pause
+#: dazwischen ist genau die, die auch im fertigen Hörbuch stünde. Darüber
+#: beginnt eine Zäsur; sie ins Segment zu holen brächte dem Modell eine Pause
+#: bei, die es später von sich aus macht.
+MERGE_GAP_MS = 800
+
 #: Ab dieser Länge taugt eine Lücke als Schnittstelle *innerhalb* eines zu lang
 #: geratenen Bereichs. Bewusst niedriger: ein Atemzug reicht als Schnitt, wenn
 #: die Alternative ist, zwanzig Sekunden brauchbare Sprache wegzuwerfen -- als
@@ -284,20 +294,26 @@ def find_segments(
                 (
                     0,
                     len(audio),
-                    f"kaum Unterschied zwischen leisen und lauten Stellen "
-                    f"({grundpegel:.0f} bis {sprechpegel:.0f} dBFS) -- keine Pausen erkennbar",
+                    f"keine Pausen erkennbar -- kaum Unterschied zwischen leisen und "
+                    f"lauten Stellen ({grundpegel:.0f} bis {sprechpegel:.0f} dBFS)",
                 )
             ]
     laut = pegel > silence_db
 
     pause_frames = max(1, int(min_pause_ms / 10))
     schnitt_frames = max(1, int(split_pause_ms / 10))
-    bereiche = _speech_runs(laut, pause_frames)
+    bereiche = _verschmelze(
+        _speech_runs(laut, pause_frames),
+        frame_seconds=frame / sample_rate,
+        min_seconds=min_seconds,
+        max_seconds=max_seconds,
+        luecke_frames=max(1, int(MERGE_GAP_MS / 10)),
+    )
 
     rand = int(sample_rate * MARGIN_MS / 1000)
     gut: list[tuple[int, int]] = []
     schlecht: list[tuple[int, int, str]] = []
-    for start_f, ende_f in bereiche:
+    for i, (start_f, ende_f) in enumerate(bereiche):
         start = max(0, start_f * frame - rand)
         ende = min(len(audio), ende_f * frame + rand)
         _teile(
@@ -314,8 +330,23 @@ def find_segments(
             schlecht,
             pegel,
             force_split,
+            _nachbarabstand(bereiche, i, frame / sample_rate),
         )
     return gut, schlecht
+
+
+def _nachbarabstand(bereiche: list[tuple[int, int]], i: int, frame_seconds: float) -> float | None:
+    """Wie weit der nächstgelegene Nachbar entfernt liegt, in Sekunden.
+
+    Steht im Verwerfungsgrund eines zu kurzen Abschnitts. Er beantwortet die
+    Frage, die sich sonst stellt: lag es an der Länge oder an der Lücke?
+    """
+    abstaende = [
+        (bereiche[j][0] - bereiche[i][1]) if j > i else (bereiche[i][0] - bereiche[j][1])
+        for j in (i - 1, i + 1)
+        if 0 <= j < len(bereiche)
+    ]
+    return min(abstaende) * frame_seconds if abstaende else None
 
 
 #: Fenster, über das der Grundpegel gesucht wird. Dieselbe Größenordnung wie
@@ -408,6 +439,39 @@ def _speech_runs(laut: np.ndarray, pause_frames: int) -> list[tuple[int, int]]:
     return [(a, b) for a, b in bereiche]
 
 
+def _verschmelze(
+    bereiche: list[tuple[int, int]],
+    *,
+    frame_seconds: float,
+    min_seconds: float,
+    max_seconds: float,
+    luecke_frames: int,
+) -> list[tuple[int, int]]:
+    """Zu kurze Abschnitte mit ihrem Nachbarn zusammenfassen.
+
+    Wer seine Aufnahmen selbst geschnitten hat, hat kurze Abschnitte -- ein
+    Halbsatz, ein Einwurf, ein Name. Einzeln fallen sie durch die Mindestlänge,
+    zusammen mit dem Nachbarn ergeben sie ein gewöhnliches Segment. Die Pause
+    dazwischen bleibt erhalten: sie ist Teil der Sprache, nicht ihr Ende.
+
+    Verschmolzen wird nur, wenn einer der beiden zu kurz ist -- zwei
+    ausreichende Abschnitte zusammenzukleben brächte nichts als längere
+    Beispiele.
+    """
+    zusammen: list[tuple[int, int]] = []
+    for start, ende in bereiche:
+        if zusammen:
+            vorher_start, vorher_ende = zusammen[-1]
+            zu_kurz = min(ende - start, vorher_ende - vorher_start) * frame_seconds < min_seconds
+            passt = (ende - vorher_start) * frame_seconds <= max_seconds
+            nah = start - vorher_ende <= luecke_frames
+            if zu_kurz and passt and nah:
+                zusammen[-1] = (vorher_start, ende)
+                continue
+        zusammen.append((start, ende))
+    return zusammen
+
+
 def _teile(  # noqa: PLR0913
     audio: np.ndarray,
     sample_rate: int,
@@ -422,10 +486,20 @@ def _teile(  # noqa: PLR0913
     schlecht: list[tuple[int, int, str]],
     pegel: np.ndarray,
     force_split: bool,
+    nachbar_s: float | None = None,
 ) -> None:
     dauer = (ende - start) / sample_rate
     if dauer < min_seconds:
-        schlecht.append((start, ende, f"nur {dauer:.1f}s -- kürzer als {min_seconds:.0f}s"))
+        # Der Abstand gehört dazu: er sagt, ob der Abschnitt allein stand oder
+        # ob die Lücke zum Nachbarn zu groß war, um beide zusammenzufassen.
+        wie_weit = "" if nachbar_s is None else f"; Nachbar {nachbar_s:.1f}s entfernt"
+        schlecht.append(
+            (
+                start,
+                ende,
+                f"zu kurz -- {dauer:.1f}s, kürzer als {min_seconds:.0f}s{wie_weit}",
+            )
+        )
         return
     if dauer <= max_seconds:
         gut.append((start, ende))
@@ -441,7 +515,7 @@ def _teile(  # noqa: PLR0913
             (
                 start,
                 ende,
-                f"{dauer:.1f}s ohne Pause zum Schneiden -- am Stück zu lang. "
+                f"am Stück zu lang -- {dauer:.1f}s ohne Pause zum Schneiden. "
                 "Beim Lesen zwischen den Sätzen deutlicher absetzen",
             )
         )
@@ -701,7 +775,7 @@ def build_dataset(
             force_split=force_split,
         )
         klang = f", {pegel[0].beschreibung()}" if pegel else ""
-        melde(f"{quelle.name}: {len(gut)} Abschnitte, {len(schlecht)} verworfen{klang}")
+        melde(f"{quelle.name}: {len(gut)} brauchbar, {len(schlecht)} verworfen{klang}")
 
         for start, ende, grund in schlecht:
             verworfen.append(

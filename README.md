@@ -663,8 +663,9 @@ jede Sekunde Referenz verkleinert zugleich, was pro Durchgang erzeugt werden
 kann. Wer Vielfalt über viele Sätze will, braucht den anderen Weg -- ein
 Finetune, das die Gewichte selbst auf die Stimme zieht.
 
-Der Weg dorthin in vier Schritten. **Die Schritte 1 bis 3 sind gebaut**, die
-Verwaltung in der Oberfläche steht noch aus:
+Der Weg dorthin in vier Schritten. **Die Schritte 1 bis 3 sind gebaut**, und ein
+trainierter Stand ist in der Oberfläche wählbar; das Training selbst läuft
+weiterhin über die Befehlszeile:
 
 ### 1. Datensatz — aus Aufnahmen wird Trainingsmaterial
 
@@ -684,6 +685,16 @@ Wort beginnt, bringt dem Modell einen Anfang bei, den es nachher produziert. Ist
 ein Bereich zu lang, wird er an seiner längsten inneren Pause geteilt -- dafür
 genügt ein Atemzug, denn die Alternative wäre, zwanzig Sekunden brauchbare
 Sprache wegzuwerfen. Findet sich gar keine, wird verworfen statt hart geschnitten.
+
+**Was zu kurz ist, wird zusammengefasst statt weggeworfen.** Wer sein Material
+selbst geschnitten hat, hat kurze Abschnitte -- ein Halbsatz, ein Name, ein
+Einwurf. Einzeln fallen sie durch die Mindestlänge. Liegt der Nachbar näher als
+eine Sekunde, werden beide zu einem Segment, samt der Pause dazwischen: sie ist
+Teil der Sprache, nicht ihr Ende. Darüber beginnt eine Zäsur, und die ins
+Segment zu holen brächte dem Modell eine Pause bei, die es später von sich aus
+macht. Deshalb steht im Verwerfungsgrund eines zu kurzen Abschnitts, wie weit
+sein Nachbar entfernt lag -- daran ist zu sehen, ob es an der Länge lag oder an
+der Lücke.
 
 **Was still ist, bestimmt die Aufnahme selbst.** Eine feste Schwelle wie
 -40 dBFS setzt ein leises Zimmer voraus. Liegt der Raumton darüber -- bei einer

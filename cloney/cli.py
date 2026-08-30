@@ -584,12 +584,30 @@ def _print_dataset(dataset, ausfuehrlich: bool = False) -> None:  # noqa: ANN001
             f"({werte['verworfene_minuten']:.1f} Minuten)",
             fg=typer.colors.YELLOW,
         )
-        gruende: dict[str, int] = {}
+        # Nach Art gruppiert, nicht nach Wortlaut: zwölf Zeilen mit je einer
+        # anderen Sekundenzahl sagen weniger als eine Zeile mit der Spannweite.
+        gruende: dict[str, list[float]] = {}
         for eintrag in dataset.rejected:
-            kurz = eintrag.reason.split(" -- ")[0].split(" (")[0]
-            gruende[kurz] = gruende.get(kurz, 0) + 1
-        for grund, anzahl in sorted(gruende.items(), key=lambda p: -p[1]):
-            typer.echo(f"    {anzahl:>4}x {grund}")
+            art = eintrag.reason.split(" -- ")[0]
+            gruende.setdefault(art, []).append(eintrag.duration_s)
+        for grund, dauern in sorted(gruende.items(), key=lambda p: -len(p[1])):
+            spanne = (
+                f"{min(dauern):.1f}s"
+                if len(dauern) == 1 or min(dauern) == max(dauern)
+                else f"{min(dauern):.1f}-{max(dauern):.1f}s"
+            )
+            typer.echo(f"    {len(dauern):>4}x {grund} ({spanne})")
+        if any(r.reason.startswith("am Stück zu lang") for r in dataset.rejected):
+            typer.echo(
+                "  Zu lange Abschnitte lassen sich notfalls trennen: "
+                "cloney dataset build --force-split"
+            )
+        if any(r.reason.startswith("zu kurz") for r in dataset.rejected):
+            typer.echo(
+                "  Zu kurze Abschnitte werden mit ihrem Nachbarn zusammengefasst, "
+                "solange die Lücke\n  dazwischen unter einer Sekunde bleibt. "
+                "Steht daneben ein größerer Abstand, lag es daran."
+            )
         if ausfuehrlich:
             typer.echo("")
             for eintrag in dataset.rejected:

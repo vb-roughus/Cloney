@@ -64,12 +64,53 @@ def test_geschnitten_wird_an_den_pausen() -> None:
 
 
 def test_zu_kurze_abschnitte_fallen_mit_grund_weg() -> None:
-    audio = _aufnahme(_sprache(1.2), _stille(0.8), _sprache(5.0))
+    """Allein stehend, mit weiten Lücken ringsum: hier hilft kein Nachbar."""
+    audio = _aufnahme(_sprache(5.0), _stille(2.5), _sprache(1.2), _stille(2.5), _sprache(5.0))
     gut, schlecht = find_segments(audio, SR)
 
-    assert len(gut) == 1
+    assert len(gut) == 2
     assert len(schlecht) == 1
-    assert "kürzer als" in schlecht[0][2]
+    assert schlecht[0][2].startswith("zu kurz -- ")
+    # Der Abstand steht dabei: er sagt, ob es an der Länge lag oder an der Lücke.
+    assert "Nachbar 2.5s entfernt" in schlecht[0][2]
+
+
+def test_kurzer_abschnitt_wird_mit_seinem_nachbarn_zusammengefasst() -> None:
+    """Wer selbst geschnitten hat, hat kurze Abschnitte -- ein Halbsatz, ein
+    Name. Einzeln fallen sie durch die Mindestlänge; zusammen mit dem Nachbarn
+    sind sie ein gewöhnliches Segment, und die Pause dazwischen gehört dazu."""
+    audio = _aufnahme(_sprache(1.2), _stille(0.4), _sprache(5.0))
+    gut, schlecht = find_segments(audio, SR)
+
+    assert schlecht == []
+    assert len(gut) == 1
+    assert (gut[0][1] - gut[0][0]) / SR == pytest.approx(6.6, abs=0.3)
+
+
+def test_mehrere_kurze_ergeben_zusammen_ein_segment() -> None:
+    audio = _aufnahme(_sprache(1.5), _stille(0.4), _sprache(1.5), _stille(0.4), _sprache(1.5))
+    gut, schlecht = find_segments(audio, SR)
+
+    assert schlecht == []
+    assert len(gut) == 1
+
+
+def test_zusammenfassen_endet_an_der_hoechstlaenge() -> None:
+    """Sonst wüchse ein Segment über die Länge hinaus, mit der trainiert wird."""
+    audio = _aufnahme(_sprache(2.0), _stille(0.4), _sprache(9.0), _stille(0.4), _sprache(9.0))
+    gut, _ = find_segments(audio, SR, max_seconds=15.0)
+
+    assert len(gut) == 2
+    assert all((b - a) / SR <= 15.0 for a, b in gut)
+
+
+def test_zwei_lange_abschnitte_bleiben_getrennt() -> None:
+    """Zusammengefasst wird nur, was allein durchfiele -- sonst entstünden aus
+    zwei brauchbaren Beispielen eines, ohne dass jemand etwas gewönne."""
+    audio = _aufnahme(_sprache(5.0), _stille(0.4), _sprache(6.0))
+    gut, _ = find_segments(audio, SR)
+
+    assert len(gut) == 2
 
 
 def test_langer_abschnitt_wird_an_der_inneren_pause_geteilt() -> None:
@@ -90,7 +131,7 @@ def test_zu_langes_ohne_pause_wird_verworfen_statt_zerschnitten() -> None:
     gut, schlecht = find_segments(_sprache(20.0), SR)
 
     assert gut == []
-    assert "ohne Pause" in schlecht[0][2]
+    assert schlecht[0][2].startswith("am Stück zu lang -- ")
 
 
 def test_stille_aufnahme_ergibt_nichts() -> None:
@@ -250,7 +291,7 @@ def test_aufnahme_ohne_dynamik_wird_benannt() -> None:
     gut, schlecht = find_segments(audio, SR)
 
     assert gut == []
-    assert "kaum Unterschied" in schlecht[0][2]
+    assert schlecht[0][2].startswith("keine Pausen erkennbar -- ")
 
 
 def test_pegel_werden_aus_der_aufnahme_gemessen() -> None:
