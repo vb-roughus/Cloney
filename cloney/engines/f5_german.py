@@ -40,6 +40,19 @@ MAX_GENERATION_SECONDS = 22.0
 #: Auf diese Länge kürzt F5-TTS die Referenzaufnahme selbst zurecht.
 MAX_REFERENCE_SECONDS = 12.0
 
+#: Bis zu dieser Länge gilt ein Text als kurz. Darunter greift die eigene
+#: Dauerrechnung, siehe ``_fix_duration``.
+SHORT_TEXT_CHARS = 80
+
+#: Sprechtempo, mit dem die Dauer eines kurzen Textes veranschlagt wird.
+#: Bewusst nicht das der Referenz: gerade wenn die zügig gelesen ist, fällt
+#: F5s Schätzung zu knapp aus -- und genau dann fehlt am Ende eine Silbe.
+ASSUMED_CHARS_PER_SECOND = 14.0
+
+#: Zuschlag, damit der Auslaut Platz hat. Ein stimmloses 's' am Wortende
+#: braucht ein Zehntel, der Rest ist Sicherheitsabstand.
+TAIL_SECONDS = 0.5
+
 F5_INFO = EngineInfo(
     name="f5-de",
     license="CC-BY-NC-4.0 (Finetune erbt von SWivid/F5-TTS); Code MIT",
@@ -249,6 +262,42 @@ class F5GermanEngine:
         if rate:
             self.info = replace(F5_INFO, sample_rate=int(rate))
 
+    def _fix_duration(self, text: str, voice: VoiceRef) -> float | None:
+        """Gesamtdauer, die F5 erzeugen soll -- oder ``None`` für seine eigene.
+
+        F5 veranschlagt die Dauer byteproportional zur Referenz::
+
+            duration = ref_audio_len + ref_audio_len / ref_text_len * gen_text_len / speed
+
+        Bei einem langen Satz mitteln sich Ungenauigkeiten aus. Bei einer
+        Überschrift von drei Wörtern schlägt jede voll durch, und ist die
+        Referenz zügig gelesen, bleibt zu wenig Zeit: aus 'eins' wird 'ein'.
+
+        F5 kennt das Problem und fängt es ab -- aber erst unterhalb von zehn
+        Byte::
+
+            local_speed = speed
+            if len(gen_text.encode("utf-8")) < 10:
+                local_speed = 0.3
+
+        'Kapitel eins.' hat dreizehn und fällt durch die Lücke. Hier wird
+        deshalb für kurze Texte eine Dauer vorgegeben, die eine gewöhnliche
+        Sprechdauer samt Auslaut umfasst -- aber nur, wenn F5s eigene Rechnung
+        knapper ausfiele. Mehr Zeit als nötig zu geben brächte nichts als
+        Nachhall.
+        """
+        referenztext = voice.transcript.encode("utf-8")
+        if len(text) > SHORT_TEXT_CHARS or voice.duration_s <= 0 or not referenztext:
+            return None
+
+        je_byte = voice.duration_s / len(referenztext)
+        f5_rechnet = je_byte * len(text.encode("utf-8")) / max(self.speed, 0.1)
+        gebraucht = len(text) / ASSUMED_CHARS_PER_SECOND / max(self.speed, 0.1) + TAIL_SECONDS
+        if f5_rechnet >= gebraucht:
+            return None
+        # fix_duration ist die Gesamtlänge, Referenz inbegriffen.
+        return voice.duration_s + gebraucht
+
     def synthesize(self, text: str, voice: VoiceRef, seed: int) -> np.ndarray:
         if not voice.transcript.strip():
             raise EngineError(
@@ -271,6 +320,7 @@ class F5GermanEngine:
                     nfe_step=self.nfe_step,
                     cfg_strength=self.cfg_strength,
                     speed=self.speed,
+                    fix_duration=self._fix_duration(text, voice),
                     cross_fade_duration=self.cross_fade_seconds,
                     show_info=lambda *_args, **_kwargs: None,
                 )
