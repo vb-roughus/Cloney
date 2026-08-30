@@ -1123,3 +1123,71 @@ def test_abspieler_nimmt_die_breite_des_satzes_ein(
     # Der Knopf zum Übernehmen gehört zum Formular, steht aber außerhalb davon,
     # damit er nicht zwischen Satz und Ton gerät.
     assert 'form="satz-0"' in seite
+
+
+def test_neu_wuerfeln_nimmt_die_aktuelle_aussprache(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der gemeldete Fall: Eintrag angelegt, Satz neu gewürfelt -- und es klang
+    wie vorher. Die Sprechfassung stand seit dem Anlegen im Manifest."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Die SWIFT-Nachricht kam an.")
+    assert "SWIFT" in Project.load(settings.projects_dir / project_id).chunks[0].normalized_text
+
+    client.post("/lexicon", data={"word": "SWIFT", "spoken": "Ssuift"})
+    assert client.post(f"/projects/{project_id}/chunks/0/reroll").status_code == 200
+
+    chunk = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert "Ssuift" in chunk.normalized_text
+    assert "SWIFT" in chunk.raw_text
+
+
+def test_text_uebernehmen_nimmt_die_aktuelle_aussprache(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Ein Satz ohne Besonderheit.")
+    client.post("/lexicon", data={"word": "Journal", "spoken": "Schurnahl"})
+
+    client.post(f"/projects/{project_id}/chunks/0/text", data={"raw_text": "Im Journal stand es."})
+
+    chunk = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert chunk.normalized_text == "Im Schurnahl stand es."
+
+
+def test_auffrischen_trifft_nur_die_betroffenen_saetze(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Was gleich klingt, behält seinen Ton -- sonst kostete ein einzelner
+    Eintrag das ganze Kapitel."""
+    client = _client(settings)
+    # Zwei Absätze, damit es zwei Sätze werden -- sonst stünde beides in einem
+    # Chunk, und "nur die betroffenen" wäre nicht zu zeigen.
+    project_id = _create_project(
+        client, text="Ein Satz ohne Besonderheit.\n\nDie SWIFT-Nachricht kam an."
+    )
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    vorher = Project.load(settings.projects_dir / project_id)
+    unberuehrt = vorher.chunks[0].seed
+
+    client.post("/lexicon", data={"word": "SWIFT", "spoken": "Ssuift"})
+    antwort = client.post(f"/projects/{project_id}/refresh-spoken")
+
+    assert antwort.status_code == 200
+    nachher = Project.load(settings.projects_dir / project_id)
+    assert nachher.chunks[0].seed == unberuehrt
+    assert nachher.chunks[0].audio_file is not None
+    assert "Ssuift" in nachher.chunks[1].normalized_text
+    assert nachher.chunks[1].status == ChunkStatus.PENDING
+
+
+def test_auffrischen_ohne_aenderung_sagt_das_auch(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    antwort = client.post(f"/projects/{project_id}/refresh-spoken")
+
+    assert "Keine Sprechfassung hat sich geändert" in antwort.text

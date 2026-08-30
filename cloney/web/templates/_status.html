@@ -46,6 +46,7 @@
     {{ done }} von {{ total }}
   </progress>
 
+  {% if bericht %}<p class="joblog">{{ bericht }}</p>{% endif %}
   {% if job and job.message %}
     <p class="joblog">
       {% if running %}<span class="spinner inline" aria-hidden="true"></span>{% endif %}

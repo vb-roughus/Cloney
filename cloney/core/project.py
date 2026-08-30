@@ -20,7 +20,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from cloney.core.lexicon import Lexicon
-from cloney.core.segment import build_chunks
+from cloney.core.segment import build_chunks, spoken_form
 from cloney.engines.base import EngineInfo
 
 _MANIFEST = "project.json"
@@ -404,14 +404,40 @@ class Project(BaseModel):
         chunk.error = None
         return chunk
 
-    def retext(self, index: int, raw_text: str) -> Chunk:
+    def retext(self, index: int, raw_text: str, lexicon: Lexicon | None = None) -> Chunk:
         """Text eines Chunks ersetzen und neu normalisieren."""
-        from cloney.core.normalize import normalize_german
-
         chunk = self.chunks[index]
         chunk.raw_text = raw_text
-        chunk.normalized_text = normalize_german(raw_text)
+        chunk.normalized_text = spoken_form(raw_text, chunk.is_heading, lexicon)
         return self.reroll(index)
+
+    def refresh_spoken(self, index: int, lexicon: Lexicon | None = None) -> bool:
+        """Die Sprechfassung aus dem Rohtext neu erzeugen. True, wenn sie sich ändert.
+
+        Die Sprechfassung steht im Manifest, seit der Satz angelegt wurde. Ein
+        Eintrag im Aussprache-Wörterbuch, der später dazukommt, erreicht sie
+        nicht von selbst -- wer danach einen Satz neu würfelt, hörte weiterhin
+        die alte Fassung und suchte den Fehler im Modell.
+        """
+        chunk = self.chunks[index]
+        neu = spoken_form(chunk.raw_text, chunk.is_heading, lexicon)
+        if neu == chunk.normalized_text:
+            return False
+        chunk.normalized_text = neu
+        return True
+
+    def refresh_all_spoken(self, lexicon: Lexicon | None = None) -> list[int]:
+        """Alle Sprechfassungen auffrischen. Gibt die geänderten Sätze zurück.
+
+        Nur diese werden zum Neurendern vorgemerkt: was gleich klingt, muss
+        nicht noch einmal erzeugt werden.
+        """
+        geaendert = [i for i in range(len(self.chunks)) if self.refresh_spoken(i, lexicon)]
+        for index in geaendert:
+            self.reroll(index)
+        if geaendert:
+            self.save()
+        return geaendert
 
 
 def _plan_chunks(

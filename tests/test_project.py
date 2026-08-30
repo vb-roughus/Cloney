@@ -337,3 +337,41 @@ def test_unveraendertes_uebernehmen_laesst_alles_stehen(
     assert bericht == {"behalten": 2, "neu": 0, "entfernt": 0}
     assert project.output_file is not None
     assert project.output_path.read_bytes() == spur
+
+
+def test_geaenderter_titel_behaelt_seinen_punkt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Sprechfassung einer Überschrift endet auf einem Punkt -- ohne ihn
+    setzt die Engine nicht ab. Beim Ändern des Textes gilt dieselbe Regel wie
+    beim Anlegen, sonst ginge er beim ersten Bearbeiten verloren."""
+    project = Project.create(
+        name="Titel",
+        text="Kapitel 3\n\nEin Satz.",
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        projects_dir=settings.projects_dir,
+    )
+    assert project.chunks[0].is_heading
+
+    project.retext(0, "Kapitel 4")
+
+    assert project.chunks[0].normalized_text == "Kapitel vier."
+
+
+def test_auffrischen_meldet_nur_echte_aenderungen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    from cloney.core.lexicon import Lexicon
+
+    project = Project.create(
+        name="Auffrischen",
+        text="Die SWIFT-Nachricht kam.",
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        projects_dir=settings.projects_dir,
+    )
+
+    assert project.refresh_all_spoken() == []
+    assert project.refresh_all_spoken(Lexicon(entries={"SWIFT": "Ssuift"})) == [0]
+    assert "Ssuift" in project.chunks[0].normalized_text

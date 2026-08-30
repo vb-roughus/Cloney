@@ -412,6 +412,31 @@ def create_app(
             },
         )
 
+    @app.post("/projects/{project_id}/refresh-spoken", response_class=HTMLResponse)
+    def refresh_spoken(request: Request, project_id: str) -> HTMLResponse:
+        """Sprechfassungen aller Sätze neu erzeugen.
+
+        Der Weg nach einer Änderung am Aussprache-Wörterbuch: betroffen sind nur
+        die Sätze, deren Sprechfassung sich dadurch ändert -- die übrigen
+        behalten ihren Ton.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        geaendert = project.refresh_all_spoken(lexikon())
+        return templates.TemplateResponse(
+            request,
+            "_status.html",
+            {
+                "project": project,
+                "running": False,
+                "bericht": (
+                    f"{len(geaendert)} Satz/Sätze neu gefasst und zum Rendern vorgemerkt"
+                    if geaendert
+                    else "Keine Sprechfassung hat sich geändert"
+                ),
+            },
+        )
+
     @app.post("/projects/{project_id}/rerender", response_class=HTMLResponse)
     def rerender_all(request: Request, project_id: str) -> HTMLResponse:
         """Alle Sätze zum Neurendern vormerken -- ohne sie schon zu erzeugen."""
@@ -478,6 +503,10 @@ def create_app(
         project = load(project_id)
         if runner.is_running(project_id):
             raise HTTPException(409, "Es läuft gerade ein Renderlauf")
+        # Vor dem Würfeln die Sprechfassung auffrischen: ein Eintrag im
+        # Aussprache-Wörterbuch, der nach dem Anlegen dazukam, soll hier wirken.
+        # Sonst hörte man weiter die alte Fassung und suchte den Fehler im Modell.
+        project.refresh_spoken(index, lexikon())
         project.reroll(index)
         _resynthesize(project, index)
         return render_row(request, project, index)
@@ -489,7 +518,7 @@ def create_app(
         project = load(project_id)
         if runner.is_running(project_id):
             raise HTTPException(409, "Es läuft gerade ein Renderlauf")
-        project.retext(index, raw_text)
+        project.retext(index, raw_text, lexikon())
         _resynthesize(project, index)
         return render_row(request, project, index)
 
