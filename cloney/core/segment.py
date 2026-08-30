@@ -20,6 +20,16 @@ from cloney.core.normalize import ABBREVIATION_TOKENS, MONTH_NAMES, normalize_ge
 #: Tage und Auflagen liegen darunter, Kapitel- und Mengenangaben darüber.
 _MAX_PLAUSIBLE_ORDINAL = 31
 
+#: Höchstlänge einer Zeile, die noch als Überschrift durchgeht.
+#: Darüber ist es ein Satz, auch ohne Punkt am Ende.
+MAX_HEADING_CHARS = 70
+
+#: Markdown-Auszeichnung. Wer sie setzt, meint es eindeutig.
+_MARKDOWN_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
+
+#: Womit ein gewöhnlicher Satz endet. Fehlt das, ist die Zeile ein Kandidat.
+_SATZENDE = ".!?…:,;"
+
 _INITIAL = re.compile(r"\b[A-ZÄÖÜ]\.$")
 _TRAILING_NUMBER = re.compile(r"\b(\d{1,4})\.$")
 _BOUNDARY = re.compile(r"[.!?]+[\"')\]]?(?=\s|$)")
@@ -31,6 +41,7 @@ class Sentence:
     raw: str
     normalized: str
     ends_paragraph: bool
+    is_heading: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,9 +49,42 @@ class TextChunk:
     raw_text: str
     normalized_text: str
     ends_paragraph: bool
+    is_heading: bool = False
 
     def estimated_seconds(self, chars_per_second: float) -> float:
         return len(self.normalized_text) / chars_per_second
+
+
+def heading_text(line: str, folgt: str = "") -> str | None:
+    """Ist diese Zeile eine Überschrift? Dann ihr Wortlaut, sonst ``None``.
+
+    Eine Überschrift ist im Fließtext kein Satz: sie ist kurz, steht auf einer
+    eigenen Zeile und endet ohne Satzzeichen. Genau daran ist sie zu erkennen --
+    und genau deshalb wird sie sonst falsch gesprochen, weil die Engine ohne
+    Satzzeichen nicht absetzt und die Zeile in den folgenden Text hineinliest.
+
+    Die Falle dabei ist der harte Zeilenumbruch: ein auf 72 Zeichen umbrochener
+    Absatz besteht aus lauter Zeilen ohne Satzzeichen. Deshalb zählt die
+    Fortsetzung mit: geht es klein weiter, war es ein umbrochener Satz. Eine
+    Markdown-Auszeichnung sticht diese Prüfung -- wer ``##`` schreibt, meint es.
+    """
+    line = line.strip()
+    if not line:
+        return None
+
+    markdown = _MARKDOWN_HEADING.match(line)
+    if markdown:
+        return markdown.group(2).strip() or None
+
+    if len(line) > MAX_HEADING_CHARS or line[-1] in _SATZENDE:
+        return None
+    # Eine Zeile, die klein anfängt, ist die Fortsetzung von etwas.
+    if line[0].islower():
+        return None
+    weiter = folgt.lstrip()
+    if weiter and (weiter[0].islower() or weiter[0] in ",;)"):
+        return None
+    return line
 
 
 def _is_sentence_end(text: str, punct_end: int) -> bool:
@@ -70,7 +114,20 @@ def split_sentences(text: str) -> list[Sentence]:
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
 
     for paragraph in paragraphs:
-        body = " ".join(paragraph.split())
+        # Überschriften stehen auf eigener Zeile. Würde der Absatz erst zu einer
+        # Zeile zusammengezogen, wäre die Zeile darin nicht mehr zu finden --
+        # und der Titel spräche sich ohne Absetzen in den Text hinein.
+        zeilen = paragraph.splitlines()
+        while zeilen:
+            titel = heading_text(zeilen[0], zeilen[1] if len(zeilen) > 1 else "")
+            if titel is None:
+                break
+            sentences.append(_heading_sentence(titel))
+            zeilen = zeilen[1:]
+
+        body = " ".join(" ".join(zeilen).split())
+        if not body:
+            continue
         pieces: list[str] = []
         start = 0
         for match in _BOUNDARY.finditer(body):
@@ -96,8 +153,21 @@ def split_sentences(text: str) -> list[Sentence]:
 
     if sentences:
         last = sentences[-1]
-        sentences[-1] = Sentence(last.raw, last.normalized, ends_paragraph=True)
+        sentences[-1] = Sentence(last.raw, last.normalized, True, last.is_heading)
     return sentences
+
+
+def _heading_sentence(titel: str) -> Sentence:
+    """Eine Überschrift als eigener Satz.
+
+    Der Punkt in der Sprechfassung ist der Kern: ohne Satzzeichen setzt die
+    Engine nicht ab und hetzt die Zeile herunter. Im Rohtext steht er nicht --
+    dort steht, was dasteht.
+    """
+    normalisiert = normalize_german(titel)
+    if normalisiert and normalisiert[-1] not in ".!?":
+        normalisiert += "."
+    return Sentence(raw=titel, normalized=normalisiert, ends_paragraph=True, is_heading=True)
 
 
 def _split_long_sentence(sentence: Sentence, max_chars: int) -> list[Sentence]:
@@ -148,7 +218,7 @@ def build_chunks(
     raw_parts: list[str] = []
     norm_parts: list[str] = []
 
-    def flush(ends_paragraph: bool) -> None:
+    def flush(ends_paragraph: bool, is_heading: bool = False) -> None:
         if not norm_parts:
             return
         chunks.append(
@@ -156,12 +226,22 @@ def build_chunks(
                 raw_text=" ".join(raw_parts),
                 normalized_text=" ".join(norm_parts),
                 ends_paragraph=ends_paragraph,
+                is_heading=is_heading,
             )
         )
         raw_parts.clear()
         norm_parts.clear()
 
     for sentence in sentences:
+        if sentence.is_heading:
+            # Eine Überschrift bleibt für sich. Mit Fließtext im selben Chunk
+            # läse die Engine sie mit -- genau das klingt gehetzt.
+            flush(True)
+            raw_parts.append(sentence.raw)
+            norm_parts.append(sentence.normalized)
+            flush(True, is_heading=True)
+            continue
+
         pending = sum(len(p) + 1 for p in norm_parts)
         if norm_parts and pending + len(sentence.normalized) > target_chars:
             flush(False)

@@ -72,6 +72,19 @@ def test_startseite_ohne_stimme_weist_den_weg(settings: Settings, voice_store: V
     assert "Zuerst eine Stimme anlegen" in client.get("/").text
 
 
+def test_titel_ist_in_der_satztabelle_erkennbar(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Eine Erkennung, die man nicht sieht, kann man nicht widerlegen -- und
+    genau das muss möglich sein, wenn eine Regel eine Zeile falsch einordnet."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Kapitel 3\n\nEs war einmal ein Satz.")
+
+    seite = client.get(f"/projects/{project_id}").text
+    assert "Kapitel drei." in seite
+    assert ">Titel<" in seite
+
+
 def test_zeitstempel_wird_lesbar(settings: Settings, voice_store: VoiceStore) -> None:
     """Gespeichert wird in UTC. In der Liste steht, was auf der Uhr im Raum stand."""
     client = _client(settings)

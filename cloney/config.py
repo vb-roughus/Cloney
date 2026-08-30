@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     target_lufs: float = -16.0
     pause_sentence_ms: int = 350
     pause_paragraph_ms: int = 800
+    #: Nach einer Überschrift. Sie trennt den Titel vom Text und ist
+    #: deshalb die längste der drei.
+    pause_heading_ms: int = 1200
     edge_fade_ms: int = 12
     trim_threshold_db: float = -45.0
 
