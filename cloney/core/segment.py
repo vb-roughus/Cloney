@@ -158,6 +158,19 @@ def split_sentences(text: str, lexicon: Lexicon | None = None) -> list[Sentence]
     return sentences
 
 
+def spoken_form(raw_text: str, is_heading: bool = False, lexicon: Lexicon | None = None) -> str:
+    """Die Sprechfassung eines Satzes -- dieselbe Regel wie beim Segmentieren.
+
+    Gebraucht, wo ein einzelner Satz nachträglich neu gefasst wird: beim
+    Bearbeiten seines Textes und beim Auffrischen nach einer Änderung am
+    Aussprache-Wörterbuch. Eine zweite Fassung dieser Regel würde
+    auseinanderlaufen, und der Unterschied fiele erst beim Hören auf.
+    """
+    if is_heading:
+        return _heading_sentence(raw_text, lexicon).normalized
+    return normalize_german(raw_text, lexicon)
+
+
 def _heading_sentence(titel: str, lexicon: Lexicon | None = None) -> Sentence:
     """Eine Überschrift als eigener Satz.
 

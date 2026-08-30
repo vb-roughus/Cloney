@@ -706,8 +706,16 @@ Entscheidung.
 Die Ersetzung geschieht **vor** allen anderen Regeln, damit die Sprechweise
 selbst noch normalisiert wird: `Em-Pe-3` wird zu „Em-Pe-drei". Der Rohtext bleibt
 unangetastet; geändert wird nur die Sprechfassung, und die steht im Satz-Editor
-unter jedem Satz. Ein neuer Eintrag wirkt auf neu angelegte Projekte -- in einem
-bestehenden greift er, sobald die Vorlage erneut übernommen wird.
+unter jedem Satz.
+
+**Wann ein neuer Eintrag wirkt.** Die Sprechfassung steht im Manifest, seit der
+Satz angelegt wurde -- ein später eingetragenes Wort erreicht sie nicht von
+selbst. Was einzeln neu erzeugt wird, wird deshalb mit dem aktuellen Stand
+erzeugt: „Neu würfeln" und „Text übernehmen" fassen den Satz vorher neu. Für ein
+ganzes Kapitel gibt es unter *Einstellungen* den Knopf **Sprechfassungen
+auffrischen**; er merkt genau die Sätze zum Neurendern vor, deren Sprechfassung
+sich durch den Eintrag ändert. Die übrigen behalten ihren Ton -- ein einzelnes
+Wort kostet nicht das ganze Kapitel.
 
 ### Titel und Kapitelüberschriften
 

@@ -125,6 +125,14 @@
     <div class="aktionen">
       <button type="submit">{% include "_spinner.html" %}Regler übernehmen</button>
       <button type="button" class="secondary"
+              hx-post="/projects/{{ project.id }}/refresh-spoken"
+              hx-target="#status" hx-swap="outerHTML"
+              hx-disabled-elt="this" hx-indicator="this"
+              title="Nach einer Änderung unter 'Aussprache': Sprechfassungen neu erzeugen.
+Betroffen sind nur die Sätze, die sich dadurch ändern.">
+        {% include "_spinner.html" %}Sprechfassungen auffrischen
+      </button>
+      <button type="button" class="secondary"
               hx-post="/projects/{{ project.id }}/rerender"
               hx-target="#status" hx-swap="outerHTML"
               hx-disabled-elt="this" hx-indicator="this"
