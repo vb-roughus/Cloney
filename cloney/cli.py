@@ -295,12 +295,15 @@ def render(
 
     options = _parse_options(option, info)
 
+    from cloney.core.lexicon import Lexicon
+
     project = Project.create(
         name=name or text.stem,
         text=text.read_text(encoding="utf-8"),
         voice=voice,
         engine=info,
         model=model,
+        lexicon=Lexicon.load(settings.data_dir),
         projects_dir=settings.projects_dir,
         reference_seconds=reference.duration_s,
         chars_per_second=settings.chars_per_second,
@@ -615,6 +618,114 @@ def _print_dataset(dataset, ausfuehrlich: bool = False) -> None:  # noqa: ANN001
                     f"    {eintrag.source} bei {eintrag.start_s:7.1f}s "
                     f"({eintrag.duration_s:5.1f}s): {eintrag.reason}"
                 )
+
+
+lexicon_app = typer.Typer(help="Aussprache von Fremdwörtern und Abkürzungen.", no_args_is_help=True)
+app.add_typer(lexicon_app, name="lexicon")
+
+
+@lexicon_app.command("list")
+def lexicon_list() -> None:
+    """Was eingetragen ist."""
+    from cloney.core.lexicon import Lexicon
+
+    settings = get_settings()
+    lexikon = Lexicon.load(settings.data_dir)
+    if not lexikon.entries:
+        typer.echo("Das Wörterbuch ist leer.")
+        typer.echo("Eintragen mit: cloney lexicon set SWIFT Ssuift")
+        return
+    breite = max(len(w) for w in lexikon.entries)
+    for wort, sprechweise in lexikon.sorted_entries():
+        typer.echo(f"  {wort:<{breite}}  {sprechweise}")
+
+
+@lexicon_app.command("set")
+def lexicon_set(
+    wort: str = typer.Argument(..., help="Wort, wie es im Text steht."),
+    sprechweise: str = typer.Argument(
+        "", help="Wie es klingen soll. Leer lassen und --spell für Buchstabieren."
+    ),
+    spell: bool = typer.Option(False, "--spell", help="Buchstabieren: 'USB' wird zu 'U-Es-Be'."),
+) -> None:
+    """Ein Wort eintragen.
+
+    Zwei Fälle: buchstabiert ('USB' -> 'U-Es-Be') rechnet Cloney aus, dafür
+    genügt --spell. Wie ein Fremdwort klingen soll, weiß nur ein Mensch -- das
+    wird als Sprechweise angegeben, in deutscher Schreibung.
+    """
+    from cloney.core.lexicon import Lexicon
+    from cloney.core.pronounce import spell_out
+
+    settings = get_settings()
+    if spell:
+        sprechweise = spell_out(wort)
+    if not sprechweise:
+        typer.secho(
+            "Entweder eine Sprechweise angeben oder --spell zum Buchstabieren.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    lexikon = Lexicon.load(settings.data_dir)
+    try:
+        lexikon.set(wort, sprechweise)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from None
+    lexikon.save(settings.data_dir)
+    typer.echo(f"{wort} wird gesprochen als: {sprechweise}")
+    typer.secho(
+        "Wirkt auf neue Projekte. In einem bestehenden greift es, sobald die "
+        "Vorlage erneut übernommen wird.",
+        fg=typer.colors.BRIGHT_BLACK,
+    )
+
+
+@lexicon_app.command("remove")
+def lexicon_remove(wort: str = typer.Argument(..., help="Eingetragenes Wort.")) -> None:
+    """Einen Eintrag entfernen."""
+    from cloney.core.lexicon import Lexicon
+
+    settings = get_settings()
+    lexikon = Lexicon.load(settings.data_dir)
+    if not lexikon.remove(wort):
+        typer.secho(f"'{wort}' ist nicht eingetragen.", fg=typer.colors.YELLOW)
+        raise typer.Exit(1)
+    lexikon.save(settings.data_dir)
+    typer.echo(f"'{wort}' entfernt.")
+
+
+@lexicon_app.command("scan")
+def lexicon_scan(
+    text: Path = typer.Option(..., "--text", "-t", exists=True, help="Textdatei."),
+) -> None:
+    """Kandidaten im Text finden: Ketten aus Großbuchstaben.
+
+    Ob eine davon buchstabiert oder als Wort gesprochen wird, sagt der Text
+    nicht -- deshalb steht hier eine Liste, keine Entscheidung.
+    """
+    from cloney.core.lexicon import Lexicon
+    from cloney.core.pronounce import acronyms, spell_out
+
+    settings = get_settings()
+    lexikon = Lexicon.load(settings.data_dir)
+    gefunden = acronyms(text.read_text(encoding="utf-8"))
+    offen = [w for w in gefunden if w not in lexikon.entries]
+
+    if not gefunden:
+        typer.echo("Keine Ketten aus Großbuchstaben gefunden.")
+        return
+    typer.echo(f"{len(gefunden)} Kandidat(en), davon {len(offen)} ohne Eintrag:")
+    for wort in gefunden:
+        if wort in lexikon.entries:
+            typer.echo(f"  {wort}  -> {lexikon.entries[wort]}")
+        else:
+            typer.secho(f"  {wort}  buchstabiert wäre: {spell_out(wort)}", fg=typer.colors.YELLOW)
+    if offen:
+        typer.echo("")
+        typer.echo(f"Buchstabieren: cloney lexicon set {offen[0]} --spell")
+        typer.echo(f"Als Wort:      cloney lexicon set {offen[0]} <Sprechweise>")
 
 
 models_app = typer.Typer(help="Trainierte Modelle verwalten.", no_args_is_help=True)

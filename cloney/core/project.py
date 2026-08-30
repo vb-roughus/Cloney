@@ -19,6 +19,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from cloney.core.lexicon import Lexicon
 from cloney.core.segment import build_chunks
 from cloney.engines.base import EngineInfo
 
@@ -104,13 +105,14 @@ class Project(BaseModel):
         chars_per_second: float = 14.0,
         target_seconds: float = 20.0,
         max_seconds: float = 25.0,
+        lexicon: Lexicon | None = None,
     ) -> Project:
         project_id = _make_id(name)
         root = projects_dir / project_id
         root.mkdir(parents=True, exist_ok=True)
 
         budget, roh = _plan_chunks(
-            text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds
+            text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds, lexicon
         )
         chunks = [
             Chunk(
@@ -229,6 +231,7 @@ class Project(BaseModel):
         chars_per_second: float = 14.0,
         target_seconds: float = 20.0,
         max_seconds: float = 25.0,
+        lexicon: Lexicon | None = None,
     ) -> dict[str, int]:
         """Text, Stimme oder Engine eines bestehenden Projekts ändern.
 
@@ -251,7 +254,7 @@ class Project(BaseModel):
         stand = self.model if model is None else model
         uebernehmbar = voice == self.voice and engine.name == self.engine and stand == self.model
         budget, roh = _plan_chunks(
-            text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds
+            text, engine, reference_seconds, chars_per_second, target_seconds, max_seconds, lexicon
         )
 
         frei: dict[str, list[Chunk]] = {}
@@ -418,6 +421,7 @@ def _plan_chunks(
     chars_per_second: float,
     target_seconds: float,
     max_seconds: float,
+    lexicon: Lexicon | None = None,
 ) -> tuple[float, list]:
     """Chunk-Budget und Rohschnitt -- gemeinsam für Anlegen und Ändern.
 
@@ -429,7 +433,7 @@ def _plan_chunks(
     budget = engine.chunk_budget_seconds(reference_seconds, target_seconds)
     if budget < target_seconds:
         max_seconds = budget
-    return budget, build_chunks(text, chars_per_second, budget, max_seconds)
+    return budget, build_chunks(text, chars_per_second, budget, max_seconds, lexicon)
 
 
 def _median(werte: Iterable[float | None]) -> float | None:

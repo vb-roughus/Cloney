@@ -21,8 +21,10 @@ from fastapi.templating import Jinja2Templates
 from cloney.config import Settings, get_settings
 from cloney.core.audio import describe_audio, media_type
 from cloney.core.compare import MAX_VARIANTS, Comparison
+from cloney.core.lexicon import Lexicon
 from cloney.core.models import ModelError, ModelStore, settings_for
 from cloney.core.project import ChunkStatus, Project
+from cloney.core.pronounce import acronyms, spell_out
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
@@ -69,6 +71,14 @@ def create_app(
         Zwischenspeicher zeigen -- und man hörte, was man gerade ersetzt hat.
         """
         return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
+
+    def lexikon() -> Lexicon:
+        """Das Aussprache-Wörterbuch, frisch von Platte.
+
+        Nicht zwischengespeichert: es wird selten gelesen und darf nie älter
+        sein als das, was auf der Verwaltungsseite gerade eingetragen wurde.
+        """
+        return Lexicon.load(settings.data_dir)
 
     def load(project_id: str) -> Project:
         try:
@@ -229,6 +239,7 @@ def create_app(
             voice=voice,
             engine=info,
             model=pruefe_modell(model) or "",
+            lexicon=lexikon(),
             projects_dir=settings.projects_dir,
             reference_seconds=reference.duration_s,
             chars_per_second=settings.chars_per_second,
@@ -295,6 +306,7 @@ def create_app(
             voice=voice,
             engine=info,
             model=pruefe_modell(model),
+            lexicon=lexikon(),
             reference_seconds=reference.duration_s,
             chars_per_second=settings.chars_per_second,
             target_seconds=settings.target_chunk_seconds,
@@ -515,6 +527,63 @@ def create_app(
         return FileResponse(
             project.output_path, media_type="audio/wav", filename=f"{project.id}.wav"
         )
+
+    # -- Aussprache --------------------------------------------------------
+
+    def _lexikon_seite(request: Request, **extra: object) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "lexicon.html",
+            {
+                "lexikon": lexikon(),
+                "kandidaten": _offene_kandidaten(),
+                **extra,
+            },
+        )
+
+    def _offene_kandidaten() -> list[tuple[str, str, list[str]]]:
+        """Ketten aus Großbuchstaben aus allen Projekttexten, ohne Eintrag.
+
+        Woher ein Kandidat stammt, gehört dazu: dieselbe Abkürzung kann in zwei
+        Büchern verschieden gemeint sein, und wer entscheidet, will wissen, in
+        welchem Text sie steht.
+        """
+        eingetragen = {w.lower() for w in lexikon().entries}
+        gefunden: dict[str, list[str]] = {}
+        for project in Project.list_all(settings.projects_dir):
+            for wort in acronyms(project.source_text):
+                if wort.lower() in eingetragen:
+                    continue
+                gefunden.setdefault(wort, [])
+                if project.name not in gefunden[wort]:
+                    gefunden[wort].append(project.name)
+        return [(wort, spell_out(wort), woher) for wort, woher in gefunden.items()]
+
+    @app.get("/lexicon", response_class=HTMLResponse)
+    def lexicon_page(request: Request) -> HTMLResponse:
+        return _lexikon_seite(request)
+
+    @app.post("/lexicon", response_class=HTMLResponse)
+    def lexicon_set(
+        request: Request, word: str = Form(...), spoken: str = Form(...)
+    ) -> HTMLResponse:
+        buch = lexikon()
+        try:
+            buch.set(word, spoken)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        buch.save(settings.data_dir)
+        return _lexikon_seite(
+            request, bericht=f"'{word.strip()}' wird gesprochen: {spoken.strip()}"
+        )
+
+    @app.post("/lexicon/{word}/delete", response_class=HTMLResponse)
+    def lexicon_remove(request: Request, word: str) -> HTMLResponse:
+        buch = lexikon()
+        if not buch.remove(word):
+            raise HTTPException(404, f"'{word}' ist nicht eingetragen")
+        buch.save(settings.data_dir)
+        return _lexikon_seite(request, bericht=f"'{word}' entfernt")
 
     # -- Stimmen -----------------------------------------------------------
 
