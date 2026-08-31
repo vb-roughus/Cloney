@@ -409,6 +409,39 @@ anlegen zu müssen.
 **Projekt** sammelt Umbenennen, Kopie, Ton verwerfen und Löschen an einer
 Stelle, weg von den Dingen, die man ständig braucht.
 
+### Das Aussehen
+
+Cloney trägt das Design von [OBSCURA](https://github.com/vb-roughus/OBSCURA):
+dunkler Grund mit Rotstich, die Farbtafel in OKLCH, `--radius: 0.625rem` als
+Staffel, Karten als Fläche mit haarfeinem Rahmen, Knöpfe mit weichen Ecken, die
+einen Millimeter absacken, eine klebende Kopfzeile mit Weichzeichner dahinter
+und ein Einblenden beim Seitenwechsel. Es ist ein reines Stylesheet -- kein
+Tailwind, kein Bauwerkzeug, keine Abhängigkeit; `cloney web` startet weiter mit
+Python allein.
+
+Drei Stellen weichen bewusst ab, und alle drei stehen als Kommentar im
+Stylesheet:
+
+* **Die Zustände behalten ihre Farben.** OBSCURA ist einfarbig rot -- dort ist
+  `--destructive` dasselbe wie `--primary`. Für eine Videoplattform geht das
+  auf; eine Satztabelle zeigt drei Zustände nebeneinander, und ausgerechnet
+  *in Ordnung* und *fehlgeschlagen* dürfen nicht gleich aussehen.
+  Nachgerechnet lägen Markenrot und Fehlerrot zwölf Grad im Farbton auseinander
+  (`#ff8692` gegen `#ff7064`) -- nicht unterscheidbar. Grün, Bernstein und Rot
+  bleiben also, aber auf OBSCURAs Helligkeitsstufen gesetzt.
+* **Rot ist Fläche, nie Schrift.** Nach OBSCURAs eigener Aufteilung ist nur der
+  Hauptknopf gefüllt, *löschen* ein Rot-Tint und alles Übrige neutral. Verweise
+  tragen deshalb Textfarbe mit Unterstreichung statt Rot, und in einer Satzzeile
+  sind alle Knöpfe gleichrangig: fünfzehn gefüllte rote Knöpfe untereinander
+  machten die rot getönte Zeile eines fehlgeschlagenen Satzes unlesbar.
+* **Die Schrift bleibt die des Systems.** OBSCURA lädt Geist von Google Fonts.
+  Cloney läuft auf dem eigenen Rechner und soll das auch ohne Netz tun; Geist
+  fällt ohnehin auf `system-ui` zurück.
+
+Ein helles Schema gibt es nicht mehr -- dunkel ist hier kein Modus, sondern das
+Design. `color-scheme: dark` sorgt dafür, dass auch Abspieler, Rollbalken und
+Auswahlfelder mitziehen.
+
 ### Während des Laufs mithören
 
 Die Ansicht hält sich selbst aktuell: solange ein Lauf läuft, holen sich

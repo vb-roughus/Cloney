@@ -1,74 +1,191 @@
+/*
+  Cloney im Obscura-Design.
+  =========================
+
+  Übernommen aus vb-roughus/OBSCURA (src/app/globals.css, .obscura-Thema und
+  src/components/ui/*): die Farbtafel in OKLCH, die Radienstaffel um
+  --radius: 0.625rem, Karten als Fläche mit haarfeinem Rahmen, Knöpfe mit
+  rounded-lg und einem Millimeter Absacken beim Drücken, die klebende Kopfzeile
+  mit Weichzeichner dahinter, das Einblenden der Seite.
+
+  Drei Stellen weichen bewusst ab, jede aus einem Grund, der hier steht:
+
+  1. OBSCURA ist einfarbig rot -- dort ist --destructive identisch mit
+     --primary. Für eine Videoplattform geht das auf. Cloney zeigt in einer
+     Tabelle mit hundert Sätzen drei Zustände nebeneinander, und ausgerechnet
+     'in Ordnung' und 'fehlgeschlagen' dürfen nicht gleich aussehen.
+     Nachgerechnet lägen Markenrot und Fehlerrot zwölf Grad im Farbton
+     auseinander (#ff8692 gegen #ff7064) -- nicht unterscheidbar. Deshalb
+     behalten die Zustände Grün, Bernstein und Rot; sie sind in dieselbe
+     Helligkeitsstufe wie der übrige Grund gesetzt, damit sie nicht
+     herausfallen.
+
+  2. Damit das Rot trotzdem trägt, gilt OBSCURAs eigene Aufteilung: gefüllt ist
+     nur der Hauptknopf, gefährlich ist ein Rot-Tint, und alles andere --
+     secondary, ghost, Verweise -- bleibt neutral. So steht Rot für Bedienung
+     immer als Fläche und für einen Fehler immer als Schrift. Die beiden
+     begegnen sich nie in derselben Rolle.
+
+  3. Die Schrift bleibt die des Systems. OBSCURA lädt Geist von Google Fonts;
+     Cloney läuft auf dem eigenen Rechner und soll das auch ohne Netz tun.
+     Geist fällt ohnehin auf system-ui zurück, und das ist unter Windows Segoe
+     UI Variable -- dieselbe Familie von Schnitten.
+
+  Alle Farben sind gemessen, nicht geschätzt: Schrift auf Grund 16,4:1,
+  gedämpfte Schrift 6,6:1, jeder Zustand über 6,5:1 auf seinem eigenen Grund.
+*/
+
 :root {
-  --bg: #fbfaf8; --panel: #ffffff; --ink: #1c1b19; --muted: #6b6862;
-  --line: #e2ded7; --accent: #2f6f4f; --warn: #9a6b12; --fail: #a33a2a;
-  --ok-bg: #eef5f0; --warn-bg: #fdf6e6; --fail-bg: #fbeeec;
-  /* Schrift auf gefüllten Knöpfen. Im dunklen Schema ist der Akzent hell,
-     Weiß darauf wäre kaum zu lesen. */
-  --auf-akzent: #ffffff;
+  /* Dunkel ist hier kein Modus, sondern das Design. Die Angabe lässt den
+     Browser Abspieler, Rollbalken, Auswahlfelder und den Rückfragedialog
+     dunkel zeichnen -- ohne sie stünde ein weißer Audio-Player unter jedem
+     Satz. */
+  color-scheme: dark;
+
+  --bg: oklch(0.12 0.02 15);
+  --panel: oklch(0.17 0.03 15);
+  /* Eine Stufe über der Karte: Eingabefelder und Eingeschachteltes. Der
+     Farbstich ist hier bewusst schwächer als in der Tafel -- was auf einem
+     Chip von zwei Zentimetern angenehm rot wirkt, wird auf einem Textfeld über
+     die halbe Seite zu einer maronenen Fläche. */
+  --erhoben: oklch(0.21 0.022 15);
+  --ink: oklch(0.93 0.02 15);
+  --muted: oklch(0.68 0.04 15);
+  --line: oklch(0.42 0.06 15 / 40%);
+
+  /* Das Markenrot. Es tritt als Fläche auf, nicht als Schrift -- als Schrift
+     wäre es vom Fehlerrot nicht zu trennen. */
+  --accent: oklch(0.55 0.2 15);
+  --akzent-hell: oklch(0.76 0.15 15);
+  --akzent-bg: oklch(0.22 0.06 15);
+  --auf-akzent: oklch(0.97 0.01 15);
+  --ring: oklch(0.55 0.2 15 / 45%);
+
+  --ok: oklch(0.78 0.12 155);
+  --ok-bg: oklch(0.21 0.05 155);
+  --warn: oklch(0.8 0.13 75);
+  --warn-bg: oklch(0.22 0.05 75);
+  --fail: oklch(0.74 0.18 27);
+  --fail-bg: oklch(0.22 0.07 27);
+
+  /* OBSCURAs Staffel: --radius mal 0.6 / 0.8 / 1 / 1.4. */
+  --radius: 0.625rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16151a; --panel: #1e1d23; --ink: #eceaf0; --muted: #9b97a3;
-    --line: #33313b; --accent: #74c39a; --warn: #dcae54; --fail: #e0796a;
-    --ok-bg: #1c2a23; --warn-bg: #2b2517; --fail-bg: #2c1c1a;
-    --auf-akzent: #10201a;
-  }
-}
+
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Die Kopfzeile klebt und lässt den Inhalt durchscheinen -- aus OBSCURA
+   übernommen. Der Rückfall ohne Weichzeichner ist ein voller Grund, nicht ein
+   halbdurchsichtiger: sonst läse sich die Navigation über einer Tabelle. */
 body > header {
-  display: flex; align-items: baseline; gap: 1.5rem;
-  padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--panel);
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 1.5rem;
+  height: 3.5rem; padding: 0 1.5rem;
+  border-bottom: 1px solid var(--line); background: var(--bg);
+}
+@supports (backdrop-filter: blur(1px)) {
+  body > header {
+    background: color-mix(in oklab, var(--bg) 82%, transparent);
+    backdrop-filter: blur(10px);
+  }
 }
 .brand { font-weight: 650; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
-nav a { margin-right: 1rem; color: var(--muted); text-decoration: none; }
-nav a:hover { color: var(--accent); }
+nav a {
+  margin-right: .35rem; padding: .35rem .6rem; border-radius: var(--radius-md);
+  color: var(--muted); text-decoration: none; transition: background .15s, color .15s;
+}
+nav a:hover { color: var(--ink); background: var(--erhoben); }
+
 main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
-/* Das Blau des Browsers steht in keinem der beiden Schemata zur Verfügung --
-   im dunklen ist es auf dem Grund kaum zu lesen. */
-main a { color: var(--accent); }
-h1 { font-size: 1.4rem; margin: 0 0 .3rem; }
-h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
+/* Das Einblenden der Seite, wie in OBSCURA (animate-page-in). */
+@keyframes seite-ein {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+main { animation: seite-ein .5s ease-in-out both; }
+
+/* Verweise bleiben neutral und tragen ihre Unterstreichung. Rot wären sie vom
+   Fehlerrot nicht zu unterscheiden -- und in einer Satztabelle steht beides
+   nebeneinander. */
+main a { color: var(--ink); text-decoration-color: var(--line); text-underline-offset: 2px; }
+main a:hover { color: var(--akzent-hell); text-decoration-color: currentColor; }
+
+h1 { font-size: 1.4rem; margin: 0 0 .3rem; letter-spacing: -.01em; }
+h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; letter-spacing: -.01em; }
 .muted { color: var(--muted); font-size: .88rem; }
 .error { color: var(--fail); font-size: .85rem; }
 .warn-text { color: var(--warn); }
 
 .card {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-  padding: 1rem; margin: 1rem 0;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-xl); padding: 1rem; margin: 1rem 0;
 }
-.card.warn { border-color: var(--warn); background: var(--warn-bg); }
-.card.ok { border-color: var(--accent); background: var(--ok-bg); }
+.card.warn { border-color: color-mix(in oklab, var(--warn) 45%, transparent); background: var(--warn-bg); }
+.card.ok { border-color: color-mix(in oklab, var(--ok) 45%, transparent); background: var(--ok-bg); }
 label { display: block; margin: .6rem 0; font-size: .9rem; color: var(--muted); }
 .row { display: flex; gap: 1rem; }
 .row label { flex: 1; }
 input, select, textarea {
-  display: block; width: 100%; margin-top: .25rem; padding: .5rem;
-  font: inherit; color: var(--ink); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 5px;
+  display: block; width: 100%; margin-top: .25rem; padding: .45rem .6rem;
+  font: inherit; color: var(--ink); background: var(--erhoben);
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  transition: border-color .15s, box-shadow .15s;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring);
 }
 textarea { resize: vertical; font-family: inherit; }
+::placeholder { color: var(--muted); opacity: 1; }
+/* Den Knopf im Dateifeld zeichnet sonst der Browser, und zwar hellgrau. Auf
+   dunklem Grund ist er dann das Hellste der Seite. */
+input[type="file"] { padding: .3rem; cursor: pointer; }
+input[type="file"]::file-selector-button {
+  margin-right: .6rem; padding: .28rem .6rem;
+  font: inherit; font-size: .85rem; font-weight: 500;
+  color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+}
+input[type="file"]::file-selector-button:hover { background: var(--erhoben); }
+
+/* Knöpfe nach OBSCURAs button.tsx: rounded-lg, mittlere Stärke, ein
+   Millimeter Absacken beim Drücken, ein weicher Ring beim Tastaturfokus. */
 button, .button {
-  display: inline-block; padding: .5rem .9rem; margin-top: .5rem;
-  font: inherit; font-weight: 550; color: var(--auf-akzent); background: var(--accent);
-  border: 1px solid transparent; border-radius: 5px; cursor: pointer; text-decoration: none;
+  display: inline-block; padding: .45rem .85rem; margin-top: .5rem;
+  font: inherit; font-weight: 500; color: var(--auf-akzent); background: var(--accent);
+  border: 1px solid transparent; border-radius: var(--radius-lg);
+  cursor: pointer; text-decoration: none;
+  transition: background .15s, color .15s, border-color .15s, transform .05s;
 }
-button:hover, .button:hover { filter: brightness(1.08); }
+button:hover, .button:hover { background: color-mix(in oklab, var(--accent) 82%, white); }
+button:active, .button:active { transform: translateY(1px); }
+button:focus-visible, .button:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px var(--ring);
+}
+/* Neutral, nicht rot: sonst stünde ein harmloses "Ton verwerfen" in derselben
+   Farbe wie "Projekt löschen". */
 button.secondary, .button.secondary {
-  background: transparent; color: var(--accent); border-color: var(--line);
+  background: transparent; color: var(--ink); border-color: var(--line);
 }
-button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
+button.secondary:hover, .button.secondary:hover { background: var(--erhoben); }
+button.small { padding: .28rem .55rem; font-size: .82rem; white-space: nowrap;
+               border-radius: var(--radius-md); }
 
 .badge {
   display: inline-block; padding: .1rem .5rem; border-radius: 999px;
   font-size: .78rem; font-weight: 600; border: 1px solid var(--line);
 }
-.badge.ok { color: var(--accent); background: var(--ok-bg); border-color: var(--accent); }
-.badge.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
-.badge.fail { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); }
+.badge.ok { color: var(--ok); background: var(--ok-bg); border-color: color-mix(in oklab, var(--ok) 50%, transparent); }
+.badge.warn { color: var(--warn); background: var(--warn-bg); border-color: color-mix(in oklab, var(--warn) 50%, transparent); }
+.badge.fail { color: var(--fail); background: var(--fail-bg); border-color: color-mix(in oklab, var(--fail) 50%, transparent); }
 .badge.pending { color: var(--muted); }
 .badge.titel { color: var(--muted); border-style: dashed; }
 
@@ -86,14 +203,17 @@ button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
 .kennzahlen span + span { position: relative; padding-left: 1.1rem; }
 .kennzahlen span + span::before {
   content: ""; position: absolute; left: 0; top: .45em;
-  width: 3px; height: 3px; border-radius: 50%; background: var(--line);
+  width: 3px; height: 3px; border-radius: 50%; background: var(--muted);
 }
 
+/* Sie klebt unter der Kopfzeile, nicht am oberen Rand -- sonst schöbe sie sich
+   darunter. */
 .statusleiste {
-  position: sticky; top: 0; z-index: 20;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  position: sticky; top: 3.5rem; z-index: 20;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
   padding: .8rem 1rem .9rem; margin-bottom: 1.25rem;
-  box-shadow: 0 1px 3px rgb(0 0 0 / .05);
+  box-shadow: 0 4px 16px rgb(0 0 0 / .35);
 }
 .statzeile { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; }
 .statzeile .zaehler { font-size: .9rem; font-variant-numeric: tabular-nums; }
@@ -119,8 +239,9 @@ button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
 }
 .reiterleiste label {
   margin: 0; padding: .5rem .9rem; cursor: pointer;
-  font-size: .93rem; font-weight: 550; color: var(--muted);
+  font-size: .93rem; font-weight: 500; color: var(--muted);
   border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .15s;
 }
 .reiterleiste label:hover { color: var(--ink); }
 .blatt { display: none; }
@@ -137,7 +258,8 @@ button.small { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
 #reiter-saetze:focus-visible ~ .reiterleiste label[for="reiter-saetze"],
 #reiter-einstellungen:focus-visible ~ .reiterleiste label[for="reiter-einstellungen"],
 #reiter-projekt:focus-visible ~ .reiterleiste label[for="reiter-projekt"] {
-  outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px 4px 0 0;
+  outline: 2px solid var(--accent); outline-offset: -2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 
 table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
@@ -145,16 +267,16 @@ th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(-
          vertical-align: top; }
 th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.projects a, .engines a { color: var(--accent); }
+.projects a, .engines a { color: var(--ink); }
 
 /* Ein Knopf, der wie Text aussieht: die Zahl in der Statusleiste ist zugleich
    der Weg zu den Sätzen, die sie zählt. */
 button.alslink {
   margin: 0; padding: 0; background: none; border: none;
-  font: inherit; font-weight: 550; cursor: pointer; text-decoration: underline;
+  font: inherit; font-weight: 500; cursor: pointer; text-decoration: underline;
   text-underline-offset: 2px;
 }
-button.alslink:hover { filter: none; opacity: .8; }
+button.alslink:hover { background: none; opacity: .8; }
 
 /* --- Sätze aussuchen ----------------------------------------------------- */
 
@@ -165,10 +287,11 @@ button.alslink:hover { filter: none; opacity: .8; }
 .satzfilter .gruppen { display: flex; flex-wrap: wrap; gap: .35rem; }
 .satzfilter input[type="search"] { flex: 1; min-width: 14rem; margin-top: 0; }
 /* Der Knopf selbst ist die Beschriftung -- der Radioknopf daneben trüge nichts
-   bei, was die Hervorhebung nicht schon zeigt. */
+   bei, was die Hervorhebung nicht schon zeigt. Gefüllt und nicht nur getönt:
+   die gewählte Gruppe ist eine Bedienung, keine Zustandsmeldung. */
 label.ankreuz.gewaehlt {
-  border-color: var(--accent); background: var(--ok-bg); color: var(--accent);
-  font-weight: 550;
+  border-color: transparent; background: var(--accent); color: var(--auf-akzent);
+  font-weight: 500;
 }
 label.ankreuz input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
 
@@ -194,21 +317,37 @@ label.ankreuz input[type="radio"] { position: absolute; opacity: 0; pointer-even
 .messwerte div { display: flex; justify-content: space-between; gap: .5rem; }
 .messwerte dt { color: var(--muted); }
 .messwerte dd { margin: 0; font-variant-numeric: tabular-nums; }
-.chunk.warn { background: var(--warn-bg); }
-.chunk.fail { background: var(--fail-bg); }
+/* Zurückhaltender als eine volle Fläche: die Marke in der Zeile sagt schon,
+   was los ist, und hundert getönte Zeilen wären keine Tabelle mehr. */
+.chunk.warn { background: color-mix(in oklab, var(--warn-bg) 55%, transparent); }
+.chunk.fail { background: color-mix(in oklab, var(--fail-bg) 55%, transparent); }
 .spoken, .heard { font-size: .82rem; margin-top: .3rem; color: var(--muted); }
 .heard { border-left: 2px solid var(--line); padding-left: .5rem; }
 .rowactions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
 .rowactions button { margin-top: 0; }
+/* In einer Satzzeile gibt es keine Hauptsache: Text übernehmen, neu würfeln und
+   jetzt rendern sind Geschwister. Gefüllt bleibt der Knopf, der den ganzen Lauf
+   startet -- OBSCURA hält es genauso, eine gefüllte Hauptsache je Ansicht und in
+   Karten sonst ghost oder outline. Hier kommt ein zweiter Grund dazu: fünfzehn
+   gefüllte rote Knöpfe untereinander machten ausgerechnet die rot getönte Zeile
+   eines fehlgeschlagenen Satzes unlesbar. */
+.rowactions button:not(.gefahr) {
+  background: transparent; color: var(--ink); border-color: var(--line);
+}
+.rowactions button:not(.gefahr):hover { background: var(--erhoben); }
 .warnings { color: var(--warn); }
-.notice { padding: .75rem 1rem; background: var(--warn-bg); border-radius: 6px; }
+.notice {
+  padding: .75rem 1rem; background: var(--warn-bg); color: var(--ink);
+  border: 1px solid color-mix(in oklab, var(--warn) 35%, transparent);
+  border-radius: var(--radius-lg);
+}
 
 /* --- Vergleichslauf ------------------------------------------------------ */
 .statusleiste table.vergleich { margin-top: 1rem; }
 table.vergleich { display: block; overflow-x: auto; }
 table.vergleich td { font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.vergleich audio { width: 13rem; }
-table.vergleich tr.fail { background: var(--fail-bg); }
+table.vergleich tr.fail { background: color-mix(in oklab, var(--fail-bg) 55%, transparent); }
 #raster label { margin-bottom: .6rem; }
 
 /* --- Rückmeldung -------------------------------------------------------- */
@@ -225,26 +364,23 @@ table.vergleich tr.fail { background: var(--fail-bg); }
 }
 .spinner.inline { display: inline-block; }
 @keyframes dreh { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .spinner { animation-duration: 2s; }
-}
 
 button[disabled], .htmx-request button, button.htmx-request {
-  opacity: .6; cursor: progress;
+  opacity: .5; cursor: progress;
 }
 textarea[disabled] { opacity: .6; }
 
 /* Die ganze Zeile zeigt, dass an ihr gearbeitet wird -- nicht nur der Knopf. */
-tr.chunk.htmx-request { background: var(--warn-bg); }
+tr.chunk.htmx-request { background: var(--akzent-bg); }
 tr.chunk.htmx-request td { opacity: .75; }
 
 progress.fortschritt {
   display: block; width: 100%; height: .5rem; margin: .6rem 0;
   appearance: none; border: none; border-radius: 999px;
-  background: var(--line); color: var(--accent);
+  background: var(--erhoben); color: var(--accent);
 }
 progress.fortschritt::-webkit-progress-bar {
-  background: var(--line); border-radius: 999px;
+  background: var(--erhoben); border-radius: 999px;
 }
 progress.fortschritt::-webkit-progress-value {
   background: var(--accent); border-radius: 999px; transition: width .3s ease;
@@ -265,18 +401,21 @@ progress.fortschritt::-moz-progress-bar { background: var(--accent); border-radi
 }
 .toast {
   position: relative; padding: .7rem 2.2rem .7rem .9rem;
-  border: 1px solid var(--fail); border-radius: 6px;
+  border: 1px solid color-mix(in oklab, var(--fail) 45%, transparent);
+  border-radius: var(--radius-lg);
   background: var(--fail-bg); color: var(--ink);
   font-size: .9rem; line-height: 1.4;
-  box-shadow: 0 2px 12px rgb(0 0 0 / .18);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .45);
 }
-.toast.info { border-color: var(--accent); background: var(--ok-bg); }
+.toast.info {
+  border-color: color-mix(in oklab, var(--ok) 45%, transparent); background: var(--ok-bg);
+}
 .toast-close {
   position: absolute; top: .25rem; right: .3rem; margin: 0;
   padding: 0 .35rem; font-size: 1.1rem; line-height: 1.4;
   color: var(--muted); background: none; border: none; cursor: pointer;
 }
-.toast-close:hover { color: var(--ink); }
+.toast-close:hover { color: var(--ink); background: none; }
 
 /* --- Emotionslagen ------------------------------------------------------- */
 
@@ -285,18 +424,19 @@ progress.fortschritt::-moz-progress-bar { background: var(--accent); border-radi
 button.badge.lage {
   margin: .2rem 0 0; padding: .1rem .5rem; cursor: pointer;
   border: 1px dashed var(--line); background: transparent; color: var(--muted);
-  font: inherit; font-size: .75rem; border-radius: 10px;
+  font: inherit; font-size: .75rem; border-radius: 999px;
 }
-button.badge.lage:hover { border-style: solid; color: var(--ink); filter: none; }
+button.badge.lage:hover { border-style: solid; color: var(--ink); background: var(--erhoben); }
 /* Eine gesetzte Lage ist eine Entscheidung und wird auch so gezeigt; neutral
    ist die Vorgabe und bleibt zurückhaltend. */
 button.badge.lage.gesetzt {
-  border-style: solid; border-color: var(--accent); color: var(--accent);
+  border-style: solid; border-color: color-mix(in oklab, var(--akzent-hell) 55%, transparent);
+  color: var(--akzent-hell); background: var(--akzent-bg);
 }
 .lagenwahl { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0 0; }
 .lagenwahl button { margin: 0; padding: .1rem .45rem; font-size: .75rem; }
 .lagenwahl button.gewaehlt {
-  border-color: var(--accent); color: var(--auf-akzent); background: var(--accent);
+  border-color: transparent; color: var(--auf-akzent); background: var(--accent);
 }
 
 details.lagen { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .6rem; }
@@ -304,12 +444,12 @@ details.lagen > summary { cursor: pointer; font-weight: 600; font-size: .95rem; 
 details.lagen > summary .muted { font-weight: 400; margin-left: .4rem; }
 .card .lage {
   margin: .8rem 0; padding: .7rem .9rem;
-  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg);
 }
 .card .lage audio { width: 100%; max-width: 26rem; margin: .4rem 0; }
 form.neuelage {
   margin-top: .8rem; padding: .7rem .9rem;
-  border: 1px dashed var(--line); border-radius: 6px;
+  border: 1px dashed var(--line); border-radius: var(--radius-lg);
 }
 
 /* --- Rückfrage ----------------------------------------------------------- */
@@ -319,11 +459,11 @@ form.neuelage {
 dialog.rueckfrage {
   max-width: min(30rem, calc(100vw - 2rem));
   padding: 1.3rem 1.4rem 1.1rem;
-  border: 1px solid var(--line); border-radius: 8px;
+  border: 1px solid var(--line); border-radius: var(--radius-xl);
   background: var(--panel); color: var(--ink);
-  box-shadow: 0 8px 30px rgb(0 0 0 / .3);
+  box-shadow: 0 16px 48px rgb(0 0 0 / .6);
 }
-dialog.rueckfrage::backdrop { background: rgb(0 0 0 / .45); }
+dialog.rueckfrage::backdrop { background: rgb(0 0 0 / .6); }
 dialog.rueckfrage p { margin: 0 0 1.1rem; line-height: 1.5; }
 dialog.rueckfrage .knoepfe { display: flex; gap: .6rem; justify-content: flex-end; }
 dialog.rueckfrage button { margin: 0; }
@@ -344,15 +484,42 @@ table.kv td { font-size: .9rem; }
 label.regler { margin: .9rem 0; }
 .reglerkopf {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-size: .9rem; color: var(--ink); font-weight: 550;
+  font-size: .9rem; color: var(--ink); font-weight: 500;
 }
 .reglerkopf output {
-  font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 650;
+  font-variant-numeric: tabular-nums; color: var(--akzent-hell); font-weight: 650;
 }
+/* Selbst gezeichnet, nicht über accent-color. Chromium zeichnet die noch
+   nicht zurückgelegte Spur bei gesetztem accent-color hell -- im Bild ein
+   weißer Balken quer durch die Karte, und color-scheme ändert daran nichts.
+   Der zurückgelegte Teil bleibt dabei nur unter Firefox gefärbt; Chromium
+   kennt dafür kein Pseudoelement. Das ist zu verschmerzen, weil der Wert
+   ohnehin als Zahl über dem Regler steht. */
 label.regler input[type="range"] {
-  width: 100%; margin: .35rem 0 .2rem; padding: 0;
-  accent-color: var(--accent); background: none; border: none;
+  width: 100%; height: 1.1rem; margin: .35rem 0 .2rem; padding: 0;
+  appearance: none; background: none; border: none; cursor: pointer;
 }
+label.regler input[type="range"]::-webkit-slider-runnable-track {
+  height: .35rem; border-radius: 999px; background: var(--erhoben);
+  border: 1px solid var(--line);
+}
+label.regler input[type="range"]::-moz-range-track {
+  height: .35rem; border-radius: 999px; background: var(--erhoben);
+  border: 1px solid var(--line);
+}
+label.regler input[type="range"]::-moz-range-progress {
+  height: .35rem; border-radius: 999px; background: var(--accent);
+}
+label.regler input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 1rem; height: 1rem; margin-top: -.37rem;
+  border-radius: 50%; background: var(--accent);
+  border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--accent);
+}
+label.regler input[type="range"]::-moz-range-thumb {
+  width: 1rem; height: 1rem; border-radius: 50%; background: var(--accent);
+  border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--accent);
+}
+label.regler input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 label.regler .muted { display: block; font-size: .82rem; }
 
 /* --- Übersicht ----------------------------------------------------------- */
@@ -370,26 +537,29 @@ label.regler .muted { display: block; font-size: .82rem; }
 .kachel {
   display: flex; flex-direction: column; gap: .1rem;
   padding: .9rem 1rem; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 8px;
+  border: 1px solid var(--line); border-radius: var(--radius-xl);
 }
 /* Die Zahl trägt Textfarbe, nicht Statusfarbe: farbig ist sie nur, wenn die
    Farbe etwas bedeutet -- und dann steht das Wort daneben. */
 .kachel .zahl {
   font-size: 1.9rem; font-weight: 600; line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
 }
-.kachel .was { font-size: .9rem; font-weight: 550; }
+.kachel .was { font-size: .9rem; font-weight: 500; }
 .kachel .muted { font-size: .82rem; }
-.kachel.achtung { border-color: var(--warn); background: var(--warn-bg); }
+.kachel.achtung {
+  border-color: color-mix(in oklab, var(--warn) 40%, transparent); background: var(--warn-bg);
+}
 .kachel.achtung .zahl { color: var(--warn); }
 
 .liste { display: flex; flex-direction: column; gap: .5rem; }
 .eintrag {
   display: block; padding: .7rem .9rem; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 8px;
-  color: var(--ink); text-decoration: none;
+  border: 1px solid var(--line); border-radius: var(--radius-xl);
+  color: var(--ink); text-decoration: none; transition: border-color .15s, background .15s;
 }
-a.eintrag:hover { border-color: var(--accent); }
+a.eintrag:hover { border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+                  background: var(--erhoben); }
 .eintrag .kopf {
   display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
 }
@@ -414,24 +584,42 @@ form.kandidat button { margin-top: 0; }
 .modelle { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: .3rem 0 .2rem; }
 label.ankreuz {
   display: flex; align-items: baseline; gap: .4rem; margin: 0;
-  padding: .35rem .6rem; border: 1px solid var(--line); border-radius: 6px;
-  color: var(--ink); font-size: .9rem;
+  padding: .3rem .6rem; border: 1px solid var(--line); border-radius: var(--radius-md);
+  color: var(--ink); font-size: .9rem; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
 }
+label.ankreuz:hover { background: var(--erhoben); }
 label.ankreuz input { accent-color: var(--accent); }
 label.ankreuz .muted { font-size: .82rem; }
 
 /* --- Verwalten ---------------------------------------------------------- */
 
+/* OBSCURAs destructive-Variante: kein gefüllter roter Knopf, sondern ein
+   getönter. Ein voll ausgefülltes Rot neben dem Hauptknopf sähe aus wie die
+   zweite Hauptsache der Seite -- Löschen ist aber die Ausnahme. */
 button.gefahr {
-  color: var(--fail); background: transparent; border-color: var(--fail);
+  color: var(--fail); background: var(--fail-bg); border-color: transparent;
 }
-button.gefahr:hover { background: var(--fail-bg); filter: none; }
+button.gefahr:hover { background: color-mix(in oklab, var(--fail) 22%, var(--fail-bg)); }
+button.gefahr:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--fail) 35%, transparent);
+}
 .card.stimme { padding-bottom: .8rem; }
 .card.stimme audio { width: 100%; max-width: 26rem; margin: .5rem 0; }
 
 p.hinweis {
   margin: .8rem 0 .2rem; padding: .6rem .8rem;
   font-size: .88rem; line-height: 1.5;
-  background: var(--ok-bg); border-left: 3px solid var(--accent); border-radius: 4px;
+  background: var(--akzent-bg); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
 }
 p.hinweis button { margin: .3rem 0 0; }
+
+/* --- Weniger Bewegung ---------------------------------------------------- */
+
+/* Gebündelt am Ende, damit an einer Stelle steht, was abgestellt wird. */
+@media (prefers-reduced-motion: reduce) {
+  main { animation: none; }
+  .spinner { animation-duration: 2s; }
+  *, *::before, *::after { transition-duration: .01ms !important; }
+}
