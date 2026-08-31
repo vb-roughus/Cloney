@@ -114,12 +114,19 @@ class EngineInfo:
         return max(4.0, min(fallback, usable))
 
 
+#: Name der Lage, gegen die gerendert wird, solange nichts anderes gewählt ist.
+#: Eine Stimme hat immer genau eine davon -- es ist ihre Hauptaufnahme.
+NEUTRAL = "neutral"
+
+
 @dataclass(frozen=True)
 class VoiceRef:
-    """Referenzstimme. Bleibt über das gesamte Projekt unverändert.
+    """Eine Referenzaufnahme, gegen die konditioniert wird.
 
-    Genau hier verhindert Cloney den Voice-Drift: jeder Chunk wird gegen dieselbe
-    Referenz konditioniert, niemals gegen das Ergebnis des Vorgängers.
+    Hier verhindert Cloney den Voice-Drift: jeder Chunk wird gegen eine
+    unveränderte Aufnahme konditioniert, niemals gegen das Ergebnis des
+    Vorgängers. Welche Aufnahme das ist, steht im Manifest -- eine Stimme kann
+    mehrere Lagen haben, und ein Satz wählt eine davon.
     """
 
     name: str
@@ -128,6 +135,9 @@ class VoiceRef:
     #: Länge der Referenzaufnahme. Geht in die Chunk-Planung ein, siehe
     #: EngineInfo.chunk_budget_seconds.
     duration_s: float = 0.0
+    #: Emotionslage dieser Aufnahme. Für Anzeige und Meldungen -- die Engines
+    #: sehen nur Ton und Wortlaut und müssen von Lagen nichts wissen.
+    lage: str = NEUTRAL
 
 
 @runtime_checkable

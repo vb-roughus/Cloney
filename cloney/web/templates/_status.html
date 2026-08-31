@@ -3,15 +3,20 @@
   Die Statusleiste steht über den Reitern und bleibt immer sichtbar -- sie ist
   das, was man während eines Laufs beobachtet.
 
-  Die Abfrage-Attribute stehen nur da, solange etwas läuft. Ein leeres
-  hx-trigger ist kein "kein Auslöser": htmx fällt dann auf seinen Standard
-  zurück, und der ist bei einem div der Klick. Die Leiste hätte sich also bei
-  jedem Klick in ihr selbst neu geladen und dabei das Ergebnis der eigentlichen
-  Anfrage überschrieben.
+  Während eines Laufs holt sie sich den Stand selbst. Im Ruhezustand horcht sie
+  auf ein Ereignis: ein Handgriff an einer einzelnen Zeile -- Ton verworfen,
+  Lage gewechselt, Satz nachgerendert -- ändert den Zähler, tauscht aber nur
+  diese Zeile aus. Ohne das Ereignis stünde hier danach eine Zahl, die nicht
+  mehr stimmt.
+
+  Ein leeres hx-trigger wäre kein "kein Auslöser": htmx fiele dann auf seinen
+  Standard zurück, und der ist bei einem div der Klick. Die Leiste hätte sich
+  also bei jedem Klick in ihr selbst neu geladen und dabei das Ergebnis der
+  eigentlichen Anfrage überschrieben.
 #}
 <div id="status" class="statusleiste" data-fertig="{{ 0 if running else 1 }}"
-     {% if running %}hx-get="/projects/{{ project.id }}/status"
-     hx-trigger="every 1500ms" hx-swap="outerHTML"{% endif %}>
+     hx-get="/projects/{{ project.id }}/status" hx-swap="outerHTML"
+     hx-trigger="{% if running %}every 1500ms{% else %}satz-geaendert from:body{% endif %}">
 
   <div class="statzeile">
     <span class="badge {% if running %}pending{% elif project.is_complete %}ok{% else %}warn{% endif %}">

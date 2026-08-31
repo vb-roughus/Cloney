@@ -6,16 +6,23 @@
   des Satzes ein, zu dem er gehört.
 
   Während eines Laufs aktualisiert sich die Tabelle von selbst: fertige Sätze
-  erscheinen samt Abspieler, ohne dass jemand neu laden muss. Die
-  Abfrage-Attribute stehen nur da, solange etwas läuft -- ein leeres hx-trigger
-  fiele auf den Standard zurück, bei einem div also auf den Klick. Der Filter
-  hängt dabei an der Adresse: sonst käme nach zwei Sekunden die ungefilterte
-  Liste zurück.
+  erscheinen samt Abspieler, ohne dass jemand neu laden muss.
+
+  Im Ruhezustand horcht sie stattdessen auf den Start eines Laufs. Ohne das käme
+  sie nie in Gang: gerendert wurde sie, als noch nichts lief, und der Knopf
+  "Rendern starten" tauscht nur die Statusleiste aus. Die Tabelle bliebe stehen,
+  wie sie war -- bis jemand von Hand neu lädt. Ihre erste eigene Abfrage nach
+  dem Ereignis liefert die laufende Fassung, und ab da holt sie sich den Stand
+  selbst; die letzte liefert die fertige und hört wieder auf.
+
+  Der Filter hängt an der Adresse: sonst käme nach zwei Sekunden die ungefilterte
+  Liste zurück. Ein leeres hx-trigger wäre kein "kein Auslöser" -- htmx fiele auf
+  seinen Standard zurück, bei einem div also auf den Klick.
 #}
 {% set filter = "?status=" ~ auswahl.status ~ "&q=" ~ (auswahl.query | urlencode) %}
 <div id="chunks" data-fertig="{{ 0 if running else 1 }}"
-     {% if running %}hx-get="/projects/{{ project.id }}/table{{ filter }}"
-     hx-trigger="every 2000ms" hx-swap="outerHTML"{% endif %}>
+     hx-get="/projects/{{ project.id }}/table{{ filter }}" hx-swap="outerHTML"
+     hx-trigger="{% if running %}every 2000ms{% else %}lauf-gestartet from:body{% endif %}">
 
   <form class="satzfilter" hx-get="/projects/{{ project.id }}/table"
         hx-target="#chunks" hx-swap="outerHTML"

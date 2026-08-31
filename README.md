@@ -15,18 +15,25 @@ Hunderter-Lesung gesetzt („neunzehnhundertvierundachtzig").
 
 **Langform-Stabilität.** Über ein ganzes Kapitel driftet die Stimme, wenn jeder
 Abschnitt auf dem vorherigen aufbaut. Cloney konditioniert **jeden** Chunk gegen
-dieselbe unveränderte Referenz und speichert den Seed. Dadurch ist jeder Satz
+eine unveränderte Referenzaufnahme und speichert den Seed. Dadurch ist jeder Satz
 einzeln und identisch reproduzierbar — die Voraussetzung für Wiederaufnahme nach
 einem Abbruch und für das gezielte Neuwürfeln eines einzelnen misslungenen Satzes.
+
+**Emotionslagen.** Eine Stimme ist nicht ein Klang, sondern eine Sprecherin in
+einer Haltung. Dieselbe Person klingt ernst anders als beiläufig, und ein Kapitel
+braucht beides. Zu jeder Stimme lassen sich deshalb weitere Aufnahmen ablegen, je
+eine je Lage; ein Satz wählt eine davon, und gegen die wird er konditioniert. Die
+Lage steht neben dem Satz und im Manifest — zusammen mit dem Seed macht sie ihn
+reproduzierbar. Nicht gewählt heißt **neutral**: die Hauptaufnahme der Stimme.
 
 ## Wie es arbeitet
 
 ```
 Text ─▶ Sätze ─▶ Normalisierung ─▶ Chunks ─▶ Synthese ─▶ Rückschrift ─▶ Zusammenbau
                                                 │            │
-                                          (dieselbe      (Fehlerrate zu hoch?
-                                           Referenz,      neuer Seed, bis zu
-                                           fester Seed)   n Versuchen)
+                                        (Referenz der    (Fehlerrate zu hoch?
+                                         gewählten Lage,  neuer Seed, bis zu
+                                         fester Seed)     n Versuchen)
 ```
 
 Der Lauf ist in Phasen getrennt, weil auf einer Karte mit 8 bis 16 GB VRAM nie
@@ -801,6 +808,58 @@ mit einem Komma, war es ein umbrochener Satz, keine Überschrift.
 Was erkannt wurde, steht in der Satztabelle als **Titel** neben dem Satz. Eine
 Regel, die man nicht sieht, lässt sich nicht widerlegen; liegt sie einmal
 daneben, ist der Text an dieser Stelle zu ändern.
+
+### Emotionslagen: mehrere Aufnahmen je Stimme
+
+Der Regler `speed` macht eine Stimme schneller, `cfg_strength` bindet sie enger
+an die Referenz. Beides ändert nichts an ihrer **Haltung**. Eine ernst
+gesprochene Passage klingt anders als eine beiläufige, und zwar in Betonung,
+Pausen und Tonhöhenverlauf zugleich — das lässt sich nicht regeln, es muss
+vorgesprochen werden.
+
+Deshalb kann eine Stimme mehrere Referenzaufnahmen haben, je eine je Lage. Sie
+werden unter **Stimmen** angelegt, im aufklappbaren Bereich *Lagen* unter der
+Hauptaufnahme, und genauso geprüft wie diese: eine übersteuerte Referenz bleibt
+auch wütend gesprochen unbrauchbar. Die Namen vergeben Sie selbst — `ernst`,
+`freundlich`, `drängend`; Cloney bringt keine mit, weil die passenden Lagen vom
+Text abhängen und nicht von einer Liste.
+
+Neben jedem Satz steht dann die Lage als Marke:
+
+```
+1  in Ordnung  neutral      Der erste Satz ist ruhig.
+2  offen       ernst        Der zweite Satz ist es nicht.
+```
+
+Ein Klick darauf zeigt die Auswahl, ein zweiter setzt sie. Dabei gilt:
+
+* **Der Ton fällt weg, der Seed bleibt.** Anders als beim Neuwürfeln wechselt
+  nur die Referenzaufnahme — derselbe Wurf, eine andere Lage. Nur so ist zu
+  hören, was die Lage bewirkt, statt zugleich den Zufall zu bewegen. Mit
+  *Jetzt rendern* wird genau dieser Satz erzeugt.
+* **Vor oder nach dem Rendern**, beides geht. Wer ein Kapitel durchgeht, vergibt
+  erst die Lagen und lässt danach in einem Zug laufen; wer eine einzelne Stelle
+  nachbessert, hört sie sofort.
+* **Die Lage steht im Manifest**, wie der Seed. Ein Satz bleibt damit
+  reproduzierbar, und ein Wiederaufnehmen nach einem Abbruch trifft dieselbe
+  Aufnahme wie vorher.
+* **Hat eine Stimme nur die neutrale Lage**, steht auch keine Marke da. Sie
+  verspräche eine Wahl, die es nicht gibt.
+
+Zwei Nebenwirkungen, die nicht offensichtlich sind:
+
+Die **Chunk-Länge** richtet sich nach der **längsten** Lage. Referenz und
+Erzeugtes teilen sich bei F5-TTS ein Zeitbudget (siehe unten); da jeder Satz
+jede Lage wählen kann, wäre ein an der neutralen bemessener Schnitt für eine
+längere Aufnahme zu großzügig — das Modell teilte den Chunk dann selbst.
+
+Die **Stimmähnlichkeit** wird gegen die Aufnahme gemessen, gegen die auch
+konditioniert wurde. Gegen die neutrale gemessen, geriete jeder Satz in einer
+anderen Lage unter Verdacht — und zwar gerade dann, wenn die Lage gut sitzt.
+
+Wird eine Lage gelöscht, während ein Projekt sie noch nennt, rendert dieses
+Projekt mit der Hauptaufnahme weiter. Ein Kapitel soll an einem fehlenden Namen
+nicht mitten im Lauf abbrechen.
 
 ### Warum die Chunk-Länge von der Engine abhängt
 

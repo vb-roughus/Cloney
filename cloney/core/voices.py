@@ -23,7 +23,7 @@ from cloney.core.audio import (
     read_wav,
     trim_silence,
 )
-from cloney.engines.base import VoiceRef
+from cloney.engines.base import NEUTRAL, VoiceRef
 
 _SLUG = re.compile(r"[^a-z0-9]+")
 _META = "voice.json"
@@ -34,6 +34,10 @@ _REFERENCE_STEM = "reference"
 #: Ältere Stimmen tragen den Namen weiter.
 _ALTE_REFERENZ = "reference.wav"
 _ERLAUBTE_ENDUNG = re.compile(r"^\.[a-z0-9]{1,5}$")
+#: Basisname einer Lagen-Aufnahme. Die neutrale Lage ist die Hauptaufnahme und
+#: liegt weiterhin unter _REFERENCE_STEM -- eine Stimme von vor den Lagen ist
+#: damit unverändert eine Stimme mit genau der Lage 'neutral'.
+_LAGE_STEM = "lage"
 
 
 #: Übliches deutsches Sprechtempo in Zeichen je Sekunde.
@@ -308,15 +312,162 @@ class VoiceStore:
         audio, sample_rate = read_wav(stimme.audio_path)
         return inspect_reference(audio, sample_rate, transcript=stimme.transcript).chars_per_second
 
-    def get(self, name: str) -> VoiceRef:
+    def get(self, name: str, lage: str = "") -> VoiceRef:
+        """Die Aufnahme einer Stimme, wahlweise in einer bestimmten Lage.
+
+        Eine unbekannte Lage liefert die neutrale, statt zu scheitern. Der Name
+        einer Lage steht im Projektmanifest und überlebt dort ihr Löschen -- ein
+        laufendes Kapitel soll dann mit der Hauptaufnahme weiterrendern und
+        nicht mitten im Lauf abbrechen.
+        """
         directory = self.path(name)
         meta = json.loads((directory / _META).read_text(encoding="utf-8"))
+        eintrag = _lagen(meta).get(_slug(lage)) if lage else None
+        if eintrag is None:
+            return VoiceRef(
+                name=meta["name"],
+                audio_path=self._reference_path(directory, meta),
+                transcript=meta.get("transcript", ""),
+                duration_s=float(meta.get("duration_s", 0.0)),
+                lage=NEUTRAL,
+            )
         return VoiceRef(
             name=meta["name"],
-            audio_path=self._reference_path(directory, meta),
-            transcript=meta.get("transcript", ""),
-            duration_s=float(meta.get("duration_s", 0.0)),
+            audio_path=directory / str(eintrag["file"]),
+            transcript=str(eintrag.get("transcript", "")),
+            duration_s=float(eintrag.get("duration_s", 0.0)),
+            lage=str(eintrag.get("lage", _slug(lage))),
         )
+
+    # -- Lagen -------------------------------------------------------------
+
+    def lagen(self, name: str) -> list[str]:
+        """Namen aller Lagen dieser Stimme, die neutrale zuerst."""
+        meta = json.loads((self.path(name) / _META).read_text(encoding="utf-8"))
+        return [NEUTRAL, *sorted(_lagen(meta))]
+
+    def list_lagen(self, name: str) -> list[VoiceRef]:
+        """Alle Aufnahmen einer Stimme, die neutrale zuerst."""
+        return [self.get(name, lage) for lage in self.lagen(name)]
+
+    def lage_warnings(self, name: str, lage: str) -> list[str]:
+        """Der Befund der Eingangsprüfung, so wie er beim Anlegen entstand."""
+        meta = json.loads((self.path(name) / _META).read_text(encoding="utf-8"))
+        if _slug(lage) == NEUTRAL:
+            return [str(w) for w in meta.get("warnings", [])]
+        eintrag = _lagen(meta).get(_slug(lage), {})
+        return [str(w) for w in eintrag.get("warnings", [])]
+
+    def longest_reference_seconds(self, name: str) -> float:
+        """Die längste Aufnahme dieser Stimme.
+
+        Sie bestimmt die Chunk-Planung: Referenz und Erzeugtes teilen sich bei
+        F5-TTS ein Zeitbudget. Gerechnet wird mit der längsten Lage, denn jeder
+        Satz kann jede von ihnen wählen -- mit der neutralen gerechnet, wäre der
+        Schnitt für einen Satz in einer längeren Lage zu großzügig, und das
+        Modell teilte ihn selbst.
+        """
+        return max((ref.duration_s for ref in self.list_lagen(name)), default=0.0)
+
+    def add_lage(
+        self,
+        name: str,
+        lage: str,
+        audio_path: Path,
+        transcript: str = "",
+        min_seconds: float = 5.0,
+        max_seconds: float = 12.0,
+    ) -> tuple[VoiceRef, VoiceCheck]:
+        """Eine weitere Aufnahme derselben Stimme ablegen und prüfen.
+
+        Geprüft wird wie die Hauptaufnahme: eine wütend gesprochene Referenz ist
+        genauso wertlos, wenn sie übersteuert oder ihr Wortlaut nicht stimmt.
+        """
+        schluessel = _slug(lage)
+        if schluessel == NEUTRAL:
+            raise ValueError(
+                "Die neutrale Lage ist die Hauptaufnahme der Stimme. "
+                "Sie wird oben ersetzt, nicht hier angelegt."
+            )
+        directory = self.resolve(name)
+        if not (directory / _META).exists():
+            raise FileNotFoundError(f"Stimme '{name}' gibt es nicht")
+
+        audio, sample_rate = read_wav(audio_path)
+        datei = describe_audio(audio_path)
+        check = inspect_reference(
+            audio,
+            sample_rate,
+            min_seconds,
+            max_seconds,
+            transcript,
+            channels=datei.channels,
+            subtype=datei.subtype,
+        )
+
+        for vorhanden in directory.glob(f"{_LAGE_STEM}-{schluessel}.*"):
+            vorhanden.unlink()
+        ziel = directory / f"{_LAGE_STEM}-{schluessel}{_endung(audio_path)}"
+        shutil.copyfile(audio_path, ziel)
+
+        meta = json.loads((directory / _META).read_text(encoding="utf-8"))
+        bestand = _lagen(meta)
+        bestand[schluessel] = {
+            "lage": lage.strip() or schluessel,
+            "file": ziel.name,
+            "transcript": transcript,
+            "duration_s": round(check.duration_s, 2),
+            "warnings": check.warnings,
+        }
+        self.set_metadata(name, lagen=bestand)
+        return self.get(name, schluessel), check
+
+    def set_lage_transcript(self, name: str, lage: str, transcript: str) -> VoiceCheck:
+        """Wortlaut einer Lage ändern und sie erneut prüfen.
+
+        Das Sprechtempo ergibt sich aus Wortlaut und Dauer -- der geänderte Text
+        ändert also den Befund, ohne dass die Aufnahme angefasst wurde.
+        """
+        schluessel = _slug(lage)
+        if schluessel == NEUTRAL:
+            self.set_transcript(name, transcript)
+            return self.recheck(name)
+
+        meta = json.loads((self.path(name) / _META).read_text(encoding="utf-8"))
+        bestand = _lagen(meta)
+        if schluessel not in bestand:
+            raise KeyError(f"Die Lage '{lage}' gibt es bei '{name}' nicht")
+
+        stimme = self.get(name, schluessel)
+        audio, sample_rate = read_wav(stimme.audio_path)
+        datei = describe_audio(stimme.audio_path)
+        pruefung = inspect_reference(
+            audio,
+            sample_rate,
+            transcript=transcript,
+            channels=datei.channels,
+            subtype=datei.subtype,
+        )
+        bestand[schluessel]["transcript"] = transcript
+        bestand[schluessel]["warnings"] = pruefung.warnings
+        self.set_metadata(name, lagen=bestand)
+        return pruefung
+
+    def delete_lage(self, name: str, lage: str) -> None:
+        schluessel = _slug(lage)
+        if schluessel == NEUTRAL:
+            raise ValueError(
+                "Die neutrale Lage ist die Hauptaufnahme der Stimme "
+                "und lässt sich nur mit ihr zusammen löschen."
+            )
+        directory = self.resolve(name)
+        meta = json.loads((directory / _META).read_text(encoding="utf-8"))
+        bestand = _lagen(meta)
+        eintrag = bestand.pop(schluessel, None)
+        if eintrag is None:
+            return
+        (directory / str(eintrag.get("file", ""))).unlink(missing_ok=True)
+        self.set_metadata(name, lagen=bestand)
 
     @staticmethod
     def _reference_path(directory: Path, meta: dict) -> Path:
@@ -354,3 +505,9 @@ def _endung(path: Path) -> str:
 
 def _slug(name: str) -> str:
     return _SLUG.sub("-", name.lower()).strip("-") or "stimme"
+
+
+def _lagen(meta: dict) -> dict[str, dict]:
+    """Die Lagen aus den Metadaten. Stimmen von vor den Lagen haben keine."""
+    bestand = meta.get("lagen")
+    return dict(bestand) if isinstance(bestand, dict) else {}

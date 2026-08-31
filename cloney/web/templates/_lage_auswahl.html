@@ -1,0 +1,18 @@
+{#
+  Die Auswahl der Lagen. Sie ersetzt beim Klick den Chip und verschwindet
+  wieder, sobald eine gewählt ist -- in hundert Satzzeilen dauerhaft eine Liste
+  zu zeigen, machte die Tabelle unlesbar.
+
+  Die gerade gesetzte Lage steht mit dabei und ist der Weg zurück, ohne dass es
+  einen eigenen Abbrechen-Knopf braucht.
+#}
+<span class="lagenwahl" id="lage-{{ chunk.index }}">
+  {% for lage in lagen %}
+    <button class="small {% if lage == chunk.lage_name %}gewaehlt{% else %}secondary{% endif %}"
+            hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/lage"
+            hx-vals='{"lage": {{ lage | tojson }}}'
+            hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
+            hx-disabled-elt="closest .lagenwahl"
+            hx-indicator="#chunk-{{ chunk.index }}">{{ lage }}</button>
+  {% endfor %}
+</span>

@@ -30,7 +30,7 @@ from cloney.core.compare import Comparison, Variant, VariantStatus
 from cloney.core.metrics import cer, cosine_similarity
 from cloney.core.project import Chunk, ChunkStatus, Project
 from cloney.core.voices import VoiceStore
-from cloney.engines.base import EngineInfo, TTSEngine, strip_unsupported_tags
+from cloney.engines.base import EngineInfo, TTSEngine, VoiceRef, strip_unsupported_tags
 from cloney.speaker.base import SpeakerEmbedder
 from cloney.vram import model_slot
 
@@ -54,6 +54,11 @@ def _noop(event: ProgressEvent) -> None:
     return None
 
 
+def _referenzen(voice_store: VoiceStore, voice: str, chunks: list[Chunk]) -> dict[str, VoiceRef]:
+    """Die gebrauchten Referenzaufnahmen, eine je vorkommender Lage."""
+    return {lage: voice_store.get(voice, lage) for lage in {c.lage_name for c in chunks}}
+
+
 def synthesize_chunks(
     project: Project,
     chunks: list[Chunk],
@@ -61,20 +66,26 @@ def synthesize_chunks(
     engine_factory: EngineFactory,
     on_event: ProgressCallback = _noop,
 ) -> None:
-    """Phase SYNTH. Jeder Chunk wird gegen dieselbe Referenz konditioniert.
+    """Phase SYNTH. Jeder Chunk wird gegen eine unveränderte Referenz konditioniert.
 
-    Genau darin liegt die Drift-Vermeidung: die Referenz ändert sich über den
-    gesamten Lauf nicht, und der Seed steht im Manifest -- ein Chunk lässt sich
-    dadurch jederzeit einzeln und identisch neu erzeugen.
+    Genau darin liegt die Drift-Vermeidung: konditioniert wird nie gegen das
+    Ergebnis des Vorgängers, sondern immer gegen eine feststehende Aufnahme.
+    Welche das ist, entscheidet die Lage des Satzes -- sie steht wie der Seed im
+    Manifest, und beide zusammen machen jeden Chunk einzeln und identisch neu
+    erzeugbar.
+
+    Die Aufnahmen werden dabei einmal je Lage nachgeschlagen und nicht je Satz:
+    ein Kapitel hat hundert Sätze und drei Lagen.
     """
     if not chunks:
         return
 
-    voice = voice_store.get(project.voice)
+    referenzen = _referenzen(voice_store, project.voice, chunks)
     with model_slot(engine_factory) as engine:
         on_event(ProgressEvent("synth", f"Engine '{engine.info.name}' geladen", 0, len(chunks)))
         for done, chunk in enumerate(chunks, start=1):
             text = strip_unsupported_tags(chunk.normalized_text, engine.info.supported_tags)
+            voice = referenzen[chunk.lage_name]
             try:
                 audio = engine.synthesize(text, voice, chunk.seed)
             except Exception as exc:  # noqa: BLE001 - Fehler gehört ins Manifest, nicht in den Stack
@@ -222,16 +233,20 @@ def _measure_similarity(
     zu_pruefen: list[Chunk],
     on_event: ProgressCallback,
 ) -> None:
-    voice = voice_store.get(project.voice)
+    referenzen = _referenzen(voice_store, project.voice, zu_pruefen)
     with model_slot(embedder_factory) as embedder:
         on_event(ProgressEvent("similarity", "Stimmvergleich geladen", 0, len(zu_pruefen)))
-        referenz_audio, referenz_rate = read_wav(voice.audio_path)
-        referenz = embedder.embed(referenz_audio, referenz_rate)
+        # Verglichen wird mit der Aufnahme, gegen die auch konditioniert wurde.
+        # Gegen die neutrale gemessen, geriete jeder Satz in einer anderen Lage
+        # unter Verdacht -- und zwar gerade dann, wenn die Lage gut sitzt.
+        vektoren = {
+            lage: embedder.embed(*read_wav(ref.audio_path)) for lage, ref in referenzen.items()
+        }
         project.similarity_note = None
 
         for done, chunk in enumerate(zu_pruefen, start=1):
             audio, sample_rate = read_wav(project.chunk_path(chunk.index))
-            wert = cosine_similarity(referenz, embedder.embed(audio, sample_rate))
+            wert = cosine_similarity(vektoren[chunk.lage_name], embedder.embed(audio, sample_rate))
             chunk.speaker_similarity = round(wert, 4)
             if settings.similarity_threshold > 0 and wert < settings.similarity_threshold:
                 chunk.status = ChunkStatus.NEEDS_REVIEW
