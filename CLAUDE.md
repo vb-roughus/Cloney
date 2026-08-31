@@ -6,13 +6,17 @@ Installation und Bedienung.
 ## Arbeitsweise
 
 - Entwickelt wird auf einem Branch, gemergt wird über einen Pull Request gegen `main`.
-- **Ist die CI grün, wird der PR sofort gemergt** -- ohne Rückfrage. Beim Öffnen
-  wird dafür GitHubs Auto-Merge eingeschaltet: sonst bleibt ein PR liegen, wenn
-  die Prüfung länger dauert als die Antwort, in der er angekündigt wurde.
+- **Ist die CI grün, wird der PR sofort gemergt** -- ohne Rückfrage.
 - **Jeder neu geöffnete PR wird gleich beim Öffnen beobachtet**
   (`subscribe_pr_activity`). Dann kommt das Ergebnis der Prüfung von selbst an,
   statt von einer Nachfrage abzuhängen -- und eine rote CI fällt auf, auch wenn
-  gerade niemand hinsieht.
+  gerade niemand hinsieht. Gemergt wird danach von Hand.
+
+  GitHubs Auto-Merge ist bewusst nicht im Einsatz. Er setzte zweierlei voraus:
+  das Häkchen in den Repo-Einstellungen **und** einen Branch-Schutz auf `main`
+  mit `test` als verlangter Prüfung -- ohne den gilt jeder PR sofort als
+  mergebar, und GitHub lehnt Auto-Merge dafür ab. Beides kann nur der Besitzer
+  des Repos setzen. Nicht bei jedem PR aufs Neue versuchen.
 - Vor jedem Push laufen `pytest`, `ruff check .` und `ruff format --check .`.
   Die Testsuite kommt ohne GPU, ohne Modelldownload und ohne Netz aus.
 
