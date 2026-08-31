@@ -29,6 +29,7 @@ from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_s
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
 from cloney.pipeline import quality_check, synthesize_chunks
+from cloney.web.filters import LABELS, select
 from cloney.web.jobs import ComparisonRunner, JobRunner
 from cloney.web.overview import summarize
 
@@ -135,6 +136,17 @@ def create_app(
         ):
             vorschlag = None
         return {"voice": voice, "reference_rate": rate, "speed_suggestion": vorschlag}
+
+    def _tabelle(project: Project, status: str = "alle", q: str = "") -> dict[str, object]:
+        """Kontext der Satztabelle. Eine Stelle, damit die Seite und ihr
+        Nachladen nicht mit verschiedenen Filtern enden."""
+        return {
+            "project": project,
+            "threshold": settings.cer_threshold,
+            "running": runner.is_running(project.id),
+            "auswahl": select(project.chunks, status, q),
+            "gruppen": LABELS,
+        }
 
     def render_row(request: Request, project: Project, index: int) -> HTMLResponse:
         return templates.TemplateResponse(
@@ -262,6 +274,7 @@ def create_app(
                 "voices": voices.list_all(),
                 "engines": available_engines(),
                 "models": modelle.list_all(),
+                **_tabelle(project),
                 **_reference_context(project),
                 **extra,
             },
@@ -337,16 +350,10 @@ def create_app(
         )
 
     @app.get("/projects/{project_id}/table", response_class=HTMLResponse)
-    def table(request: Request, project_id: str) -> HTMLResponse:
+    def table(request: Request, project_id: str, status: str = "alle", q: str = "") -> HTMLResponse:
         project = load(project_id)
         return templates.TemplateResponse(
-            request,
-            "_chunk_table.html",
-            {
-                "project": project,
-                "threshold": settings.cer_threshold,
-                "running": runner.is_running(project_id),
-            },
+            request, "_chunk_table.html", _tabelle(project, status, q)
         )
 
     @app.post("/projects/{project_id}/rename", response_class=HTMLResponse)

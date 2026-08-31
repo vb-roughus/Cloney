@@ -380,6 +380,20 @@ Sichtbar sind pro Satz drei Fassungen: der Rohtext, die daraus erzeugte
 Sprechfassung und das, was die Spracherkennung tatsächlich gehört hat. Weichen
 die letzten beiden voneinander ab, ist das der konkrete Hinweis, wo es hakt.
 
+**Ausgesucht wird über der Tabelle.** Ein Kapitel hat schnell hundert Sätze; wer
+nach einem Lauf die auffälligen durchhören will, sucht sie sonst von Hand aus
+einer Liste heraus, in der neunzig in Ordnung sind. Vier Gruppen -- alle, zu
+prüfen, offen, fertig -- und ein Suchfeld, das in allen drei Fassungen sucht:
+Rohtext, Sprechfassung, Rückschrift. Gerade die Rückschrift ist die richtige
+Stelle, wenn man einer schlechten Aussprache nachgeht: dort steht, was gehört
+wurde, nicht was dastehen sollte.
+
+Die Zahl in der Statusleiste (*„3 zur Durchsicht"*) ist zugleich der Weg
+dorthin -- ein Klick sucht genau diese Sätze aus. Gefiltert wird auf dem Server,
+nicht im Browser: die Tabelle lädt sich während eines Laufs alle zwei Sekunden
+neu, und eine Auswahl, die nur im DOM stünde, wäre nach dem ersten Austausch
+weg.
+
 **Einstellungen** trägt alles, was den Klang bestimmt -- und dieselben Angaben
 wie beim Anlegen: Text, Stimme, Engine, den trainierten Stand, dazu die Regler
 und die Kennwerte der Referenzaufnahme. Ein bestehendes Projekt lässt sich damit ändern, statt es neu

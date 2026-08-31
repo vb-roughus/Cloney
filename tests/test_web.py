@@ -988,8 +988,9 @@ def test_satztabelle_hoert_auf_nachzuladen(settings: Settings, voice_store: Voic
 
     tabelle = client.get(f"/projects/{project_id}/table").text
     assert 'id="chunks"' in tabelle
-    assert "hx-trigger" not in tabelle
-    assert "hx-get" not in tabelle
+    # Der Filter trägt eigene hx-Attribute -- gemeint ist die Selbstabfrage.
+    assert "every 2000ms" not in tabelle
+    assert f'hx-get="/projects/{project_id}/table?' not in tabelle
 
 
 def test_fertige_saetze_sind_waehrend_des_laufs_hoerbar(
@@ -1191,3 +1192,56 @@ def test_auffrischen_ohne_aenderung_sagt_das_auch(
     antwort = client.post(f"/projects/{project_id}/refresh-spoken")
 
     assert "Keine Sprechfassung hat sich geändert" in antwort.text
+
+
+def test_saetze_lassen_sich_nach_zustand_aussuchen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der Fall aus dem Betrieb: nach einem Lauf die auffälligen durchhören,
+    ohne sie aus neunzig unauffälligen herauszusuchen."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+    project = Project.load(settings.projects_dir / project_id)
+    project.chunks[0].status = ChunkStatus.OK
+    project.chunks[1].status = ChunkStatus.NEEDS_REVIEW
+    project.save()
+
+    seite = client.get(f"/projects/{project_id}/table", params={"status": "pruefen"}).text
+
+    assert "Zweiter Satz." in seite
+    assert "Erster Satz." not in seite
+    assert "1 von 2 Sätzen" in seite
+
+
+def test_saetze_lassen_sich_durchsuchen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+
+    seite = client.get(f"/projects/{project_id}/table", params={"q": "zweiter"}).text
+
+    assert "Zweiter Satz." in seite
+    assert "Erster Satz." not in seite
+
+
+def test_ohne_treffer_steht_da_warum(settings: Settings, voice_store: VoiceStore) -> None:
+    """Eine leere Tabelle allein sähe aus wie ein Fehler im Projekt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    seite = client.get(f"/projects/{project_id}/table", params={"q": "gibtesnicht"}).text
+
+    assert "Kein Satz passt dazu" in seite
+
+
+def test_der_filter_uebersteht_das_nachladen(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sonst käme nach zwei Sekunden die ungefilterte Liste zurück -- und die
+    Auswahl wäre mitten im Durchhören weg."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    monkeypatch.setattr(JobRunner, "is_running", lambda self, key: True)
+
+    seite = client.get(f"/projects/{project_id}/table", params={"status": "pruefen"}).text
+
+    assert f'hx-get="/projects/{project_id}/table?status=pruefen' in seite
