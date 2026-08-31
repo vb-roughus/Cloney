@@ -1245,3 +1245,51 @@ def test_der_filter_uebersteht_das_nachladen(
     seite = client.get(f"/projects/{project_id}/table", params={"status": "pruefen"}).text
 
     assert f'hx-get="/projects/{project_id}/table?status=pruefen' in seite
+
+
+def test_rueckfragen_stehen_im_dokument(settings: Settings, voice_store: VoiceStore) -> None:
+    """Der Kasten gehört ins Grundgerüst: gefragt wird auf jeder Seite."""
+    seite = _client(settings).get("/").text
+
+    assert '<dialog id="rueckfrage"' in seite
+
+
+def test_loeschen_fragt_zurueck(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    seite = client.get(f"/projects/{project_id}").text
+
+    assert 'data-frage="Projekt Testlauf samt erzeugtem Ton löschen?"' in seite
+    assert 'data-frage-ja="Löschen"' in seite
+
+
+def test_keine_browsereigenen_rueckfragen_mehr() -> None:
+    """confirm() setzt seinen Kasten an den oberen Fensterrand, weit weg vom
+    Knopf. Ein einzelnes zurückgebliebenes onclick fiele im Betrieb erst auf,
+    wenn jemand davor steht -- deshalb hier."""
+    vorlagen = Path(__file__).resolve().parents[1] / "cloney" / "web" / "templates"
+
+    uebrig = [p.name for p in vorlagen.rglob("*.html") if "confirm(" in p.read_text("utf-8")]
+
+    assert uebrig == []
+
+
+def test_name_mit_apostroph_bleibt_eine_frage(settings: Settings, voice_store: VoiceStore) -> None:
+    """Vorher stand der Name in einem JavaScript-String in einem HTML-Attribut.
+    Ein Apostroph darin beendete den String -- und der Knopf löschte danach
+    ungefragt. Als Attributwert ist er nur noch Text."""
+    client = _client(settings)
+    project_id = _create_project(client, name="Rolfs' Kapitel")
+
+    seite = client.get(f"/projects/{project_id}").text
+
+    assert 'data-frage="Projekt Rolfs&#39; Kapitel samt' in seite
+
+
+def test_stimme_loeschen_fragt_zurueck(settings: Settings, voice_store: VoiceStore) -> None:
+    """Der Knopf sitzt im Formular fürs Speichern -- die Frage muss deshalb an
+    ihm hängen und nicht am Formular."""
+    seite = _client(settings).get("/voices").text
+
+    assert 'data-frage="Stimme test-stimme löschen?"' in seite

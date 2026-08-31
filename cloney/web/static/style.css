@@ -278,6 +278,22 @@ progress.fortschritt::-moz-progress-bar { background: var(--accent); border-radi
 }
 .toast-close:hover { color: var(--ink); }
 
+/* --- Rückfrage ----------------------------------------------------------- */
+
+/* Das dialog-Element zentriert sich als modaler Dialog von selbst (margin: auto
+   im Stylesheet des Browsers) -- hier steht nur, wie es aussieht. */
+dialog.rueckfrage {
+  max-width: min(30rem, calc(100vw - 2rem));
+  padding: 1.3rem 1.4rem 1.1rem;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink);
+  box-shadow: 0 8px 30px rgb(0 0 0 / .3);
+}
+dialog.rueckfrage::backdrop { background: rgb(0 0 0 / .45); }
+dialog.rueckfrage p { margin: 0 0 1.1rem; line-height: 1.5; }
+dialog.rueckfrage .knoepfe { display: flex; gap: .6rem; justify-content: flex-end; }
+dialog.rueckfrage button { margin: 0; }
+
 /* --- Einstellungen des Projekts ----------------------------------------- */
 
 table.kv { width: auto; }

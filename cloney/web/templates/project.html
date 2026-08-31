@@ -89,12 +89,14 @@
                 hx-post="/projects/{{ project.id }}/discard"
                 hx-target="#status" hx-swap="outerHTML"
                 hx-disabled-elt="this" hx-indicator="this"
-                hx-confirm="Erzeugten Ton aller Sätze verwerfen? Die Seeds bleiben erhalten.">
+                hx-confirm="Erzeugten Ton aller Sätze verwerfen? Die Seeds bleiben erhalten."
+                data-frage-ja="Verwerfen">
           {% include "_spinner.html" %}Ton aller Sätze verwerfen
         </button>
-        <form method="post" action="/projects/{{ project.id }}/delete"
-              onsubmit="return confirm('Projekt {{ project.name }} samt erzeugtem Ton löschen?')">
-          <button class="small gefahr" type="submit">Projekt löschen</button>
+        <form method="post" action="/projects/{{ project.id }}/delete">
+          <button class="small gefahr" type="submit"
+                  data-frage="Projekt {{ project.name }} samt erzeugtem Ton löschen?"
+                  data-frage-ja="Löschen">Projekt löschen</button>
         </form>
       </div>
       <p class="muted">

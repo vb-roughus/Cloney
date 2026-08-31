@@ -59,7 +59,8 @@
         <button class="small gefahr" type="submit"
                 formaction="/voices/{{ v.name }}/delete"
                 formnovalidate
-                onclick="return confirm('Stimme {{ v.name }} löschen?')">Stimme löschen</button>
+                data-frage="Stimme {{ v.name }} löschen?"
+                data-frage-ja="Löschen">Stimme löschen</button>
       </div>
     </form>
   </div>

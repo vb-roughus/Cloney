@@ -44,6 +44,74 @@
     return "Der Server antwortete mit Status " + antwort.status + ".";
   }
 
+  // Rückfragen stehen in der Mitte der Seite, nicht am oberen Fensterrand.
+  //
+  // window.confirm setzt seinen Kasten dorthin, wo der Browser ihn hinsetzt:
+  // ganz oben, festgeklebt an der Adressleiste. Wer unten in der Seite auf
+  // "Projekt löschen" gedrückt hat, sucht die Antwort dann am anderen Ende des
+  // Bildschirms -- und beantwortet im Zweifel eine Frage, die er nicht gelesen
+  // hat. Gefragt wird deshalb im Dokument selbst.
+  //
+  // Fehlt das Element oder kennt der Browser showModal nicht, bleibt
+  // window.confirm: eine Rückfrage darf nicht verschwinden, nur weil ihre
+  // Verpackung fehlt. Sonst löschte ein Klick kommentarlos ein Projekt.
+  function frage(text, jaWort) {
+    var kasten = document.getElementById("rueckfrage");
+    if (!kasten || !kasten.showModal) return Promise.resolve(window.confirm(text));
+
+    kasten.querySelector("#rueckfrage-text").textContent = text;
+    kasten.querySelector("button[value=ja]").textContent = jaWort || "Fortfahren";
+    return new Promise(function (fertig) {
+      kasten.addEventListener(
+        "close",
+        function () {
+          // Alles außer einem ausdrücklichen Ja ist ein Nein -- Escape und der
+          // Klick daneben eingeschlossen.
+          fertig(kasten.returnValue === "ja");
+        },
+        { once: true }
+      );
+      kasten.returnValue = "";
+      kasten.showModal();
+    });
+  }
+
+  // htmx meldet sich vor jeder Anfrage; ohne hx-confirm ist question null.
+  document.body.addEventListener("htmx:confirm", function (ereignis) {
+    var text = ereignis.detail.question;
+    if (!text) return;
+    ereignis.preventDefault();
+    var wort = ereignis.detail.elt.getAttribute("data-frage-ja");
+    frage(text, wort).then(function (ja) {
+      if (ja) ereignis.detail.issueRequest(true);
+    });
+  });
+
+  // Formulare ohne htmx. Die Frage hängt am Knopf, der sie auslöst, nicht am
+  // Formular: auf der Stimmenseite sitzen "speichern" und "löschen" im selben.
+  //
+  // Gehorcht wird in der Fangphase, also bevor irgendein anderer Zuhörer den
+  // Klick sieht. Nach einem Ja wird derselbe Knopf noch einmal gedrückt, diesmal
+  // mit Vermerk -- so bleibt formaction, formnovalidate und alles Weitere am
+  // Knopf gültig, statt hier nachgebaut zu werden.
+  document.addEventListener(
+    "click",
+    function (ereignis) {
+      var ziel = ereignis.target;
+      var knopf = ziel && ziel.closest ? ziel.closest("[data-frage]") : null;
+      if (!knopf || knopf.bestaetigt) return;
+      ereignis.preventDefault();
+      ereignis.stopPropagation();
+      frage(knopf.dataset.frage, knopf.dataset.frageJa).then(function (ja) {
+        if (!ja) return;
+        knopf.bestaetigt = true;
+        knopf.click();
+        knopf.bestaetigt = false;
+      });
+    },
+    true
+  );
+
   document.body.addEventListener("htmx:responseError", function (ereignis) {
     melden(fehlertext(ereignis.detail.xhr), "error");
   });
