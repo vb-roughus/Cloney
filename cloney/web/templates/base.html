@@ -18,5 +18,21 @@
   </header>
   <main>{% block content %}{% endblock %}</main>
   <div id="meldungen" class="toasts" aria-live="polite"></div>
+  {#
+    Rückfragen erscheinen in der Mitte der Seite. Der Browser setzt seinen
+    eigenen confirm-Kasten an den oberen Fensterrand -- weit weg vom Knopf, den
+    man gerade gedrückt hat, und auf einem großen Bildschirm außerhalb des
+    Blicks. Genommen wird das dialog-Element: es zentriert von selbst, legt den
+    Hintergrund still und schließt auf Escape.
+  #}
+  <dialog id="rueckfrage" class="rueckfrage" aria-labelledby="rueckfrage-text">
+    <form method="dialog">
+      <p id="rueckfrage-text"></p>
+      <div class="knoepfe">
+        <button value="nein" class="secondary" autofocus>Abbrechen</button>
+        <button value="ja" class="gefahr">Fortfahren</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

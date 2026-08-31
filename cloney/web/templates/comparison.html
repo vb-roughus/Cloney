@@ -21,9 +21,10 @@
     <tr><th>Textprobe</th><td><span class="spoken">{{ comparison.text }}</span></td></tr>
     <tr><th>Zeichen</th><td>{{ comparison.text | length }}</td></tr>
   </table>
-  <form method="post" action="/comparisons/{{ comparison.id }}/delete"
-        onsubmit="return confirm('Vergleich {{ comparison.name }} samt erzeugtem Ton löschen?')">
-    <button class="small gefahr" type="submit">Vergleich löschen</button>
+  <form method="post" action="/comparisons/{{ comparison.id }}/delete">
+    <button class="small gefahr" type="submit"
+            data-frage="Vergleich {{ comparison.name }} samt erzeugtem Ton löschen?"
+            data-frage-ja="Löschen">Vergleich löschen</button>
   </form>
 </details>
 {% endblock %}
