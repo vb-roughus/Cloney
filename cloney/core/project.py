@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from cloney.core.lexicon import Lexicon
 from cloney.core.segment import build_chunks, spoken_form
-from cloney.engines.base import EngineInfo
+from cloney.engines.base import NEUTRAL, EngineInfo
 
 _MANIFEST = "project.json"
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -44,6 +44,10 @@ class Chunk(BaseModel):
     #: bekommt beim Zusammenbau eine längere Pause.
     is_heading: bool = False
     seed: int
+    #: Emotionslage, gegen deren Aufnahme dieser Satz konditioniert wird. Leer
+    #: heißt neutral -- so bleiben Manifeste von vor den Lagen gültig, ohne
+    #: dass irgendwo ein Wert nachgetragen werden müsste.
+    lage: str = ""
     status: ChunkStatus = ChunkStatus.PENDING
     audio_file: str | None = None
     asr_text: str | None = None
@@ -59,6 +63,11 @@ class Chunk(BaseModel):
     @property
     def needs_synthesis(self) -> bool:
         return self.status in (ChunkStatus.PENDING, ChunkStatus.FAILED)
+
+    @property
+    def lage_name(self) -> str:
+        """Die Lage, ausgeschrieben. Für Anzeige und Nachschlagen."""
+        return self.lage or NEUTRAL
 
 
 class Project(BaseModel):
@@ -403,6 +412,19 @@ class Project(BaseModel):
         chunk.cer = None
         chunk.error = None
         return chunk
+
+    def set_lage(self, index: int, lage: str) -> Chunk:
+        """Die Emotionslage eines Satzes wechseln.
+
+        Der Ton wird verworfen, der Seed bleibt. Anders als beim Neuwürfeln
+        wechselt also nur die Referenzaufnahme -- derselbe Wurf, eine andere
+        Lage. Nur so ist zu hören, was die Lage bewirkt, statt zugleich den
+        Zufall zu bewegen.
+        """
+        chunk = self.chunks[index]
+        gewaehlt = (lage or "").strip()
+        chunk.lage = "" if gewaehlt.lower() == NEUTRAL else gewaehlt
+        return self.discard_audio(index)
 
     def retext(self, index: int, raw_text: str, lexicon: Lexicon | None = None) -> Chunk:
         """Text eines Chunks ersetzen und neu normalisieren."""

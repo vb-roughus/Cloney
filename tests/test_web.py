@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import io
 import re
 import time
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
+import soundfile as sf
 from fastapi.testclient import TestClient
 
 from cloney.asr.dummy import DummyASR
@@ -981,16 +984,49 @@ def test_satztabelle_laedt_waehrend_des_laufs_nach(
 
 
 def test_satztabelle_hoert_auf_nachzuladen(settings: Settings, voice_store: VoiceStore) -> None:
-    """Sonst liefe die Abfrage endlos weiter -- und ein leeres hx-trigger fiele
-    auf den Standard zurück, bei einem div also auf den Klick."""
+    """Im Ruhezustand wird nicht abgefragt, sondern gehorcht.
+
+    Endlos alle zwei Sekunden nachzuladen wäre die eine falsche Antwort, ein
+    leeres hx-trigger die andere: htmx fiele damit auf seinen Standard zurück,
+    bei einem div also auf den Klick.
+    """
     client = _client(settings)
     project_id = _create_project(client)
 
     tabelle = client.get(f"/projects/{project_id}/table").text
+
     assert 'id="chunks"' in tabelle
-    # Der Filter trägt eigene hx-Attribute -- gemeint ist die Selbstabfrage.
     assert "every 2000ms" not in tabelle
-    assert f'hx-get="/projects/{project_id}/table?' not in tabelle
+    assert "lauf-gestartet from:body" in tabelle
+
+
+def test_satztabelle_kommt_beim_start_eines_laufs_in_gang(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der Knopf tauscht nur die Statusleiste aus. Ohne dieses Ereignis stünde
+    die Tabelle den ganzen Lauf über unverändert da -- und danach auch."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    antwort = client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    assert antwort.headers.get("HX-Trigger") == "lauf-gestartet"
+
+
+def test_ein_handgriff_an_einer_zeile_frischt_den_zaehler_auf(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Statusleiste steht außerhalb der Zeile und wird nicht mit
+    ausgetauscht. Ohne das Ereignis bliebe dort eine Zahl stehen, die seit dem
+    verworfenen Ton nicht mehr gilt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    antwort = client.post(f"/projects/{project_id}/chunks/0/reroll")
+
+    assert antwort.headers.get("HX-Trigger") == "satz-geaendert"
+    assert "satz-geaendert from:body" in client.get(f"/projects/{project_id}/status").text
 
 
 def test_fertige_saetze_sind_waehrend_des_laufs_hoerbar(
@@ -1292,4 +1328,127 @@ def test_stimme_loeschen_fragt_zurueck(settings: Settings, voice_store: VoiceSto
     ihm hängen und nicht am Formular."""
     seite = _client(settings).get("/voices").text
 
-    assert 'data-frage="Stimme test-stimme löschen?"' in seite
+    assert 'data-frage="Stimme test-stimme samt allen Lagen löschen?"' in seite
+
+
+# -- Emotionslagen ---------------------------------------------------------
+
+
+def _lage_anlegen(client: TestClient, name: str = "ernst") -> None:
+    daten = np.zeros(24000 * 6, dtype=np.float32)
+    puffer = io.BytesIO()
+    sf.write(puffer, daten, 24000, format="WAV")
+    antwort = client.post(
+        "/voices/test-stimme/lagen",
+        data={"lage": name, "transcript": f"{name.capitalize()} gesprochen."},
+        files={"audio": (f"{name}.wav", puffer.getvalue(), "audio/wav")},
+    )
+    assert antwort.status_code == 200, antwort.text
+
+
+def test_lage_laesst_sich_ueber_die_oberflaeche_anlegen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    _lage_anlegen(client)
+
+    seite = client.get("/voices").text
+
+    assert "ernst" in seite
+    assert "neutral und 1 weitere" in seite
+    assert client.get("/voices/test-stimme/lagen/ernst/audio").status_code == 200
+
+
+def test_ohne_weitere_lage_steht_kein_chip_in_der_zeile(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein Chip verspräche eine Wahl, die es nicht gibt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+
+    assert "chunks/0/lage" not in tabelle
+
+
+def test_mit_zweiter_lage_steht_der_chip_da(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    _lage_anlegen(client)
+    project_id = _create_project(client)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+
+    assert f"/projects/{project_id}/chunks/0/lage" in tabelle
+    assert ">neutral</button>" in tabelle
+
+
+def test_die_auswahl_kommt_erst_auf_klick(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    _lage_anlegen(client)
+    project_id = _create_project(client)
+
+    auswahl = client.get(f"/projects/{project_id}/chunks/0/lage").text
+
+    assert "neutral" in auswahl
+    assert "ernst" in auswahl
+
+
+def test_gewaehlte_lage_landet_im_manifest(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    _lage_anlegen(client)
+    project_id = _create_project(client)
+
+    zeile = client.post(f"/projects/{project_id}/chunks/0/lage", data={"lage": "ernst"}).text
+
+    assert ">ernst</button>" in zeile
+    assert Project.load(settings.projects_dir / project_id).chunks[0].lage == "ernst"
+
+
+def test_lagenwechsel_nimmt_den_ton_zurueck(settings: Settings, voice_store: VoiceStore) -> None:
+    """Der vorhandene Ton stammt aus einer anderen Aufnahme."""
+    client = _client(settings)
+    _lage_anlegen(client)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    client.post(f"/projects/{project_id}/chunks/0/lage", data={"lage": "ernst"})
+
+    chunk = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert chunk.status == ChunkStatus.PENDING
+    assert chunk.audio_file is None
+
+
+def test_einzelner_satz_laesst_sich_nachrendern(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Nach einem Lagenwechsel der Weg, genau diesen Satz zu hören -- ohne
+    Seed und Text anzurühren."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    vorher = Project.load(settings.projects_dir / project_id).chunks[0].seed
+
+    client.post(f"/projects/{project_id}/chunks/0/render")
+
+    chunk = Project.load(settings.projects_dir / project_id).chunks[0]
+    assert chunk.audio_file
+    assert chunk.seed == vorher
+
+
+def test_lage_laesst_sich_wieder_entfernen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    _lage_anlegen(client)
+
+    antwort = client.post("/voices/test-stimme/lagen/ernst/delete", follow_redirects=False)
+
+    assert antwort.status_code == 303
+    assert voice_store.lagen("test-stimme") == ["neutral"]
+
+
+def test_neutral_laesst_sich_nicht_einzeln_loeschen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    antwort = _client(settings).post("/voices/test-stimme/lagen/neutral/delete")
+
+    assert antwort.status_code == 400
+    assert "Hauptaufnahme" in antwort.text

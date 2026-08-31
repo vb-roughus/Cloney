@@ -9,6 +9,7 @@ Langform-Produktion sonst scheitert.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -137,6 +138,14 @@ def create_app(
             vorschlag = None
         return {"voice": voice, "reference_rate": rate, "speed_suggestion": vorschlag}
 
+    def _lagen_der_stimme(voice: str) -> list[str]:
+        """Welche Lagen diese Stimme kennt. Leer, wenn es sie nicht mehr gibt.
+
+        Einmal je Anfrage nachgeschlagen und nicht je Satz: ein Kapitel hat
+        hundert Sätze und dieselbe Stimme.
+        """
+        return voices.lagen(voice) if voices.exists(voice) else []
+
     def _tabelle(project: Project, status: str = "alle", q: str = "") -> dict[str, object]:
         """Kontext der Satztabelle. Eine Stelle, damit die Seite und ihr
         Nachladen nicht mit verschiedenen Filtern enden."""
@@ -146,11 +155,28 @@ def create_app(
             "running": runner.is_running(project.id),
             "auswahl": select(project.chunks, status, q),
             "gruppen": LABELS,
+            "lagen": _lagen_der_stimme(project.voice),
         }
 
     def render_row(request: Request, project: Project, index: int) -> HTMLResponse:
+        """Eine einzelne Satzzeile -- und die Nachricht, dass der Zähler nicht
+        mehr stimmt.
+
+        Ein Handgriff an einer Zeile ändert den Fortschritt des Projekts: ein
+        verworfener Ton, eine gewechselte Lage, ein nachgerenderter Satz. Die
+        Statusleiste steht aber außerhalb der Zeile und wird nicht mit
+        ausgetauscht. Ohne dieses Ereignis bliebe dort eine Zahl stehen, die
+        nicht mehr gilt.
+        """
         return templates.TemplateResponse(
-            request, "_chunk_row.html", {"project": project, "chunk": project.chunks[index]}
+            request,
+            "_chunk_row.html",
+            {
+                "project": project,
+                "chunk": project.chunks[index],
+                "lagen": _lagen_der_stimme(project.voice),
+            },
+            headers={"HX-Trigger": "satz-geaendert"},
         )
 
     # -- Übersicht --------------------------------------------------------
@@ -253,7 +279,7 @@ def create_app(
             model=pruefe_modell(model) or "",
             lexicon=lexikon(),
             projects_dir=settings.projects_dir,
-            reference_seconds=reference.duration_s,
+            reference_seconds=voices.longest_reference_seconds(voice),
             chars_per_second=settings.chars_per_second,
             target_seconds=settings.target_chunk_seconds,
             max_seconds=settings.max_chunk_seconds,
@@ -320,7 +346,7 @@ def create_app(
             engine=info,
             model=pruefe_modell(model),
             lexicon=lexikon(),
-            reference_seconds=reference.duration_s,
+            reference_seconds=voices.longest_reference_seconds(voice),
             chars_per_second=settings.chars_per_second,
             target_seconds=settings.target_chunk_seconds,
             max_seconds=settings.max_chunk_seconds,
@@ -331,8 +357,14 @@ def create_app(
     def start_run(request: Request, project_id: str) -> HTMLResponse:
         project = load(project_id)
         runner.start(project.root, asr_factory, embedder_factory)
+        # Der Knopf tauscht nur die Statusleiste aus. Die Satztabelle wurde
+        # gerendert, als noch nichts lief, und käme von selbst nie in Gang --
+        # dieses Ereignis weckt sie.
         return templates.TemplateResponse(
-            request, "_status.html", {"project": project, "running": True}
+            request,
+            "_status.html",
+            {"project": project, "running": True},
+            headers={"HX-Trigger": "lauf-gestartet"},
         )
 
     @app.get("/projects/{project_id}/status", response_class=HTMLResponse)
@@ -537,6 +569,44 @@ def create_app(
         guard_idle(project_id)
         project.discard_audio(index)
         project.save()
+        return render_row(request, project, index)
+
+    @app.get("/projects/{project_id}/chunks/{index}/lage", response_class=HTMLResponse)
+    def lage_waehlen(request: Request, project_id: str, index: int) -> HTMLResponse:
+        """Die Auswahl der Lagen -- erst auf Klick, nicht in jeder Zeile."""
+        project = load(project_id)
+        return templates.TemplateResponse(
+            request,
+            "_lage_auswahl.html",
+            {
+                "project": project,
+                "chunk": project.chunks[index],
+                "lagen": _lagen_der_stimme(project.voice),
+            },
+        )
+
+    @app.post("/projects/{project_id}/chunks/{index}/lage", response_class=HTMLResponse)
+    def lage_setzen(
+        request: Request, project_id: str, index: int, lage: str = Form("")
+    ) -> HTMLResponse:
+        """Lage eines Satzes wechseln. Der Ton fällt weg, der Seed bleibt.
+
+        Gerendert wird hier nicht: wer ein Kapitel durchgeht, vergibt erst die
+        Lagen und lässt danach in einem Zug laufen. Für den einzelnen Satz steht
+        'Jetzt rendern' daneben.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        project.set_lage(index, lage)
+        project.save()
+        return render_row(request, project, index)
+
+    @app.post("/projects/{project_id}/chunks/{index}/render", response_class=HTMLResponse)
+    def render_chunk(request: Request, project_id: str, index: int) -> HTMLResponse:
+        """Einen einzelnen Satz erzeugen, ohne Seed und Text anzurühren."""
+        project = load(project_id)
+        guard_idle(project_id)
+        _resynthesize(project, index)
         return render_row(request, project, index)
 
     @app.post("/projects/{project_id}/chunks/{index}/accept", response_class=HTMLResponse)
@@ -836,12 +906,92 @@ def create_app(
     def _voice_context(**extra: object) -> dict[str, object]:
         vorhandene = voices.list_all()
         formate = {}
+        lagen: dict[str, list] = {}
         for stimme in vorhandene:
-            try:
+            # Eine unlesbare Datei darf die Liste nicht kippen.
+            with contextlib.suppress(Exception):
                 formate[stimme.name] = describe_audio(stimme.audio_path)
-            except Exception:  # noqa: BLE001 - eine unlesbare Datei darf die Liste nicht kippen
-                continue
-        return {"voices": vorhandene, "formate": formate, "check": None, **extra}
+            # Die neutrale Lage steht schon als Hauptaufnahme da; hier sind nur
+            # die weiteren gemeint.
+            lagen[stimme.name] = voices.list_lagen(stimme.name)[1:]
+        return {
+            "voices": vorhandene,
+            "formate": formate,
+            "lagen": lagen,
+            "check": None,
+            **extra,
+        }
+
+    def _upload(datei: bytes, dateiname: str | None) -> Path:
+        upload_dir = settings.data_dir / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        temp = upload_dir / (dateiname or "referenz.wav")
+        temp.write_bytes(datei)
+        return temp
+
+    @app.post("/voices/{name}/lagen", response_class=HTMLResponse)
+    async def add_lage(
+        request: Request,
+        name: str,
+        lage: str = Form(...),
+        transcript: str = Form(""),
+        audio: UploadFile = File(...),
+    ) -> HTMLResponse:
+        """Eine weitere Aufnahme derselben Stimme, für eine andere Lage."""
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        temp = _upload(await audio.read(), audio.filename)
+        try:
+            _, check = voices.add_lage(
+                name,
+                lage,
+                temp,
+                transcript=transcript,
+                min_seconds=settings.ref_min_seconds,
+                max_seconds=settings.ref_max_seconds,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"Aufnahme nicht lesbar: {exc}") from exc
+        finally:
+            temp.unlink(missing_ok=True)
+        return templates.TemplateResponse(
+            request, "voices.html", _voice_context(check=check, geprueft=f"{name} / {lage}")
+        )
+
+    @app.post("/voices/{name}/lagen/{lage}/transcript", response_class=HTMLResponse)
+    def lage_transcript(
+        request: Request, name: str, lage: str, transcript: str = Form("")
+    ) -> HTMLResponse:
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        try:
+            check = voices.set_lage_transcript(name, lage, transcript)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return templates.TemplateResponse(
+            request, "voices.html", _voice_context(check=check, geprueft=f"{name} / {lage}")
+        )
+
+    @app.post("/voices/{name}/lagen/{lage}/delete")
+    def delete_lage(name: str, lage: str) -> RedirectResponse:
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        try:
+            voices.delete_lage(name, lage)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse("/voices", status_code=303)
+
+    @app.get("/voices/{name}/lagen/{lage}/audio")
+    def lage_audio(name: str, lage: str) -> FileResponse:
+        if not voices.exists(name):
+            raise HTTPException(404, f"Stimme '{name}' gibt es nicht")
+        stimme = voices.get(name, lage)
+        if not stimme.audio_path.exists():
+            raise HTTPException(404, "Für diese Lage gibt es keine Aufnahme")
+        return datei(stimme.audio_path, "audio/wav")
 
     @app.get("/voices", response_class=HTMLResponse)
     def voice_list(request: Request) -> HTMLResponse:

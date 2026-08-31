@@ -6,6 +6,23 @@
       <span class="badge titel" title="Als Titel erkannt: wird für sich gesprochen,
 mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
     {% endif %}
+    {#
+      Die Lage steht als Chip in jeder Zeile -- man sieht auf einen Blick, gegen
+      welche Aufnahme dieser Satz konditioniert wird. Erst der Klick holt die
+      Auswahl; hundert dauerhaft ausgeklappte Listen wären keine Tabelle mehr.
+
+      Hat die Stimme nur die neutrale Lage, gäbe es nichts zu wählen. Dann steht
+      der Chip auch nicht da: er verspräche eine Wahl, die keine ist.
+    #}
+    {% if lagen and lagen | length > 1 %}
+      <span id="lage-{{ chunk.index }}">
+        <button class="badge lage{% if chunk.lage %} gesetzt{% endif %}"
+                hx-get="/projects/{{ project.id }}/chunks/{{ chunk.index }}/lage"
+                hx-target="#lage-{{ chunk.index }}" hx-swap="outerHTML"
+                title="Emotionslage: gegen diese Aufnahme wird der Satz konditioniert.
+Klicken, um eine andere zu wählen.">{{ chunk.lage_name }}</button>
+      </span>
+    {% endif %}
     <dl class="messwerte">
       <div>
         <dt>Fehlerrate</dt>
@@ -65,6 +82,17 @@ mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
               hx-indicator="#chunk-{{ chunk.index }}">
         {% include "_spinner.html" %}Neu würfeln
       </button>
+      {% if not chunk.audio_file %}
+        {# Nach einem verworfenen Ton oder einer gewechselten Lage der Weg,
+           genau diesen Satz zu hören -- ohne Seed und Text anzurühren. #}
+        <button class="small"
+                hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/render"
+                hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
+                hx-disabled-elt="this" hx-indicator="#chunk-{{ chunk.index }}"
+                title="Nur diesen Satz erzeugen, mit demselben Seed">
+          {% include "_spinner.html" %}Jetzt rendern
+        </button>
+      {% endif %}
       {% if chunk.audio_file %}
         <button class="small secondary"
                 hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/discard"

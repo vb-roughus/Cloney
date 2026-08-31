@@ -28,9 +28,15 @@ seinen Zweck:
 1. **Normalisierung passiert vor dem Modell.** Ziffern, Symbole und Abkürzungen
    werden regelbasiert ausgeschrieben (`cloney/core/normalize.py`). Neue Regeln
    gehören mit einem Tabellentest in `tests/test_normalize.py` versehen.
-2. **Jeder Chunk wird gegen dieselbe unveränderte Referenz konditioniert**, nie
-   gegen das Ergebnis des Vorgängers. Daraus folgen Reproduzierbarkeit, Resume
-   und das einzelne Neuwürfeln eines Satzes.
+2. **Jeder Chunk wird gegen eine unveränderte Referenzaufnahme konditioniert**,
+   nie gegen das Ergebnis des Vorgängers. Daraus folgen Reproduzierbarkeit,
+   Resume und das einzelne Neuwürfeln eines Satzes.
+
+   Welche Aufnahme das ist, entscheidet die **Emotionslage** des Satzes. Sie
+   steht wie der Seed im Manifest -- beide zusammen machen ihn reproduzierbar.
+   Eine Lage zu wechseln verwirft den Ton und behält den Seed: nur so ist zu
+   hören, was die Lage bewirkt, statt zugleich den Zufall zu bewegen. Nicht
+   gewählt heißt neutral, und das ist die Hauptaufnahme der Stimme.
 
    Der Vergleichslauf (`cloney/core/compare.py`) zieht daraus die Konsequenz:
    alle Varianten teilen sich die aus der Vergleichskennung abgeleiteten Seeds

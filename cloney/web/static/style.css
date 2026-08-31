@@ -278,6 +278,40 @@ progress.fortschritt::-moz-progress-bar { background: var(--accent); border-radi
 }
 .toast-close:hover { color: var(--ink); }
 
+/* --- Emotionslagen ------------------------------------------------------- */
+
+/* Der Chip in der Satzzeile ist ein Knopf, soll aber wie die Marken daneben
+   aussehen -- die Lage ist zuerst eine Angabe und erst auf Klick eine Wahl. */
+button.badge.lage {
+  margin: .2rem 0 0; padding: .1rem .5rem; cursor: pointer;
+  border: 1px dashed var(--line); background: transparent; color: var(--muted);
+  font: inherit; font-size: .75rem; border-radius: 10px;
+}
+button.badge.lage:hover { border-style: solid; color: var(--ink); filter: none; }
+/* Eine gesetzte Lage ist eine Entscheidung und wird auch so gezeigt; neutral
+   ist die Vorgabe und bleibt zurückhaltend. */
+button.badge.lage.gesetzt {
+  border-style: solid; border-color: var(--accent); color: var(--accent);
+}
+.lagenwahl { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0 0; }
+.lagenwahl button { margin: 0; padding: .1rem .45rem; font-size: .75rem; }
+.lagenwahl button.gewaehlt {
+  border-color: var(--accent); color: var(--auf-akzent); background: var(--accent);
+}
+
+details.lagen { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .6rem; }
+details.lagen > summary { cursor: pointer; font-weight: 600; font-size: .95rem; }
+details.lagen > summary .muted { font-weight: 400; margin-left: .4rem; }
+.card .lage {
+  margin: .8rem 0; padding: .7rem .9rem;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+}
+.card .lage audio { width: 100%; max-width: 26rem; margin: .4rem 0; }
+form.neuelage {
+  margin-top: .8rem; padding: .7rem .9rem;
+  border: 1px dashed var(--line); border-radius: 6px;
+}
+
 /* --- Rückfrage ----------------------------------------------------------- */
 
 /* Das dialog-Element zentriert sich als modaler Dialog von selbst (margin: auto
