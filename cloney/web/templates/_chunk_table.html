@@ -4,22 +4,51 @@
   von fünfzehn Zeichen Breite; darin ist die Suchleiste ein paar Pixel lang, und
   eine Stelle im Satz anzuspringen war Glückssache. Jetzt nimmt er die Breite
   des Satzes ein, zu dem er gehört.
-#}
-{#
+
   Während eines Laufs aktualisiert sich die Tabelle von selbst: fertige Sätze
   erscheinen samt Abspieler, ohne dass jemand neu laden muss. Die
   Abfrage-Attribute stehen nur da, solange etwas läuft -- ein leeres hx-trigger
-  fiele auf den Standard zurück, bei einem div also auf den Klick.
+  fiele auf den Standard zurück, bei einem div also auf den Klick. Der Filter
+  hängt dabei an der Adresse: sonst käme nach zwei Sekunden die ungefilterte
+  Liste zurück.
 #}
+{% set filter = "?status=" ~ auswahl.status ~ "&q=" ~ (auswahl.query | urlencode) %}
 <div id="chunks" data-fertig="{{ 0 if running else 1 }}"
-     {% if running %}hx-get="/projects/{{ project.id }}/table"
+     {% if running %}hx-get="/projects/{{ project.id }}/table{{ filter }}"
      hx-trigger="every 2000ms" hx-swap="outerHTML"{% endif %}>
-<table class="chunks">
-  <thead>
-    <tr><th class="spalte-meta">Satz</th><th>Text und Ton</th></tr>
-  </thead>
-  <tbody>
-    {% for chunk in project.chunks %}{% include "_chunk_row.html" %}{% endfor %}
-  </tbody>
-</table>
+
+  <form class="satzfilter" hx-get="/projects/{{ project.id }}/table"
+        hx-target="#chunks" hx-swap="outerHTML"
+        hx-trigger="change, input from:find input[name=q] changed delay:300ms, submit">
+    <div class="gruppen">
+      {% for wert, beschriftung in gruppen %}
+      <label class="ankreuz{% if wert == auswahl.status %} gewaehlt{% endif %}">
+        <input type="radio" name="status" value="{{ wert }}"
+               {% if wert == auswahl.status %}checked{% endif %}>{{ beschriftung }}
+      </label>
+      {% endfor %}
+    </div>
+    <input type="search" name="q" value="{{ auswahl.query }}"
+           placeholder="Im Text, in der Sprechfassung oder in der Rückschrift suchen"
+           aria-label="Sätze durchsuchen">
+  </form>
+
+  {% if auswahl.gefiltert %}
+    <p class="muted">{{ auswahl.chunks | length }} von {{ auswahl.gesamt }} Sätzen</p>
+  {% endif %}
+
+  {% if auswahl.leer %}
+    <p class="notice">Kein Satz passt dazu.
+      {% if auswahl.query %}Ein anderer Suchbegriff{% else %}Eine andere Auswahl{% endif %}
+      &mdash; oder <a href="/projects/{{ project.id }}">zurück zu allen</a>.</p>
+  {% else %}
+  <table class="chunks">
+    <thead>
+      <tr><th class="spalte-meta">Satz</th><th>Text und Ton</th></tr>
+    </thead>
+    <tbody>
+      {% for chunk in auswahl.chunks %}{% include "_chunk_row.html" %}{% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </div>

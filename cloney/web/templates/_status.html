@@ -20,7 +20,13 @@
     </span>
     <span class="zaehler">{{ done }} von {{ total }} Sätzen</span>
     {% if project.flagged() %}
-      <span class="warn-text">{{ project.flagged() | length }} zur Durchsicht</span>
+      {# Die Zahl ist zugleich der Weg dorthin: ein Klick sucht genau diese
+         Sätze aus, statt sie von Hand aus der Liste zu fischen. #}
+      <button class="alslink warn-text"
+              hx-get="/projects/{{ project.id }}/table?status=pruefen"
+              hx-target="#chunks" hx-swap="outerHTML"
+              title="Nur diese Sätze zeigen">
+        {{ project.flagged() | length }} zur Durchsicht</button>
     {% endif %}
 
     <span class="fueller"></span>

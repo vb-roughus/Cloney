@@ -147,6 +147,31 @@ th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: 
 td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .projects a, .engines a { color: var(--accent); }
 
+/* Ein Knopf, der wie Text aussieht: die Zahl in der Statusleiste ist zugleich
+   der Weg zu den Sätzen, die sie zählt. */
+button.alslink {
+  margin: 0; padding: 0; background: none; border: none;
+  font: inherit; font-weight: 550; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+button.alslink:hover { filter: none; opacity: .8; }
+
+/* --- Sätze aussuchen ----------------------------------------------------- */
+
+.satzfilter {
+  display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+  margin: .8rem 0 .6rem;
+}
+.satzfilter .gruppen { display: flex; flex-wrap: wrap; gap: .35rem; }
+.satzfilter input[type="search"] { flex: 1; min-width: 14rem; margin-top: 0; }
+/* Der Knopf selbst ist die Beschriftung -- der Radioknopf daneben trüge nichts
+   bei, was die Hervorhebung nicht schon zeigt. */
+label.ankreuz.gewaehlt {
+  border-color: var(--accent); background: var(--ok-bg); color: var(--accent);
+  font-weight: 550;
+}
+label.ankreuz input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+
 /* --- Satz-Editor --------------------------------------------------------- */
 
 .chunks { table-layout: fixed; }
