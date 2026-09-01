@@ -157,8 +157,8 @@ cloney doctor
 # Oder ohne Aktivierung, direkt
 .\.venv\Scripts\cloney.exe doctor
 
-# Oder als Modul, falls die ausführbare Datei zickt
-.\.venv\Scripts\python.exe -m cloney.cli doctor
+# Oder als Modul, ganz ohne die ausführbare Datei
+.\.venv\Scripts\python.exe -m cloney doctor
 ```
 
 Scheitert `Activate.ps1` an der Ausführungsrichtlinie, hilft
@@ -167,6 +167,39 @@ Aufruf.
 
 Unter Linux und macOS entsprechend `source .venv/bin/activate` beziehungsweise
 `./.venv/bin/cloney`.
+
+#### Wenn Windows `cloney.exe` blockiert
+
+```
+Fehler beim Ausführen des Programms "cloney.exe":
+Eine Anwendungssteuerungsrichtlinie hat diese Datei blockiert
+```
+
+Das ist **Smart App Control** oder eine **WDAC-Richtlinie**, und die Meldung
+stimmt: `cloney.exe` ist keine Anwendung, sondern ein Startprogramm von wenigen
+Kilobyte, das pip beim Installieren erzeugt. Es tut nichts weiter, als den
+Interpreter mit `cloney.cli:app` aufzurufen — aber es ist unsigniert und wird
+bei jeder neuen virtuellen Umgebung frisch erzeugt, also auch nach einer
+einmaligen Freigabe wieder blockiert.
+
+Blockiert ist dabei nur dieses Startprogramm, nicht Cloney. Der Interpreter ist
+signiert, alles Übrige sind Python-Dateien, die keine Richtlinie ansieht. Der
+Weg daran vorbei führt deshalb über den Interpreter:
+
+```powershell
+.\.venv\Scripts\python.exe -m cloney web
+```
+
+Das ist derselbe Befehl mit denselben Argumenten; nur der Starter fällt weg.
+Wer es kurz mag, legt sich ein Alias ins Profil:
+
+```powershell
+function cloney { & "$PWD\.venv\Scripts\python.exe" -m cloney @args }
+```
+
+Smart App Control abzuschalten ist der schlechtere Weg: es lässt sich nur
+systemweit ausschalten und danach ohne Neuinstallation von Windows nicht wieder
+einschalten.
 
 ### Prüfen, ob alles bereit ist
 
