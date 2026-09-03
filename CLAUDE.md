@@ -44,6 +44,12 @@ seinen Zweck:
    und Zufall zugleich -- und die Tabelle beantwortet nicht mehr die gestellte
    Frage.
 
+   Seine Achsen sind Regler, Modell und Lage; die Lage gehört dabei zur
+   Variante und nicht zum einzelnen Satz. Ein Zuschnitt unter zwei Varianten
+   wird abgelehnt (`pruefe_raster`), und beim Ändern behält nur eine Zeile ihr
+   Ergebnis, deren Regler, Modell und Lage gleich bleiben -- ein Wechsel von
+   Probe, Stimme oder Engine verwirft alles.
+
 Dazu zwei Regeln, die aus der VRAM-Beschränkung folgen:
 
 - Es liegt **nie mehr als ein großes Modell gleichzeitig** im Speicher. Modelle

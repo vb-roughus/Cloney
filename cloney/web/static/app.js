@@ -112,6 +112,70 @@
     true
   );
 
+  // Ein Seitenfenster: derselbe dialog, nur an den Rand gestellt.
+  //
+  // Die Textprobe eines Vergleichs ist das Längste am Formular und das, was man
+  // am seltensten anfasst. Ausgeklappt schob sie alles Übrige unter den
+  // Bildschirmrand -- die Achsen, die man tatsächlich einstellt, standen dann
+  // außer Sicht.
+  //
+  // Das Feld bleibt Teil des Formulars, auch solange das Fenster zu ist: es
+  // liegt im Formular, und ein geschlossener dialog nimmt nichts aus dem
+  // Absenden heraus.
+  document.addEventListener("click", function (ereignis) {
+    var ziel = ereignis.target;
+    if (!ziel || !ziel.closest) return;
+
+    var oeffner = ziel.closest("[data-oeffnet]");
+    if (oeffner) {
+      var fenster = document.querySelector(oeffner.dataset.oeffnet);
+      if (fenster && fenster.showModal) {
+        ereignis.preventDefault();
+        fenster.showModal();
+        var feld = fenster.querySelector("textarea, input");
+        if (feld) feld.focus();
+      }
+      return;
+    }
+
+    var schliesser = ziel.closest("[data-schliesst]");
+    if (schliesser) {
+      var offen = schliesser.closest("dialog");
+      if (offen) {
+        ereignis.preventDefault();
+        offen.close();
+      }
+      return;
+    }
+
+    // Einen Wert aus einer Achse nehmen. Danach ausdrücklich ein change
+    // auslösen: die Vorschau hängt daran, und das Entfernen geschieht hier
+    // statt über eine Anfrage.
+    var entferner = ziel.closest("[data-entfernen]");
+    if (entferner) {
+      ereignis.preventDefault();
+      var feldgruppe = entferner.closest(".wertfeld");
+      var behaelter = feldgruppe && feldgruppe.parentElement;
+      // Der letzte Wert einer Achse bleibt stehen: eine Achse ganz ohne Wert
+      // wäre kein leeres Raster, sondern ein verschwundener Regler.
+      if (behaelter && behaelter.querySelectorAll(".wertfeld").length > 1) {
+        feldgruppe.remove();
+        behaelter.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+  });
+
+  // Die Zeichenzahl am Knopf gilt sonst nur bis zur ersten Eingabe.
+  document.addEventListener("close", function (ereignis) {
+    var fenster = ereignis.target;
+    if (!fenster || !fenster.querySelector) return;
+    var feld = fenster.querySelector("textarea");
+    var zaehler = document.querySelector("[data-zeichenzahl]");
+    if (!feld || !zaehler) return;
+    var laenge = feld.value.length;
+    zaehler.textContent = laenge ? laenge + " Zeichen" : "noch leer";
+  }, true);
+
   document.body.addEventListener("htmx:responseError", function (ereignis) {
     melden(fehlertext(ereignis.detail.xhr), "error");
   });

@@ -675,7 +675,63 @@ gibt. Bei Gleichstand wird niemand markiert.
 
 Die Probe kurz halten: sie wird je Variante einmal vollständig gerendert. Ein
 Kreuzprodukt ist auf zwölf Varianten gedeckelt, damit aus drei gut gemeinten
-Achsen kein Lauf über Stunden wird.
+Achsen kein Lauf über Stunden wird. Unter zwei Varianten wird abgelehnt: ein
+einzelner Lauf vergleicht nichts.
+
+#### Drei Achsen
+
+Verglichen werden können **Regler**, **Modelle** und **Emotionslagen** — einzeln
+oder gekreuzt. Die Lage ist dabei die interessanteste: dieselben Sätze, dieselben
+Seeds, dieselbe Reglerstellung, nur eine andere Referenzaufnahme derselben
+Sprecherin.
+
+```bash
+# Ernst gegen neutral, bei zwei Sprechtempi -- vier Zeilen
+cloney compare --text probe.txt --voice anna -l neutral -l ernst -g speed=0.9,1.1
+```
+
+Eine Lage, die es bei dieser Stimme nicht gibt, bricht den Aufruf ab, statt
+stillschweigend auf die Hauptaufnahme zurückzufallen — sonst stünden am Ende zwei
+Zeilen da, die dasselbe messen, und niemand wüsste warum.
+
+Wie bei einem Projekt richtet sich die Chunk-Länge nach der **längsten** Lage:
+jede Variante kann eine andere wählen, und an der neutralen bemessen wäre der
+Schnitt für eine längere zu großzügig.
+
+#### Zuschnitt ändern
+
+Ein Vergleich ist selten beim ersten Versuch richtig geschnitten — ein Wert
+fehlt, ein Regler war die falsche Frage. **Zuschnitt ändern** auf der
+Vergleichsseite öffnet dieselbe Maske noch einmal, gefüllt.
+
+Was dabei bleiben darf, entscheidet dieselbe Überlegung wie beim Projekt:
+
+* **Was sich in Reglern, Modell und Lage nicht ändert, behält sein Ergebnis.**
+  Einen vierten Wert nachzutragen kostet dann nur die eine neue Zeile.
+* **Textprobe, Stimme oder Engine gewechselt heißt alles neu.** Die Zahlen einer
+  Zeile gelten für genau diese Probe an genau dieser Stimme; gemischt
+  nebeneinandergestellt beantworteten sie keine Frage mehr.
+
+Weggefallene Varianten nehmen ihren erzeugten Ton mit — er gehört zu einer Zeile,
+die es nicht mehr gibt.
+
+#### Die Maske
+
+Sie ist gebaut wie die Ergebniskarte daneben, und darunter steht eine **Vorschau**
+derselben Form: welche Zeilen dieser Zuschnitt ergäbe, mit Namen, noch ohne
+Zahlen. Man sieht damit vor dem Rendern, was entsteht, statt es nach zwölf Minuten
+Rechenzeit zu erfahren.
+
+Die Reglerwerte werden **ausgewählt, nicht getippt**. Jeder Regler steht auf seinem
+Vorgabewert; „+ Wert“ hängt ein weiteres Auswahlfeld an, „×“ nimmt eines weg. Vorher
+stand dort ein Textfeld für „0.8, 1.0, 1.2“, und ein Tippfehler darin fiel
+stillschweigend weg — im Raster fehlte dann einfach eine Zeile, ohne dass es
+jemand merkte.
+
+Die **Textprobe** steckt hinter „Text bearbeiten“ in einem Seitenfenster. Sie ist
+das Längste am Formular und das, was man am seltensten anfasst; ausgeklappt schob
+sie die Achsen unter den Bildschirmrand. Am Knopf steht die Zeichenzahl, damit
+sichtbar bleibt, dass etwas drinsteht.
 
 ### Was mit der Tonqualität passiert -- und wo die Grenze liegt
 

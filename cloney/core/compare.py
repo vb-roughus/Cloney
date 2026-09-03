@@ -39,7 +39,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from cloney.core.project import Project, derive_seed
-from cloney.engines.base import EngineInfo
+from cloney.engines.base import NEUTRAL, EngineInfo
 
 _MANIFEST = "comparison.json"
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -65,6 +65,8 @@ class Variant(BaseModel):
     #: Trainierter Stand, gegen den gerendert wird. Leer = der Pretrain aus der
     #: Konfiguration.
     model: str = ""
+    #: Emotionslage, gegen deren Aufnahme konditioniert wird. Leer = neutral.
+    lage: str = ""
     #: Kennung des Projekts, das diese Variante gerendert hat. Leer = noch keins.
     project_id: str = ""
     status: VariantStatus = VariantStatus.PENDING
@@ -77,6 +79,16 @@ class Variant(BaseModel):
     def is_done(self) -> bool:
         return self.status == VariantStatus.DONE
 
+    @property
+    def kennung(self) -> tuple:
+        """Was diese Variante ausmacht -- ohne Beschriftung und Messwerte.
+
+        Daran erkennt ein bearbeiteter Vergleich seine alten Zeilen wieder: was
+        gleich bleibt, behält sein Ergebnis, statt noch einmal gerendert zu
+        werden.
+        """
+        return (tuple(sorted(self.options.items())), self.model, self.lage)
+
 
 class Comparison(BaseModel):
     id: str
@@ -87,6 +99,8 @@ class Comparison(BaseModel):
     text: str
     #: Trainierte Stände, die verglichen werden. Leer = nur der Pretrain.
     models: list[str] = Field(default_factory=list)
+    #: Emotionslagen, die verglichen werden. Leer = nur die neutrale.
+    lagen: list[str] = Field(default_factory=list)
     variants: list[Variant] = Field(default_factory=list)
     root: Path = Field(default=Path("."), exclude=True)
 
@@ -105,14 +119,9 @@ class Comparison(BaseModel):
         grid: dict[str, list[float]],
         comparisons_dir: Path,
         models: list[str] | None = None,
+        lagen: list[str] | None = None,
     ) -> Comparison:
-        variants = build_variants(engine, grid, models=models)
-        if not variants:
-            raise ValueError(
-                "Kein Raster: es wurde kein einziger Reglerwert angegeben. Ein einzelner "
-                "trainierter Stand ergibt allein noch keinen Vergleich -- entweder einen "
-                "Regler mit mehreren Werten, oder einen zweiten Stand dazunehmen."
-            )
+        variants = pruefe_raster(build_variants(engine, grid, models=models, lagen=lagen))
 
         comparison_id = _make_id(name)
         root = comparisons_dir / comparison_id
@@ -126,6 +135,7 @@ class Comparison(BaseModel):
             engine=engine.name,
             text=text,
             models=list(models or []),
+            lagen=list(lagen or []),
             variants=variants,
             root=root,
         )
@@ -208,12 +218,87 @@ class Comparison(BaseModel):
         )
         for chunk in project.chunks:
             chunk.seed = derive_seed(self.id, chunk.index, 0)
+            # Die Lage gehört zur Variante, nicht zum einzelnen Satz: verglichen
+            # wird eine Aufnahme gegen eine andere, nicht ein Satz gegen den
+            # nächsten.
+            chunk.lage = variant.lage
         project.engine_options = dict(variant.options)
         project.save()
 
         variant.project_id = project.id
         self.save()
         return project
+
+    def reconfigure(
+        self,
+        *,
+        name: str,
+        text: str,
+        voice: str,
+        engine: EngineInfo,
+        grid: dict[str, list[float]],
+        models: list[str] | None = None,
+        lagen: list[str] | None = None,
+    ) -> dict[str, int]:
+        """Einen bestehenden Vergleich ändern, statt einen neuen anzulegen.
+
+        Ein Vergleich ist selten beim ersten Versuch richtig zugeschnitten: ein
+        Wert fehlt, ein Regler war die falsche Frage, die Probe zu lang. Bisher
+        hieß das, alles noch einmal einzugeben und die schon gerenderten
+        Varianten wegzuwerfen.
+
+        Was bleiben darf, entscheidet dieselbe Überlegung wie beim Projekt:
+
+        * **Text, Stimme oder Engine gewechselt heißt alles neu.** Die Zahlen
+          einer Zeile gelten für genau diese Probe an genau dieser Stimme;
+          gemischt nebeneinandergestellt beantworteten sie keine Frage mehr.
+        * **Sonst behält jede Zeile ihr Ergebnis**, die sich in Reglern, Modell
+          und Lage nicht geändert hat. Einen vierten Wert nachzutragen kostet
+          dann nur die eine neue Zeile.
+
+        Gibt zurück, wie viele Varianten behalten, neu angelegt und verworfen
+        wurden.
+        """
+        neue = pruefe_raster(build_variants(engine, grid, models=models, lagen=lagen))
+        uebernehmbar = text == self.text and voice == self.voice and engine.name == self.engine
+
+        vorhanden = {v.kennung: v for v in self.variants} if uebernehmbar else {}
+        behalten = 0
+        zusammengesetzt: list[Variant] = []
+        for variante in neue:
+            alt = vorhanden.pop(variante.kennung, None)
+            if alt is None:
+                zusammengesetzt.append(variante)
+                continue
+            # Die Beschriftung kommt aus dem neuen Raster: welche Regler eine
+            # Zeile unterscheiden, hängt am ganzen Raster und kann sich mit ihm
+            # geändert haben.
+            zusammengesetzt.append(
+                alt.model_copy(update={"slug": variante.slug, "label": variante.label})
+            )
+            behalten += 1
+
+        # Was wegfällt, nimmt seinen erzeugten Ton mit. Er gehört zu einer Zeile,
+        # die es nicht mehr gibt, und niemand käme je wieder an ihn heran.
+        entfernt = len(self.variants) - behalten
+        weg = vorhanden.values() if uebernehmbar else self.variants
+        for verwaist in weg:
+            self._verwerfen(verwaist)
+
+        self.name = name.strip() or self.name
+        self.text = text
+        self.voice = voice
+        self.engine = engine.name
+        self.models = list(models or [])
+        self.lagen = list(lagen or [])
+        self.variants = zusammengesetzt
+        self.save()
+        return {"behalten": behalten, "neu": len(zusammengesetzt) - behalten, "entfernt": entfernt}
+
+    def _verwerfen(self, variant: Variant) -> None:
+        """Den Ordner einer weggefallenen Variante entfernen."""
+        if variant.project_id:
+            shutil.rmtree(self.variants_dir / variant.project_id, ignore_errors=True)
 
     def record(self, slug: str, project: Project) -> Variant:
         """Übernimmt die Messwerte eines fertigen Variantenlaufs ins Manifest."""
@@ -291,8 +376,32 @@ def _best(variants: list[Variant], feld: str, *, niedriger_ist_besser: bool) -> 
     return set() if len(spitze) == len(kandidaten) else spitze
 
 
+#: Weniger als zwei Zeilen sind kein Vergleich.
+MIN_VARIANTS = 2
+
+
+def pruefe_raster(variants: list[Variant]) -> list[Variant]:
+    """Ein Raster mit weniger als zwei Zeilen zurückweisen -- mit dem Weg heraus.
+
+    Seit die Regler mit ihrem Vorgabewert vorbelegt sind, entsteht das leicht
+    aus Versehen: alle Achsen stehen auf einem Wert, und das Ergebnis wäre ein
+    einzelner Lauf, der nichts vergleicht. Die Meldung sagt deshalb nicht nur,
+    dass es zu wenig ist, sondern welche drei Achsen es gibt.
+    """
+    if len(variants) >= MIN_VARIANTS:
+        return variants
+    raise ValueError(
+        "Für einen Vergleich braucht es mindestens zwei Varianten. Eine zweite "
+        "entsteht durch einen zweiten Wert bei einem Regler, eine zweite "
+        "Emotionslage oder ein zweites Modell."
+    )
+
+
 def build_variants(
-    engine: EngineInfo, grid: dict[str, list[float]], models: list[str] | None = None
+    engine: EngineInfo,
+    grid: dict[str, list[float]],
+    models: list[str] | None = None,
+    lagen: list[str] | None = None,
 ) -> list[Variant]:
     """Kreuzprodukt der angegebenen Reglerwerte.
 
@@ -304,6 +413,8 @@ def build_variants(
     # Zeilen, die nur Rechenzeit kosten. Die Reihenfolge bleibt, wie sie
     # angegeben wurde -- sie bestimmt die Reihenfolge der Zeilen.
     modelle = list(dict.fromkeys(models or []))
+    # Dieselbe Regel für die Lagen: doppelt genannt ergäbe zwei gleiche Zeilen.
+    stimmlagen = list(dict.fromkeys(lagen or []))
     achsen: list[tuple[str, list[float]]] = []
     for option in engine.options:
         werte = grid.get(option.key)
@@ -318,38 +429,65 @@ def build_variants(
                 eindeutig.append(geklemmt)
         achsen.append((option.key, eindeutig))
 
-    # Ohne Regler, aber mit mehreren Modellen ist der Vergleich trotzdem
-    # sinnvoll -- dann ist das Modell die einzige Achse.
+    # Ohne Regler ist der Vergleich trotzdem sinnvoll, sobald Modell oder Lage
+    # mehr als einen Wert haben -- dann ist eben das die Achse.
     staende = list(modelle or [])
-    if not achsen and len(staende) < 2:
+    if not achsen and len(staende) < 2 and len(stimmlagen) < 2:
         return []
 
-    #: Nur die Regler, die sich tatsächlich ändern, gehören in die Beschriftung.
-    #: Ändert sich keiner, wären alle Zeilen gleich benannt -- dann müssen alle
-    #: hinein. Es sei denn, das Modell unterscheidet die Zeilen ohnehin.
+    #: Nur was sich tatsächlich ändert, gehört in die Beschriftung. Ändert sich
+    #: kein Regler, wären alle Zeilen gleich benannt -- dann müssen alle hinein.
+    #: Es sei denn, Modell oder Lage unterscheiden die Zeilen ohnehin.
+    andere_achsen = len(staende) > 1 or len(stimmlagen) > 1
     variabel = {key for key, werte in achsen if len(werte) > 1}
-    if not variabel and len(staende) < 2:
+    if not variabel and not andere_achsen:
         variabel = {key for key, _ in achsen}
 
     kombinationen = list(itertools.product(*(werte for _, werte in achsen))) or [()]
     variants: list[Variant] = []
+    vergeben: set[str] = set()
     for modell in staende or [""]:
-        for kombination in kombinationen:
-            options = {key: wert for (key, _), wert in zip(achsen, kombination, strict=True)}
-            teile = [
-                f"{_label(engine, key)} {_zahl(engine, key, wert)}"
-                for key, wert in options.items()
-                if key in variabel
-            ]
-            if len(staende) > 1:
-                teile.insert(0, modell or "Pretrain")
-            label = " · ".join(teile) or (modell or "Pretrain")
-            variants.append(
-                Variant(slug=_slugify(label), label=label, options=options, model=modell)
-            )
-            if len(variants) == MAX_VARIANTS:
-                return variants
+        for lage in stimmlagen or [""]:
+            for kombination in kombinationen:
+                options = {key: wert for (key, _), wert in zip(achsen, kombination, strict=True)}
+                teile = [
+                    f"{_label(engine, key)} {_zahl(engine, key, wert)}"
+                    for key, wert in options.items()
+                    if key in variabel
+                ]
+                if len(stimmlagen) > 1:
+                    teile.insert(0, lage or NEUTRAL)
+                if len(staende) > 1:
+                    teile.insert(0, modell or "Pretrain")
+                label = " · ".join(teile) or (modell or "Pretrain")
+                variants.append(
+                    Variant(
+                        slug=_eindeutig(_slugify(label), vergeben),
+                        label=label,
+                        options=options,
+                        model=modell,
+                        lage=lage,
+                    )
+                )
+                if len(variants) == MAX_VARIANTS:
+                    return variants
     return variants
+
+
+def _eindeutig(slug: str, vergeben: set[str]) -> str:
+    """Ein Slug, den es im Vergleich noch nicht gibt.
+
+    Er wird aus der Beschriftung gebildet und auf vierzig Zeichen gekürzt. Mit
+    drei Achsen werden Beschriftungen lang, und zwei können hinter der Kürzung
+    gleich aussehen -- dann zeigten die Tonspur und der Weg zum Projekt beide
+    auf dieselbe Zeile.
+    """
+    kandidat, zaehler = slug, 1
+    while kandidat in vergeben:
+        zaehler += 1
+        kandidat = f"{slug}-{zaehler}"
+    vergeben.add(kandidat)
+    return kandidat
 
 
 def _label(engine: EngineInfo, key: str) -> str:

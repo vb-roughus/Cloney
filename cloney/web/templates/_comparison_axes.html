@@ -1,0 +1,82 @@
+{#
+  Die Achsen eines Vergleichs: Regler, Modelle, Emotionslagen.
+
+  Sie hängen an Engine und Stimme und werden beim Wechsel neu geladen -- eine
+  andere Engine hat andere Regler, eine andere Stimme andere Lagen.
+
+  Jeder Regler steht mit seinem Vorgabewert da, nicht leer. Ein leeres Feld
+  beantwortet die Frage nicht, die man beim Anlegen hat: was ist der Ausgangs-
+  punkt, von dem ich abweiche? Eine zweite Zeile dazu, und die Achse ist da.
+
+  Braucht: engine, lagen_der_stimme, gewaehlte_werte, gewaehlte_modelle,
+  gewaehlte_lagen, models.
+#}
+<div id="achsen" class="achsen">
+  {% if engine.options %}
+    {% for option in engine.options %}
+    <div class="achse">
+      <div class="achsenkopf">
+        <strong>{{ option.label }}</strong>
+        <span class="muted">{{ option.help }}</span>
+      </div>
+      <div class="werte" id="werte-{{ option.key }}">
+        {% for wert in gewaehlte_werte.get(option.key) or [option.default] %}
+          {% include "_wertfeld.html" %}
+        {% endfor %}
+      </div>
+      <button type="button" class="small secondary"
+              hx-get="/comparisons/wertfeld?engine={{ engine.name }}&amp;key={{ option.key }}"
+              hx-target="#werte-{{ option.key }}" hx-swap="beforeend">
+        &plus; Wert
+      </button>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="notice">Diese Engine bietet keine Regler an. Vergleichen lassen sich
+      dann nur Modelle oder Emotionslagen.</p>
+  {% endif %}
+
+  {% if lagen_der_stimme | length > 1 %}
+  <div class="achse">
+    <div class="achsenkopf">
+      <strong>Emotionslage</strong>
+      <span class="muted">Mehrere angehakt heißt: die Lage wird zur Achse. Verglichen
+        werden dann dieselben Sätze gegen verschiedene Aufnahmen derselben Stimme.</span>
+    </div>
+    <div class="modelle">
+      {% for lage in lagen_der_stimme %}
+      <label class="ankreuz{% if lage in gewaehlte_lagen %} gewaehlt{% endif %}">
+        <input type="checkbox" name="lagen" value="{{ lage }}"
+               {% if lage in gewaehlte_lagen %}checked{% endif %}> {{ lage }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if models %}
+  <div class="achse">
+    <div class="achsenkopf">
+      <strong>Modell</strong>
+      <span class="muted">„Pretrain“ ist der Stand, von dem ein Finetune ausging &mdash;
+        ihn mitlaufen zu lassen ist die einzige Art, zu belegen, dass das Training
+        etwas gebracht hat.</span>
+    </div>
+    <div class="modelle">
+      <label class="ankreuz{% if '' in gewaehlte_modelle %} gewaehlt{% endif %}">
+        <input type="checkbox" name="models" value=""
+               {% if '' in gewaehlte_modelle %}checked{% endif %}> Pretrain
+      </label>
+      {% for m in models %}
+      <label class="ankreuz{% if m.name in gewaehlte_modelle %} gewaehlt{% endif %}">
+        <input type="checkbox" name="models" value="{{ m.name }}"
+               {% if not m.exists %}disabled{% elif m.name in gewaehlte_modelle %}checked{% endif %}>
+        {{ m.name }}
+        {% if m.note %}<span class="muted">{{ m.note }}</span>{% endif %}
+        {% if not m.exists %}<span class="warn-text">Datei fehlt</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>

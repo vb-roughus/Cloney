@@ -385,7 +385,10 @@ def run_comparison(
     """
     messsettings = settings.model_copy(update={"max_retries": 0})
     info = _engine_info(comparison.engine)
-    reference = voice_store.get(comparison.voice)
+    # Nach der längsten Lage geschnitten: jede Variante kann eine andere wählen,
+    # und an der neutralen bemessen wäre der Schnitt für eine längere zu
+    # großzügig -- das Modell teilte dann selbst.
+    referenzlaenge = voice_store.longest_reference_seconds(comparison.voice)
     gesamt = len(comparison.variants)
 
     for nummer, variant in enumerate(comparison.variants, start=1):
@@ -396,7 +399,7 @@ def run_comparison(
         on_event(ProgressEvent("compare", f"{variant.label}", nummer - 1, gesamt))
 
         try:
-            project = comparison.prepare(variant.slug, info, reference.duration_s)
+            project = comparison.prepare(variant.slug, info, referenzlaenge)
             run_project(
                 project,
                 messsettings,

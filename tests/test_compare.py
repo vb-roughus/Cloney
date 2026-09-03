@@ -69,8 +69,15 @@ def test_doppelte_werte_ergeben_keine_doppelten_zeilen() -> None:
 
 
 def test_raster_ohne_werte_wird_abgelehnt(settings: Settings) -> None:
-    with pytest.raises(ValueError, match="Kein Raster"):
+    with pytest.raises(ValueError, match="mindestens zwei Varianten"):
         _comparison(settings, {})
+
+
+def test_eine_einzelne_variante_ist_kein_vergleich(settings: Settings) -> None:
+    """Seit die Regler mit ihrer Vorgabe vorbelegt sind, entsteht das leicht aus
+    Versehen: alle Achsen auf einem Wert, und es gäbe nichts zu vergleichen."""
+    with pytest.raises(ValueError, match="mindestens zwei Varianten"):
+        _comparison(settings, {"speed": [1.0]})
 
 
 def test_raster_ist_gedeckelt() -> None:
@@ -120,13 +127,14 @@ def test_alle_varianten_teilen_dieselben_seeds(settings: Settings, voice_store: 
 def test_vergleich_wuerfelt_nicht_nach(settings: Settings, voice_store: VoiceStore) -> None:
     """Ein Wiederholungsversuch vergäbe einen neuen Seed und verwischte genau
     das, was gemessen werden soll."""
-    comparison = _comparison(settings, {"speed": [1.0]})
+    comparison = _comparison(settings, {"speed": [0.9, 1.1]})
     strenge = settings.model_copy(update={"max_retries": 3, "cer_threshold": -1.0})
 
     run_comparison(comparison, strenge, voice_store, _engine, DummyASR)
 
-    project = comparison.variant_project(comparison.variants[0].slug)
-    assert all(c.attempts == 0 for c in project.chunks)
+    for variante in comparison.variants:
+        project = comparison.variant_project(variante.slug)
+        assert all(c.attempts == 0 for c in project.chunks)
 
 
 def test_gescheiterte_variante_bricht_den_vergleich_nicht_ab(
@@ -196,13 +204,13 @@ def test_ohne_messwerte_gibt_es_keinen_spitzenreiter(settings: Settings) -> None
 
 
 def test_manifest_uebersteht_den_neustart(settings: Settings, voice_store: VoiceStore) -> None:
-    comparison = _comparison(settings, {"speed": [1.0]})
+    comparison = _comparison(settings, {"speed": [0.8, 1.2]})
     run_comparison(comparison, settings, voice_store, _engine, DummyASR)
 
     geladen = Comparison.load(comparison.root)
     assert geladen.is_complete
     assert geladen.text == PROBE
-    assert geladen.variants[0].options == {"speed": 1.0}
+    assert geladen.variants[0].options == {"speed": 0.8}
     assert Comparison.list_all(settings.comparisons_dir)[0].id == comparison.id
 
 
@@ -212,7 +220,7 @@ def test_kennung_darf_nicht_aus_dem_datenverzeichnis_zeigen(settings: Settings) 
 
 
 def test_loeschen_raeumt_die_varianten_mit_weg(settings: Settings, voice_store: VoiceStore) -> None:
-    comparison = _comparison(settings, {"speed": [1.0]})
+    comparison = _comparison(settings, {"speed": [0.8, 1.2]})
     run_comparison(comparison, settings, voice_store, _engine, DummyASR)
     root = comparison.root
 
@@ -296,3 +304,142 @@ def test_das_modell_erreicht_die_engine(settings: Settings, voice_store: VoiceSt
     run_comparison(comparison, settings, voice_store, merkend, DummyASR)
 
     assert gesehen == ["", "anna-ft"]
+
+
+# -- Emotionslage als Achse -------------------------------------------------
+
+
+def test_lagen_werden_zur_achse(settings: Settings) -> None:
+    """Dieselben Sätze gegen verschiedene Aufnahmen derselben Stimme."""
+    variants = build_variants(DummyEngine.info, {"speed": [1.0]}, lagen=["neutral", "ernst"])
+
+    assert [v.lage for v in variants] == ["neutral", "ernst"]
+    assert [v.label for v in variants] == ["neutral", "ernst"]
+
+
+def test_lage_und_regler_kreuzen_sich(settings: Settings) -> None:
+    variants = build_variants(DummyEngine.info, {"speed": [0.8, 1.2]}, lagen=["neutral", "ernst"])
+
+    assert len(variants) == 4
+    assert {(v.lage, v.options["speed"]) for v in variants} == {
+        ("neutral", 0.8),
+        ("neutral", 1.2),
+        ("ernst", 0.8),
+        ("ernst", 1.2),
+    }
+
+
+def test_eine_einzelne_lage_ist_keine_achse(settings: Settings) -> None:
+    """Sie stünde sonst in jeder Beschriftung, ohne etwas zu unterscheiden."""
+    variants = build_variants(DummyEngine.info, {"speed": [0.8, 1.2]}, lagen=["ernst"])
+
+    assert all(v.lage == "ernst" for v in variants)
+    assert all("ernst" not in v.label for v in variants)
+
+
+def test_doppelt_genannte_lage_ergibt_keine_zweite_zeile(settings: Settings) -> None:
+    variants = build_variants(
+        DummyEngine.info, {"speed": [1.0]}, lagen=["ernst", "ernst", "neutral"]
+    )
+
+    assert len(variants) == 2
+
+
+def test_die_lage_landet_auf_allen_saetzen(settings: Settings, voice_store: VoiceStore) -> None:
+    """Verglichen wird eine Aufnahme gegen eine andere, nicht ein Satz gegen
+    den nächsten -- die Lage gehört deshalb zur Variante."""
+    comparison = Comparison.create(
+        name="Lagen",
+        text=PROBE,
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        grid={"speed": [1.0]},
+        comparisons_dir=settings.comparisons_dir,
+        lagen=["neutral", "ernst"],
+    )
+
+    project = comparison.prepare(comparison.variants[1].slug, DummyEngine.info, 8.0)
+
+    assert {c.lage for c in project.chunks} == {"ernst"}
+
+
+def test_slugs_bleiben_eindeutig(settings: Settings) -> None:
+    """Mit drei Achsen werden Beschriftungen lang, und zwei können hinter der
+    Kürzung auf vierzig Zeichen gleich aussehen."""
+    variants = build_variants(
+        DummyEngine.info,
+        {"speed": [0.8, 1.2]},
+        models=[
+            "ein-sehr-langer-name-fuer-einen-trainierten-stand-eins",
+            "ein-sehr-langer-name-fuer-einen-trainierten-stand-zwei",
+        ],
+    )
+
+    slugs = [v.slug for v in variants]
+    assert len(set(slugs)) == len(slugs)
+
+
+# -- Zuschnitt ändern -------------------------------------------------------
+
+
+def _geaendert(comparison: Comparison, **abweichung) -> dict[str, int]:
+    argumente = {
+        "name": comparison.name,
+        "text": comparison.text,
+        "voice": comparison.voice,
+        "engine": DummyEngine.info,
+        "grid": {"speed": [0.8, 1.2]},
+    }
+    argumente.update(abweichung)
+    return comparison.reconfigure(**argumente)
+
+
+def test_ein_nachgetragener_wert_kostet_nur_die_neue_zeile(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    comparison = _comparison(settings, {"speed": [0.8, 1.2]})
+    run_comparison(comparison, settings, voice_store, _engine, DummyASR)
+
+    bericht = _geaendert(comparison, grid={"speed": [0.8, 1.2, 1.4]})
+
+    assert bericht == {"behalten": 2, "neu": 1, "entfernt": 0}
+    assert [v.is_done for v in comparison.variants] == [True, True, False]
+
+
+def test_ein_anderer_text_verwirft_alle_ergebnisse(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Zahlen einer Zeile gelten für genau diese Probe."""
+    comparison = _comparison(settings, {"speed": [0.8, 1.2]})
+    run_comparison(comparison, settings, voice_store, _engine, DummyASR)
+
+    bericht = _geaendert(comparison, text="Ein ganz anderer Satz.")
+
+    assert bericht == {"behalten": 0, "neu": 2, "entfernt": 2}
+    assert not any(v.is_done for v in comparison.variants)
+
+
+def test_weggefallene_varianten_nehmen_ihren_ton_mit(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Er gehört zu einer Zeile, die es nicht mehr gibt."""
+    comparison = _comparison(settings, {"speed": [0.8, 1.2]})
+    run_comparison(comparison, settings, voice_store, _engine, DummyASR)
+    ordner = comparison.variant_root(comparison.variants[1].slug)
+    assert ordner.exists()
+
+    _geaendert(comparison, grid={"speed": [0.8, 1.4]})
+
+    assert not ordner.exists()
+
+
+def test_aendern_auf_eine_einzige_variante_wird_abgelehnt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    comparison = _comparison(settings, {"speed": [0.8, 1.2]})
+
+    with pytest.raises(ValueError, match="mindestens zwei Varianten"):
+        _geaendert(comparison, grid={"speed": [1.0]})
+
+    # Und der Vergleich steht unverändert da, statt halb geändert.
+    assert len(Comparison.load(comparison.root).variants) == 2

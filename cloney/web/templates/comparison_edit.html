@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ comparison.name }} bearbeiten &mdash; Cloney{% endblock %}
+{% block content %}
+<header class="seitenkopf">
+  <h1>Zuschnitt ändern</h1>
+  <p class="kennzahlen">
+    <span><a href="/comparisons/{{ comparison.id }}">zurück zum Vergleich</a></span>
+  </p>
+</header>
+
+<p class="muted">
+  Was sich in Reglern, Modell und Lage nicht ändert, behält sein Ergebnis &mdash; einen
+  vierten Wert nachzutragen kostet dann nur die eine neue Zeile. Ein Wechsel von
+  Textprobe, Stimme oder Engine verwirft dagegen alles: die Zahlen einer Zeile gelten
+  für genau diese Probe an genau dieser Stimme, und gemischt nebeneinandergestellt
+  beantworteten sie keine Frage mehr.
+</p>
+
+{% set ziel = "/comparisons/" ~ comparison.id ~ "/edit" %}
+{% set absenden = "Zuschnitt übernehmen" %}
+{% include "_comparison_form.html" %}
+{% endblock %}
