@@ -1,0 +1,44 @@
+{#
+  Was aus dem Zuschnitt würde -- in derselben Form wie die Ergebnistabelle
+  daneben, nur ohne Zahlen. Man sieht damit vor dem Rendern, wie viele Zeilen
+  entstehen und wie sie heißen, statt es nach zwölf Minuten Rechenzeit zu
+  erfahren.
+
+  Sie hängt nicht am Formular, sondern liegt daneben und holt sich dessen Werte
+  -- sonst löste ihr eigener Austausch wieder ein change im Formular aus.
+
+  Braucht: vorschau (Liste von Variant), vorschau_fehler.
+#}
+<div id="vorschau" class="card status"
+     hx-get="/comparisons/vorschau" hx-include="#vergleichsform"
+     hx-trigger="change from:#vergleichsform, htmx:afterSwap from:#vergleichsform"
+     hx-swap="outerHTML">
+
+  <div class="statline">
+    <span class="badge {% if vorschau_fehler %}warn{% else %}ok{% endif %}">
+      {% if vorschau_fehler %}unfertig{% else %}bereit{% endif %}
+    </span>
+    <span>{{ vorschau | length }} {{ "Variante" if vorschau | length == 1 else "Varianten" }}</span>
+  </div>
+
+  {% if vorschau_fehler %}
+    <p class="joblog">{{ vorschau_fehler }}</p>
+  {% else %}
+  <table class="vergleich">
+    <tr><th>Variante</th><th>Regler</th><th>Modell</th><th>Lage</th></tr>
+    {% for v in vorschau %}
+    <tr>
+      <td><strong>{{ v.label }}</strong></td>
+      <td class="muted">{% for key, wert in v.options.items() %}{{ key }}={{ "%g"|format(wert) }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td class="muted">{{ v.model or "Pretrain" }}</td>
+      <td class="muted">{{ v.lage or "neutral" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if vorschau | length == max_variants %}
+    <p class="joblog">Bei {{ max_variants }} Varianten ist Schluss &mdash; weitere
+      Werte fallen weg. Lieber zwei Vergleiche nacheinander als einer, der über
+      Nacht läuft.</p>
+  {% endif %}
+  {% endif %}
+</div>

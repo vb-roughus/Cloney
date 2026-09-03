@@ -1085,6 +1085,13 @@ def compare(
         help="Trainierter Stand. Mehrfach möglich; leer heißt Pretrain. "
         "Mit mehreren wird auch über die Stände verglichen.",
     ),
+    lage: list[str] = typer.Option(
+        None,
+        "--lage",
+        "-l",
+        help="Emotionslage der Stimme. Mehrfach möglich; mit mehreren wird auch "
+        "über die Lagen verglichen.",
+    ),
     qc: bool = typer.Option(True, help="Qualitätskontrolle per Spracherkennung."),
 ) -> None:
     """Dieselbe Textprobe je Reglerstellung einmal rendern und gegenüberstellen.
@@ -1118,6 +1125,7 @@ def compare(
             grid=_parse_grid(grid, info),
             comparisons_dir=settings.comparisons_dir,
             models=_parse_models(model, settings),
+            lagen=_parse_lagen(lage, store, voice),
         )
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED)
@@ -1146,6 +1154,26 @@ def compare(
         _embedder_factory(settings, qc),
     )
     _print_comparison(comparison)
+
+
+def _parse_lagen(namen: list[str] | None, store: VoiceStore, voice: str) -> list[str]:
+    """Lagennamen gegen die Stimme prüfen, bevor der Lauf beginnt.
+
+    Eine Lage, die es bei dieser Stimme nicht gibt, fiele beim Rendern auf die
+    Hauptaufnahme zurück -- am Ende stünden zwei Zeilen da, die dasselbe messen,
+    und niemand wüsste warum. Lieber gleich abbrechen.
+    """
+    if not namen:
+        return []
+    vorhanden = store.lagen(voice)
+    for name in namen:
+        if name not in vorhanden:
+            typer.secho(
+                f"Die Stimme '{voice}' hat keine Lage '{name}'. Vorhanden: {', '.join(vorhanden)}",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+    return list(namen)
 
 
 def _parse_models(namen: list[str] | None, settings: Settings) -> list[str]:

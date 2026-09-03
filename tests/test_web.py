@@ -23,7 +23,7 @@ from cloney.core.project import ChunkStatus, Project
 from cloney.core.voices import VoiceStore
 from cloney.engines.dummy import DummyEngine
 from cloney.web.app import anzahl, create_app, zeitpunkt
-from cloney.web.jobs import JobRunner
+from cloney.web.jobs import ComparisonRunner, JobRunner
 
 TEXT = "Am 3. Mai 2024 begann es.\n\nDr. Meier sagte z.B. nichts dazu. Dann war Ruhe."
 
@@ -670,9 +670,59 @@ def test_tippfehler_in_einer_achse_verwirft_nicht_das_formular(
 
 def test_reglerfelder_folgen_der_engine(settings: Settings, voice_store: VoiceStore) -> None:
     client = _client(settings)
-    felder = client.get("/comparisons/fields", params={"engine": "f5-de"}).text
+    felder = client.get(
+        "/comparisons/achsen", params={"engine": "f5-de", "voice": "test-stimme"}
+    ).text
     assert 'name="werte_nfe_step"' in felder
     assert 'name="werte_pitch"' not in felder
+
+
+def test_regler_stehen_auf_ihrer_vorgabe(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ein leeres Feld beantwortet die Frage nicht, die man beim Anlegen hat:
+    was ist der Ausgangspunkt, von dem ich abweiche?"""
+    client = _client(settings)
+
+    felder = client.get(
+        "/comparisons/achsen", params={"engine": "f5-de", "voice": "test-stimme"}
+    ).text
+
+    # Auf Formatierung zu prüfen wäre brüchig -- gemeint ist, welcher Wert
+    # vorgewählt ist. Die Vorgaben sind 1.0, 32 und 2.0.
+    gewaehlt = re.findall(r'<option value="([^"]+)"\s+selected>', felder)
+    assert gewaehlt == ["1", "32", "2"]
+
+
+def test_gewaehlte_werte_ueberstehen_den_stimmwechsel(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Wer nur die Stimme wechselt, soll nicht sein Raster verlieren."""
+    client = _client(settings)
+
+    felder = client.get(
+        "/comparisons/achsen",
+        params={"engine": "dummy", "voice": "test-stimme", "werte_speed": ["0.7", "1.3"]},
+    ).text
+
+    assert felder.count('name="werte_speed"') == 2
+
+
+def test_ein_weiteres_wertfeld_kommt_auf_anforderung(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+
+    feld = client.get("/comparisons/wertfeld", params={"engine": "dummy", "key": "speed"}).text
+
+    assert 'name="werte_speed"' in feld
+    assert "data-entfernen" in feld
+
+
+def test_unbekannter_regler_hat_kein_wertfeld(settings: Settings, voice_store: VoiceStore) -> None:
+    antwort = _client(settings).get(
+        "/comparisons/wertfeld", params={"engine": "dummy", "key": "gibtesnicht"}
+    )
+
+    assert antwort.status_code == 404
 
 
 def test_ruhende_vergleichstabelle_hat_keinen_ausloeser(
@@ -1452,3 +1502,150 @@ def test_neutral_laesst_sich_nicht_einzeln_loeschen(
 
     assert antwort.status_code == 400
     assert "Hauptaufnahme" in antwort.text
+
+
+# -- Zuschnitt eines Vergleichs --------------------------------------------
+
+
+def test_vorschau_zeigt_die_zeilen_vor_dem_rendern(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Sonst erfährt man erst nach zwölf Minuten Rechenzeit, was entstanden ist."""
+    client = _client(settings)
+
+    seite = client.get(
+        "/comparisons/vorschau",
+        params={"engine": "dummy", "voice": "test-stimme", "werte_speed": ["0.8", "1.2"]},
+    ).text
+
+    assert "2 Varianten" in seite
+    assert "Sprechtempo 0.8" in seite
+    assert "Sprechtempo 1.2" in seite
+
+
+def test_vorschau_sagt_wenn_es_nichts_zu_vergleichen_gibt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+
+    seite = client.get(
+        "/comparisons/vorschau",
+        params={"engine": "dummy", "voice": "test-stimme", "werte_speed": ["1.0"]},
+    ).text
+
+    assert "mindestens zwei Varianten" in seite
+    assert "unfertig" in seite
+
+
+def test_die_textprobe_steckt_hinter_einem_knopf(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Sie ist das Längste am Formular und das, was man am seltensten anfasst."""
+    seite = _client(settings).get("/comparisons").text
+
+    assert 'data-oeffnet="#textfenster"' in seite
+    assert '<dialog id="textfenster" class="seitenfenster">' in seite
+
+
+def test_die_probe_ist_kein_pflichtfeld(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ein Pflichtfeld in einem geschlossenen Fenster kann der Browser nicht
+    anspringen -- er lehnte das Absenden dann wortlos ab. Geprüft wird auf dem
+    Server."""
+    client = _client(settings)
+    seite = client.get("/comparisons").text
+    fenster = seite[seite.index('<dialog id="textfenster"') :]
+    assert "required" not in fenster[: fenster.index("</dialog>")]
+
+    antwort = client.post(
+        "/comparisons",
+        data={
+            "name": "Ohne Text",
+            "voice": "test-stimme",
+            "engine": "dummy",
+            "text": "",
+            "werte_speed": ["0.8", "1.2"],
+        },
+    )
+    assert antwort.status_code == 400
+    assert "Textprobe ist leer" in antwort.text
+
+
+def test_vergleich_laesst_sich_aendern(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    comparison_id = _create_comparison(client, werte_speed="0.8, 1.2")
+
+    antwort = client.post(
+        f"/comparisons/{comparison_id}/edit",
+        data={
+            "name": "Neuer Name",
+            "voice": "test-stimme",
+            "engine": "dummy",
+            "text": "Ein Satz.",
+            "werte_speed": ["0.8", "1.2", "1.4"],
+        },
+        follow_redirects=False,
+    )
+
+    assert antwort.status_code == 303
+    geladen = Comparison.load(settings.comparisons_dir / comparison_id)
+    assert geladen.name == "Neuer Name"
+    assert len(geladen.variants) == 3
+
+
+def test_die_maske_zum_aendern_ist_gefuellt(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    comparison_id = _create_comparison(client, werte_speed="0.7, 1.3")
+
+    seite = client.get(f"/comparisons/{comparison_id}/edit").text
+
+    gewaehlt = re.findall(r'<option value="([^"]+)"\s+selected>', seite)
+    assert "0.7" in gewaehlt
+    assert "1.3" in gewaehlt
+
+
+def test_vergleich_aendern_waehrend_eines_laufs_wird_abgelehnt(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sonst zöge der Umbau dem laufenden Renderer die Varianten unter den
+    Füßen weg."""
+    client = _client(settings)
+    comparison_id = _create_comparison(client, werte_speed="0.8, 1.2")
+    # Vergleiche haben einen eigenen Runner -- JobRunner zu patchen wirkte hier
+    # nicht, und der Test wäre grün geworden, ohne etwas zu prüfen.
+    monkeypatch.setattr(ComparisonRunner, "is_running", lambda self, key: True)
+
+    antwort = client.post(
+        f"/comparisons/{comparison_id}/edit",
+        data={
+            "name": "X",
+            "voice": "test-stimme",
+            "engine": "dummy",
+            "text": "Ein Satz.",
+            "werte_speed": ["0.8", "1.2"],
+        },
+    )
+
+    assert antwort.status_code == 409
+
+
+def test_unbekannte_lage_faellt_aus_dem_zuschnitt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Sie fiele beim Rendern ohnehin auf die Hauptaufnahme zurück -- dann
+    stünden zwei Zeilen da, die dasselbe messen."""
+    client = _client(settings)
+
+    antwort = client.post(
+        "/comparisons",
+        data={
+            "name": "Lagen",
+            "voice": "test-stimme",
+            "engine": "dummy",
+            "text": "Ein Satz.",
+            "werte_speed": ["1.0"],
+            "lagen": ["neutral", "gibtesnicht"],
+        },
+    )
+
+    assert antwort.status_code == 400
+    assert "mindestens zwei Varianten" in antwort.text

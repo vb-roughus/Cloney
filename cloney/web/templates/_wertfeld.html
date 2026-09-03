@@ -1,0 +1,20 @@
+{#
+  Ein Wert einer Achse. Eine Auswahlliste statt eines Feldes, in das eine Zahl
+  getippt wird: die einstellbaren Werte stehen fest, und ein Tippfehler wurde
+  vorher stillschweigend übergangen -- '0.o8' fiel beim Einlesen weg, und im
+  Raster fehlte einfach eine Zeile, ohne dass es jemand merkte.
+
+  Braucht: option, wert.
+#}
+<span class="wertfeld">
+  <select name="werte_{{ option.key }}" aria-label="{{ option.label }}">
+    {% for w in option.steps() %}
+      <option value="{{ option.formatiere(w) }}"
+        {% if option.formatiere(w) == option.formatiere(wert) %}selected{% endif %}>
+        {{ option.formatiere(w) }}</option>
+    {% endfor %}
+  </select>
+  <button type="button" class="small secondary entfernen" data-entfernen
+          title="Diesen Wert aus dem Raster nehmen"
+          aria-label="{{ option.label }}: diesen Wert entfernen">&times;</button>
+</span>

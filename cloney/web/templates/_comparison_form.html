@@ -1,0 +1,87 @@
+{#
+  Der Zuschnitt eines Vergleichs -- beim Anlegen wie beim Ändern dieselbe Maske.
+
+  Sie ist gebaut wie die Ergebniskarte daneben: eine Karte mit Kopfzeile,
+  darunter die Achsen. Was man einstellt und was dabei herauskommt, steht
+  dadurch in derselben Form untereinander, und die Vorschau zeigt schon vor dem
+  Rendern die Zeilen, die entstehen würden.
+
+  Die Textprobe steckt in einem Seitenfenster hinter einem Knopf. Sie ist das
+  Längste am Formular und das, was man am seltensten anfasst -- ausgeklappt
+  schob sie alles Übrige unter den Bildschirmrand.
+
+  Braucht: ziel, absenden, comparison (oder None), engine, engines, voices,
+  models, lagen_der_stimme, gewaehlte_*.
+#}
+<form method="post" action="{{ ziel }}" id="vergleichsform" class="card">
+  <div class="statline">
+    <input type="text" name="name" required class="titelfeld"
+           value="{{ comparison.name if comparison else '' }}"
+           placeholder="Name, z.B. Tempo an Annas Stimme">
+    <span class="fueller"></span>
+    {% set zeichen = (comparison.text | length) if comparison else 0 %}
+    <button type="button" class="secondary" data-oeffnet="#textfenster">
+      Text bearbeiten
+      <span class="muted" data-zeichenzahl>
+        {%- if zeichen %}{{ zeichen }} Zeichen{% else %}noch leer{% endif -%}
+      </span>
+    </button>
+  </div>
+
+  <div class="row">
+    <label>Stimme
+      <select name="voice"
+              hx-get="/comparisons/achsen" hx-target="#achsen" hx-swap="outerHTML"
+              hx-trigger="change" hx-include="#vergleichsform">
+        {% for v in voices %}
+          <option value="{{ v.name }}"
+            {% if comparison and v.name == comparison.voice %}selected{% endif %}>
+            {{ v.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Engine
+      <select name="engine"
+              hx-get="/comparisons/achsen" hx-target="#achsen" hx-swap="outerHTML"
+              hx-trigger="change" hx-include="#vergleichsform">
+        {% for e in engines %}
+          <option value="{{ e.name }}"
+            {% if e.name == engine.name %}selected{% endif %}>{{ e.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  {% include "_comparison_axes.html" %}
+
+  <div class="aktionen">
+    <button type="submit">{{ absenden }}</button>
+    <span class="muted">Höchstens {{ max_variants }} Varianten. Gerendert wird erst
+      auf Knopfdruck.</span>
+  </div>
+
+  {#
+    Die Probe steht bewusst ohne 'required' da. Ein Pflichtfeld in einem
+    geschlossenen Fenster kann der Browser nicht anspringen -- er lehnte das
+    Absenden dann wortlos ab. Geprüft wird stattdessen auf dem Server, und die
+    Zeichenzahl am Knopf zeigt, dass etwas drinsteht.
+  #}
+  <dialog id="textfenster" class="seitenfenster">
+    <div class="fensterkopf">
+      <strong>Textprobe</strong>
+      <button type="button" class="small secondary" data-schliesst>Fertig</button>
+    </div>
+    <textarea name="text" rows="16"
+      placeholder="Zwei bis drei Sätze genügen.">{{ comparison.text if comparison else '' }}</textarea>
+    <p class="muted">
+      Kurz halten: die Probe wird je Variante einmal vollständig gerendert. Ein paar
+      Sätze mit Ziffern und Fremdwörtern sagen mehr als eine ganze Seite.
+      {% if comparison %}
+        <br>Ein geänderter Text verwirft alle bisherigen Ergebnisse &mdash; sie
+        gelten für genau diese Probe.
+      {% endif %}
+    </p>
+  </dialog>
+</form>
+
+{% include "_comparison_preview.html" %}

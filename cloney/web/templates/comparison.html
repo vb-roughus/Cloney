@@ -9,6 +9,7 @@
     <span>{{ comparison.variants | length }} Varianten</span>
     <span>{{ comparison.text | length }} Zeichen Probe</span>
   </p>
+  <a class="button secondary" href="/comparisons/{{ comparison.id }}/edit">Zuschnitt ändern</a>
 </header>
 
 {% include "_comparison_table.html" %}
@@ -20,6 +21,8 @@
     <tr><th>Engine</th><td>{{ comparison.engine }} <span class="muted">{{ engine.license }}</span></td></tr>
     <tr><th>Textprobe</th><td><span class="spoken">{{ comparison.text }}</span></td></tr>
     <tr><th>Zeichen</th><td>{{ comparison.text | length }}</td></tr>
+    <tr><th>Modelle</th><td>{% for m in comparison.models %}{{ m or "Pretrain" }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">nur der Pretrain</span>{% endfor %}</td></tr>
+    <tr><th>Lagen</th><td>{% for l in comparison.lagen %}{{ l }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">nur die neutrale</span>{% endfor %}</td></tr>
   </table>
   <form method="post" action="/comparisons/{{ comparison.id }}/delete">
     <button class="small gefahr" type="submit"

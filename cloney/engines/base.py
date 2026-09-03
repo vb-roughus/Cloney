@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -44,6 +45,23 @@ class EngineOption:
     def clamp(self, value: float) -> float:
         value = max(self.minimum, min(self.maximum, float(value)))
         return float(int(round(value))) if self.integer else value
+
+    def steps(self) -> list[float]:
+        """Alle einstellbaren Werte, von klein nach groß.
+
+        Damit kann die Oberfläche einen Regler als Auswahlliste anbieten statt
+        als Feld, in das eine Zahl getippt wird. Gerundet wird auf die
+        Nachkommastellen der Schrittweite: 0.5 plus sechsmal 0.05 ergibt in
+        Fließkomma 0.7999999999999999, und das stünde so in der Liste.
+        """
+        stellen = max(0, -Decimal(str(self.step)).as_tuple().exponent)
+        anzahl = int(round((self.maximum - self.minimum) / self.step)) + 1
+        werte = [round(self.minimum + i * self.step, stellen) for i in range(max(1, anzahl))]
+        return [self.clamp(w) for w in werte]
+
+    def formatiere(self, wert: float) -> str:
+        """Ein Wert, wie er in der Oberfläche stehen soll."""
+        return f"{wert:.0f}" if self.integer else f"{wert:g}"
 
 
 @dataclass(frozen=True)

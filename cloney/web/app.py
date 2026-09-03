@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from cloney.config import Settings, get_settings
 from cloney.core.audio import describe_audio, media_type
-from cloney.core.compare import MAX_VARIANTS, Comparison
+from cloney.core.compare import MAX_VARIANTS, Comparison, build_variants, pruefe_raster
 from cloney.core.lexicon import Lexicon
 from cloney.core.models import ModelError, ModelStore, settings_for
 from cloney.core.project import ChunkStatus, Project
@@ -765,56 +765,39 @@ def create_app(
         return Comparison.load(root)
 
     def _grid(formular, info) -> dict[str, list[float]]:  # noqa: ANN001
-        """'0.8, 1.0 1.2' zu Zahlen -- je Regler eine Achse.
+        """Die Reglerwerte aus dem Formular -- je Regler eine Achse.
+
+        Die Oberfläche schickt je Wert ein eigenes Auswahlfeld, also mehrere
+        Felder desselben Namens. Kommagetrennt in einem Feld geht weiterhin: so
+        kommen die Werte aus der Kommandozeile und aus älteren Lesezeichen.
 
         Unlesbares wird übergangen statt abgelehnt: ein Tippfehler in einer von
         drei Achsen soll nicht das ganze Formular zurückweisen.
         """
         achsen: dict[str, list[float]] = {}
         for option in info.options:
-            roh = str(formular.get(f"werte_{option.key}") or "")
-            werte = []
-            for stueck in roh.replace(",", " ").split():
-                try:
-                    werte.append(float(stueck))
-                except ValueError:
-                    continue
+            werte: list[float] = []
+            for feld in formular.getlist(f"werte_{option.key}"):
+                for stueck in str(feld).replace(",", " ").split():
+                    try:
+                        werte.append(float(stueck))
+                    except ValueError:
+                        continue
             if werte:
                 achsen[option.key] = werte
         return achsen
 
-    @app.get("/comparisons", response_class=HTMLResponse)
-    def comparison_index(request: Request, engine: str = "") -> HTMLResponse:
-        gewaehlt = engine or settings.engine
-        return templates.TemplateResponse(
-            request,
-            "comparisons.html",
-            {
-                "comparisons": Comparison.list_all(settings.comparisons_dir),
-                "voices": voices.list_all(),
-                "engines": available_engines(),
-                "models": modelle.list_all(),
-                "default_engine": gewaehlt,
-                "engine": engine_info(gewaehlt),
-                "max_variants": MAX_VARIANTS,
-            },
-        )
+    def _zuschnitt(formular) -> dict[str, object]:  # noqa: ANN001
+        """Alles, was ein Vergleich aus dem Formular braucht -- einmal geprüft.
 
-    @app.get("/comparisons/fields", response_class=HTMLResponse)
-    def comparison_fields(request: Request, engine: str) -> HTMLResponse:
-        """Die Achsen des Rasters hängen an der Engine -- beim Wechsel neu laden."""
-        return templates.TemplateResponse(
-            request, "_grid_fields.html", {"engine": engine_info(engine)}
-        )
-
-    @app.post("/comparisons")
-    async def create_comparison(request: Request) -> RedirectResponse:
-        formular = await request.form()
+        Anlegen und Ändern stellen dieselben Fragen; sie hier zweimal zu
+        beantworten hieße, sie beim nächsten Mal an einer Stelle zu vergessen.
+        """
         text = str(formular.get("text") or "")
         voice = str(formular.get("voice") or "")
         engine = str(formular.get("engine") or "")
         if not text.strip():
-            raise HTTPException(400, "Die Textprobe ist leer")
+            raise HTTPException(400, "Die Textprobe ist leer. Sie steht hinter „Text bearbeiten“.")
         if not voices.exists(voice):
             raise HTTPException(400, f"Stimme '{voice}' gibt es nicht")
 
@@ -826,20 +809,177 @@ def create_app(
                 f"Die Engine '{engine}' braucht den Wortlaut der Referenzaufnahme, "
                 f"'{voice}' hat aber keinen hinterlegt.",
             )
-
         # Mehrfachauswahl: der leere Wert steht für den Pretrain, damit sich ein
         # Finetune gegen den Stand messen lässt, von dem er ausging.
-        staende = [pruefe_modell(str(m)) for m in formular.getlist("models")]
+        bekannte = set(voices.lagen(voice))
+        return {
+            "name": str(formular.get("name") or "").strip() or "Vergleich",
+            "text": text,
+            "voice": voice,
+            "engine": info,
+            "grid": _grid(formular, info),
+            "models": [pruefe_modell(str(m)) for m in formular.getlist("models")],
+            # Eine Lage, die es bei dieser Stimme nicht gibt, fiele beim Rendern
+            # ohnehin auf die Hauptaufnahme zurück -- dann stünden zwei Zeilen
+            # da, die dasselbe messen.
+            "lagen": [str(x) for x in formular.getlist("lagen") if str(x) in bekannte],
+        }
+
+    def _achsen_kontext(
+        engine: str,
+        voice: str,
+        formular=None,  # noqa: ANN001
+    ) -> dict[str, object]:
+        """Kontext der Achsen. Eine Stelle für Seite, Nachladen und Vorschau."""
+        info = engine_info(engine)
+        gewaehlt = _grid(formular, info) if formular is not None else {}
+        return {
+            "engine": info,
+            "models": modelle.list_all(),
+            "lagen_der_stimme": _lagen_der_stimme(voice),
+            "gewaehlte_werte": gewaehlt,
+            "gewaehlte_modelle": (
+                [str(m) for m in formular.getlist("models")] if formular is not None else []
+            ),
+            "gewaehlte_lagen": (
+                [str(x) for x in formular.getlist("lagen")] if formular is not None else []
+            ),
+            "max_variants": MAX_VARIANTS,
+        }
+
+    def _formular_kontext(comparison: Comparison | None, **extra: object) -> dict[str, object]:
+        """Kontext der Zuschnittsmaske, aus einem bestehenden Vergleich oder leer."""
+        engine = comparison.engine if comparison else settings.engine
+        stimmen = voices.list_all()
+        voice = comparison.voice if comparison else (stimmen[0].name if stimmen else "")
+        info = engine_info(engine)
+        # Ein neuer Vergleich startet auf den Vorgaben der Regler -- und zwar
+        # hier und in der Maske mit demselben Wert. Getrennt gerechnet zeigte
+        # die Maske '1' und die Vorschau daneben 'keine Variante'.
+        vorbelegt = (
+            {
+                key: [v.options[key] for v in comparison.variants if key in v.options]
+                for key in {k for v in comparison.variants for k in v.options}
+            }
+            if comparison
+            else {o.key: [o.default] for o in info.options}
+        )
+        return {
+            "comparison": comparison,
+            "voices": stimmen,
+            "engines": available_engines(),
+            "engine": info,
+            "models": modelle.list_all(),
+            "lagen_der_stimme": _lagen_der_stimme(voice),
+            "gewaehlte_werte": {k: sorted(set(w)) for k, w in vorbelegt.items()},
+            "gewaehlte_modelle": list(comparison.models) if comparison else [],
+            "gewaehlte_lagen": list(comparison.lagen) if comparison else [],
+            "max_variants": MAX_VARIANTS,
+            **_vorschau(
+                info,
+                {k: sorted(set(w)) for k, w in vorbelegt.items()},
+                list(comparison.models) if comparison else [],
+                list(comparison.lagen) if comparison else [],
+            ),
+            **extra,
+        }
+
+    def _vorschau(
+        info, grid: dict[str, list[float]], models: list[str], lagen: list[str]
+    ) -> dict[str, object]:  # noqa: ANN001
+        """Die Zeilen, die dieser Zuschnitt ergäbe -- oder warum es keine gibt."""
+        varianten = build_variants(info, grid, models=models, lagen=lagen)
         try:
-            comparison = Comparison.create(
-                name=str(formular.get("name") or "").strip() or "Vergleich",
-                text=text,
-                voice=voice,
-                engine=info,
-                grid=_grid(formular, info),
-                models=staende,
-                comparisons_dir=settings.comparisons_dir,
-            )
+            pruefe_raster(varianten)
+        except ValueError as exc:
+            return {"vorschau": varianten, "vorschau_fehler": str(exc)}
+        return {"vorschau": varianten, "vorschau_fehler": None}
+
+    @app.get("/comparisons", response_class=HTMLResponse)
+    def comparison_index(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "comparisons.html",
+            _formular_kontext(None, comparisons=Comparison.list_all(settings.comparisons_dir)),
+        )
+
+    @app.get("/comparisons/achsen", response_class=HTMLResponse)
+    def comparison_axes(request: Request) -> HTMLResponse:
+        """Die Achsen hängen an Engine und Stimme -- beim Wechsel neu laden.
+
+        Mitgeschickt wird das ganze Formular, damit die schon gewählten Werte
+        stehen bleiben: wer nur die Stimme wechselt, soll nicht sein Raster
+        verlieren. Gelesen wird aus der Adresse und nicht aus dem Rumpf: htmx
+        hängt die eingeschlossenen Felder eines hx-get an die Adresse an, und
+        eine GET-Anfrage hat ohnehin kein Formular im Rumpf.
+        """
+        formular = request.query_params
+        return templates.TemplateResponse(
+            request,
+            "_comparison_axes.html",
+            _achsen_kontext(
+                str(formular.get("engine") or settings.engine),
+                str(formular.get("voice") or ""),
+                formular,
+            ),
+        )
+
+    @app.get("/comparisons/wertfeld", response_class=HTMLResponse)
+    def comparison_value_field(request: Request, engine: str, key: str) -> HTMLResponse:
+        """Ein weiteres Auswahlfeld für eine Achse."""
+        option = engine_info(engine).option(key)
+        if option is None:
+            raise HTTPException(404, f"Die Engine '{engine}' kennt keinen Regler '{key}'")
+        return templates.TemplateResponse(
+            request, "_wertfeld.html", {"option": option, "wert": option.default}
+        )
+
+    @app.get("/comparisons/vorschau", response_class=HTMLResponse)
+    def comparison_preview(request: Request) -> HTMLResponse:
+        """Welche Zeilen dieser Zuschnitt ergäbe -- vor dem Rendern.
+
+        Wie bei den Achsen aus der Adresse gelesen, nicht aus dem Rumpf.
+        """
+        formular = request.query_params
+        info = engine_info(str(formular.get("engine") or settings.engine))
+        voice = str(formular.get("voice") or "")
+        bekannte = set(voices.lagen(voice)) if voices.exists(voice) else set()
+        return templates.TemplateResponse(
+            request,
+            "_comparison_preview.html",
+            {
+                "max_variants": MAX_VARIANTS,
+                **_vorschau(
+                    info,
+                    _grid(formular, info),
+                    [str(m) for m in formular.getlist("models")],
+                    [str(x) for x in formular.getlist("lagen") if str(x) in bekannte],
+                ),
+            },
+        )
+
+    @app.post("/comparisons")
+    async def create_comparison(request: Request) -> RedirectResponse:
+        zuschnitt = _zuschnitt(await request.form())
+        try:
+            comparison = Comparison.create(**zuschnitt, comparisons_dir=settings.comparisons_dir)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse(f"/comparisons/{comparison.id}", status_code=303)
+
+    @app.get("/comparisons/{comparison_id}/edit", response_class=HTMLResponse)
+    def edit_comparison(request: Request, comparison_id: str) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request, "comparison_edit.html", _formular_kontext(load_comparison(comparison_id))
+        )
+
+    @app.post("/comparisons/{comparison_id}/edit")
+    async def apply_comparison(request: Request, comparison_id: str) -> RedirectResponse:
+        comparison = load_comparison(comparison_id)
+        if vergleiche.is_running(comparison_id):
+            raise HTTPException(409, "Es läuft gerade ein Vergleich")
+        try:
+            comparison.reconfigure(**_zuschnitt(await request.form()))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return RedirectResponse(f"/comparisons/{comparison.id}", status_code=303)
