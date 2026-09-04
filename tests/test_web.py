@@ -1884,3 +1884,183 @@ def test_jede_tonadresse_traegt_einen_stand() -> None:
                 ohne_stand.append(f"{pfad.name}: {treffer}")
 
     assert ohne_stand == []
+
+
+# -- Satzbau von Hand -------------------------------------------------------
+
+
+def _saetze(client: TestClient, project_id: str) -> list[str]:
+    """Die Rohtexte in der Reihenfolge der Tabelle."""
+    seite = client.get(f"/projects/{project_id}/table").text
+    return re.findall(r'<textarea name="raw_text" rows="3">(.*?)</textarea>', seite, re.S)
+
+
+def test_satz_einfuegen_erscheint_in_der_tabelle(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+    vorher = _saetze(client, project_id)
+
+    antwort = client.post(
+        f"/projects/{project_id}/chunks/0/einfuegen",
+        data={"raw_text": "Dazwischen geschoben.", "danach": "1"},
+    )
+
+    assert antwort.status_code == 200
+    assert _saetze(client, project_id) == [vorher[0], "Dazwischen geschoben.", vorher[1]]
+    # Die Antwort ist die ganze Tabelle: die Nummern dahinter haben sich verschoben.
+    assert 'id="chunks"' in antwort.text
+
+
+def test_das_formular_kommt_erst_auf_klick(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ein zweites Textfeld in jeder der hundert Zeilen wäre keine Tabelle mehr."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+    assert 'name="raw_text" rows="2"' not in tabelle
+
+    formular = client.get(f"/projects/{project_id}/chunks/0/einfuegen?danach=1").text
+    assert 'name="raw_text" rows="2"' in formular
+    assert "Neuer Satz nach diesem" in formular
+
+
+def test_ein_leerer_satz_wird_abgewiesen(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    vorher = len(_saetze(client, project_id))
+
+    antwort = client.post(
+        f"/projects/{project_id}/chunks/0/einfuegen", data={"raw_text": "   ", "danach": "0"}
+    )
+
+    assert antwort.status_code == 400
+    assert "keinen Inhalt" in antwort.text
+    assert len(_saetze(client, project_id)) == vorher
+
+
+def test_verschmelzen_zieht_zwei_saetze_zusammen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+    assert len(_saetze(client, project_id)) == 2
+
+    antwort = client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
+
+    assert antwort.status_code == 200
+    assert _saetze(client, project_id) == ["Erster Satz. Zweiter Satz."]
+
+
+def test_hinter_dem_letzten_satz_ist_nichts_zu_verschmelzen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz. Zweiter Satz.")
+    letzter = len(_saetze(client, project_id)) - 1
+
+    antwort = client.post(f"/projects/{project_id}/chunks/{letzter}/verschmelzen")
+
+    assert antwort.status_code == 400
+    assert "kommt keiner mehr" in antwort.text
+
+
+def test_der_satzbau_haelt_waehrend_eines_laufs_still(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Pipeline schreibt gerade Tondateien nach Nummer -- die Nummern unter
+    ihr zu verschieben wäre der sichere Weg zu vertauschten Sätzen."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    try:
+        antwort = client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
+        assert antwort.status_code == 409
+    finally:
+        _wait_for_run(client, project_id)
+
+
+def test_filter_und_klappzustand_ueberleben_den_handgriff(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Die Antwort ist die ganze Tabelle. Ohne den mitgereichten Zustand stünde
+    danach die ungefilterte, ausgeklappte Liste da."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.\n\nDritter Satz.")
+
+    antwort = client.post(
+        f"/projects/{project_id}/chunks/0/einfuegen?status=alle&q=&kompakt=1&offen=2",
+        data={"raw_text": "Dazwischen.", "danach": "1"},
+    )
+
+    assert "kompakt" in antwort.text
+    # Satz 2 war offen und heißt jetzt 3; der neue Satz steht ebenfalls offen da.
+    assert "offen=1,3" in antwort.text
+
+
+def test_ein_zu_langer_satz_wird_als_solcher_ausgewiesen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Verschmelzen kennt keine Obergrenze -- dass die Engine dann selbst teilt,
+    gehört trotzdem dazugesagt."""
+    # F5-TTS erzeugt rund 22 Sekunden am Stück, die Referenz geht davon ab --
+    # unter vier Sekunden geht das Budget nicht, siehe chunk_budget_seconds.
+    settings.target_chunk_seconds = 2.0
+    settings.max_chunk_seconds = 2.0
+    client = _client(settings)
+    project_id = _create_project(
+        client,
+        text="Der erste Satz ist ziemlich lang.\n\nDer zweite Satz ist es auch.",
+        engine="f5-de",
+    )
+    assert "zu lang" not in client.get(f"/projects/{project_id}/table").text
+
+    antwort = client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
+
+    assert "zu lang" in antwort.text
+
+
+def test_der_handschnitt_ueberlebt_das_uebernehmen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein Wechsel der Stimme genügte sonst, um jedes Verschmelzen zurückzunehmen."""
+    voice_store.add("zweite-stimme", voice_store.get("test-stimme").audio_path, transcript="Ja.")
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.\n\nDritter Satz.")
+    client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
+    verschmolzen = _saetze(client, project_id)
+
+    antwort = client.post(
+        f"/projects/{project_id}/configure",
+        data={
+            "text": Project.load(settings.projects_dir / project_id).source_text,
+            "voice": "zweite-stimme",
+            "engine": "dummy",
+            "model": "",
+        },
+    )
+
+    assert antwort.status_code == 200
+    assert _saetze(client, project_id) == verschmolzen
+
+
+def test_der_umbau_meldet_zahlen_die_lage_einen_satz(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Zwei verschiedene Dinge hießen einmal beide 'bericht': die Statusleiste
+    gab daraufhin den rohen Zähler aus, und die Meldung zur Lage erschien
+    umgekehrt als Zählerzeile ohne Zahlen."""
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    umbau = client.post(
+        f"/projects/{project_id}/configure",
+        data={"text": TEXT, "voice": "test-stimme", "engine": "dummy", "model": ""},
+    ).text
+    assert "Übernommen:" in umbau
+    assert "'behalten'" not in umbau
+
+    lage = client.post(f"/projects/{project_id}/lage", data={"lage": "neutral"}).text
+    assert "Vorgabe auf" in lage
+    assert "Übernommen:" not in lage

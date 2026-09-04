@@ -10,6 +10,7 @@ Langform-Produktion sonst scheitert.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -165,17 +166,19 @@ def create_app(
 
         def adresse(**abweichung: object) -> str:
             """Die Adresse dieser Tabelle, wahlweise mit geändertem Zustand."""
-            werte = {"status": status, "q": q, "kompakt": kompakt, "offen": list(offen)}
+            werte: dict[str, object] = {
+                "status": status,
+                "q": q,
+                "kompakt": kompakt,
+                "offen": list(offen),
+            }
             werte.update(abweichung)
-            teile = [
-                f"status={werte['status']}",
-                f"q={quote(str(werte['q']))}",
-            ]
-            if werte["kompakt"]:
-                teile.append("kompakt=1")
-            if werte["offen"]:
-                teile.append("offen=" + ",".join(str(i) for i in sorted(werte["offen"])))
-            return "?" + "&".join(teile)
+            return tabellenadresse(
+                str(werte["status"]),
+                str(werte["q"]),
+                bool(werte["kompakt"]),
+                werte["offen"],  # type: ignore[arg-type]
+            )
 
         def klappziel(index: int) -> str:
             """Die Adresse, die genau diesen Satz auf- oder zuklappt."""
@@ -189,11 +192,24 @@ def create_app(
             "auswahl": select(project.chunks, status, q),
             "gruppen": LABELS,
             "lagen": _lagen_der_stimme(project.voice),
+            "grenze_zeichen": _grenze_zeichen(project),
             "kompakt": kompakt,
             "offen": set(offen),
             "adresse": adresse,
             "klappziel": klappziel,
         }
+
+    def _grenze_zeichen(project: Project) -> int:
+        """Ab wie vielen Zeichen ein Satz der Engine zu lang wird. 0 = kein Limit.
+
+        Nur Engines mit einer Grenze je Generierung haben eine: alle anderen
+        sprechen auch einen langen Satz am Stück, und eine Warnung wäre dort
+        keine. Von Hand verschmolzene Sätze können darüber geraten -- deshalb
+        steht die Zahl in der Tabelle und nicht als Verbot im Handgriff.
+        """
+        if engine_info(project.engine).max_generation_seconds is None:
+            return 0
+        return int(project.target_chunk_seconds * settings.chars_per_second)
 
     def _offene(roh: str) -> tuple[int, ...]:
         """'0,3,7' zu Zahlen. Unlesbares wird übergangen -- der Wert kommt aus
@@ -223,6 +239,7 @@ def create_app(
                 "project": project,
                 "chunk": project.chunks[index],
                 "lagen": _lagen_der_stimme(project.voice),
+                "grenze_zeichen": _grenze_zeichen(project),
             },
             headers={"HX-Trigger": "satz-geaendert"},
         )
@@ -388,7 +405,11 @@ def create_app(
                 f"'{voice}' hat aber keinen hinterlegt.",
             )
 
-        bericht = project.reconfigure(
+        # Heißt 'umbau' und nicht 'bericht': unter dem Namen steht überall sonst
+        # ein fertiger Satz für den Menschen. Beide zugleich hießen, dass die
+        # Statusleiste hier den rohen Zähler ausgäbe und die Meldung einer Lage
+        # umgekehrt als Zähler ohne Zahlen erschiene -- beides war zu sehen.
+        umbau = project.reconfigure(
             text=text,
             voice=voice,
             engine=info,
@@ -399,7 +420,7 @@ def create_app(
             target_seconds=settings.target_chunk_seconds,
             max_seconds=settings.max_chunk_seconds,
         )
-        return project_page(request, project, bericht=bericht, aktiver_reiter="einstellungen")
+        return project_page(request, project, umbau=umbau, aktiver_reiter="einstellungen")
 
     @app.post("/projects/{project_id}/run", response_class=HTMLResponse)
     def start_run(request: Request, project_id: str) -> HTMLResponse:
@@ -709,6 +730,106 @@ def create_app(
         guard_idle(project_id)
         _resynthesize(project, index)
         return render_row(request, project, index)
+
+    # -- Satzbau von Hand -------------------------------------------------
+
+    def _satztabelle(
+        request: Request,
+        project: Project,
+        status: str,
+        q: str,
+        kompakt: int,
+        offen: tuple[int, ...],
+    ) -> HTMLResponse:
+        """Die ganze Tabelle als Antwort auf einen Handgriff am Satzbau.
+
+        Eine einzelne Zeile genügte hier nicht: Einfügen und Verschmelzen
+        verschieben alle Nummern dahinter, und die Zeilen tragen ihre Nummer in
+        jeder Adresse mit sich.
+        """
+        return templates.TemplateResponse(
+            request,
+            "_chunk_table.html",
+            _tabelle(project, status, q, bool(kompakt), offen),
+            headers={"HX-Trigger": "satz-geaendert"},
+        )
+
+    @app.get("/projects/{project_id}/chunks/{index}/einfuegen", response_class=HTMLResponse)
+    def satz_einfuegen_formular(
+        request: Request,
+        project_id: str,
+        index: int,
+        danach: int = 0,
+        status: str = "alle",
+        q: str = "",
+        kompakt: int = 0,
+        offen: str = "",
+    ) -> HTMLResponse:
+        """Das Feld für den neuen Satz -- erst auf Klick, wie die Lagenauswahl.
+
+        In jeder Zeile dauerhaft ein zweites Textfeld zu zeigen machte aus der
+        Tabelle eine Wand aus Eingabefeldern.
+        """
+        project = load(project_id)
+        return templates.TemplateResponse(
+            request,
+            "_satz_einfuegen.html",
+            {
+                "project": project,
+                "chunk": project.chunks[index],
+                "danach": bool(danach),
+                "tabellenadresse": tabellenadresse(status, q, bool(kompakt), _offene(offen)),
+            },
+        )
+
+    @app.post("/projects/{project_id}/chunks/{index}/einfuegen", response_class=HTMLResponse)
+    def satz_einfuegen(
+        request: Request,
+        project_id: str,
+        index: int,
+        raw_text: str = Form(...),
+        danach: int = Form(0),
+        status: str = "alle",
+        q: str = "",
+        kompakt: int = 0,
+        offen: str = "",
+    ) -> HTMLResponse:
+        """Einen neuen Satz vor oder nach diesem einsetzen.
+
+        Gerendert wird er nicht: wer ein Kapitel durchgeht, schreibt erst und
+        lässt danach in einem Zug laufen. Für den einzelnen Satz steht 'Jetzt
+        rendern' in seiner Zeile.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        try:
+            stelle = project.insert_chunk(index, raw_text, danach=bool(danach), lexicon=lexikon())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        # Der neue Satz steht offen da: eingeklappt wäre von ihm nur der eben
+        # getippte Wortlaut zu sehen, und gerade er will noch gerendert werden.
+        offene = tuple(i + 1 if i >= stelle else i for i in _offene(offen)) + (stelle,)
+        return _satztabelle(request, project, status, q, kompakt, offene)
+
+    @app.post("/projects/{project_id}/chunks/{index}/verschmelzen", response_class=HTMLResponse)
+    def satz_verschmelzen(
+        request: Request,
+        project_id: str,
+        index: int,
+        status: str = "alle",
+        q: str = "",
+        kompakt: int = 0,
+        offen: str = "",
+    ) -> HTMLResponse:
+        """Diesen Satz mit dem folgenden zu einem zusammenziehen."""
+        project = load(project_id)
+        guard_idle(project_id)
+        try:
+            stelle = project.merge_chunks(index, lexicon=lexikon())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        offene = tuple(i - 1 if i > stelle else i for i in _offene(offen)) + (stelle,)
+        return _satztabelle(request, project, status, q, kompakt, offene)
 
     @app.post("/projects/{project_id}/chunks/{index}/accept", response_class=HTMLResponse)
     def accept(request: Request, project_id: str, index: int) -> HTMLResponse:
@@ -1290,6 +1411,28 @@ def tonstand(path: Path) -> str:
         return str(path.stat().st_mtime_ns)
     except OSError:
         return "0"
+
+
+def tabellenadresse(
+    status: str = "alle",
+    q: str = "",
+    kompakt: bool = False,
+    offen: Iterable[int] = (),
+) -> str:
+    """Die Adresse einer Satztabelle: Filter, Klappzustand, offene Sätze.
+
+    Steht hier und nicht in der Tabelle, weil auch die Handgriffe am Satzbau sie
+    brauchen: sie antworten mit der ganzen Tabelle -- die Nummern verschieben
+    sich -- und ohne diesen Zustand stünde danach die ungefilterte, ausgeklappte
+    Liste da.
+    """
+    teile = [f"status={status}", f"q={quote(q)}"]
+    if kompakt:
+        teile.append("kompakt=1")
+    nummern = sorted(dict.fromkeys(offen))
+    if nummern:
+        teile.append("offen=" + ",".join(str(i) for i in nummern))
+    return "?" + "&".join(teile)
 
 
 def anzahl(wert: int, eins: str, viele: str) -> str:

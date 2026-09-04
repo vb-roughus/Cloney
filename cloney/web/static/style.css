@@ -324,6 +324,24 @@ label.ankreuz input[type="radio"] { position: absolute; opacity: 0; pointer-even
 .spoken, .heard { font-size: .82rem; margin-top: .3rem; color: var(--muted); }
 .heard { border-left: 2px solid var(--line); padding-left: .5rem; }
 .rowactions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+
+/* Der Satzbau steht abgesetzt unter den Handgriffen: er ändert nicht diesen
+   Satz, sondern ihre Zahl. Die Linie darüber macht den Unterschied sichtbar,
+   ohne ein zweites Feld aufzumachen. */
+.satzbau {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .5rem;
+  padding-top: .5rem;
+  border-top: 1px solid var(--line);
+}
+.satzbau > .muted { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.satzbau button { margin-top: 0; }
+.satzbau.einfuegen { display: block; }
+.satzbau.einfuegen label { display: block; font-size: .8rem; color: var(--muted); }
+.satzbau.einfuegen textarea { margin-top: .25rem; }
 .rowactions button { margin-top: 0; }
 /* In einer Satzzeile gibt es keine Hauptsache: Text übernehmen, neu würfeln und
    jetzt rendern sind Geschwister. Gefüllt bleibt der Knopf, der den ganzen Lauf

@@ -158,6 +158,36 @@ def split_sentences(text: str, lexicon: Lexicon | None = None) -> list[Sentence]
     return sentences
 
 
+#: Zeichen, die am Ende eines Satzstücks stehen dürfen, ohne dass beim
+#: Verbinden ein Punkt fehlte. Schließende Anführungs- und Klammerzeichen
+#: stehen dahinter und werden vor der Prüfung abgeräumt.
+_ABSCHLUSS = "\"')]»›“”"
+
+
+def join_raw(links: str, rechts: str) -> str:
+    """Zwei Satzstücke zu einem Rohtext verbinden.
+
+    Gebraucht, wo zwei Chunks von Hand verschmolzen werden. Der Punkt dazwischen
+    ist der Kern: eine Überschrift trägt keinen, und ohne Satzzeichen liest die
+    Engine sie in den folgenden Satz hinein -- genau das, was das eigene
+    Chunking sonst verhindert.
+
+    Ein Komma bleibt dagegen stehen. Dort war ein überlanger Satz zur Not
+    getrennt worden (siehe ``_split_long_sentence``); ein Punkt machte aus dem
+    Teilsatz einen ganzen und verschöbe die Betonung.
+    """
+    links = links.strip()
+    rechts = rechts.strip()
+    if not links:
+        return rechts
+    if not rechts:
+        return links
+    kern = links.rstrip(_ABSCHLUSS)
+    if kern and kern[-1] not in _SATZENDE:
+        links += "."
+    return f"{links} {rechts}"
+
+
 def spoken_form(raw_text: str, is_heading: bool = False, lexicon: Lexicon | None = None) -> str:
     """Die Sprechfassung eines Satzes -- dieselbe Regel wie beim Segmentieren.
 
