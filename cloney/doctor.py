@@ -293,6 +293,31 @@ def check_similarity(report: Report, settings: Settings) -> None:
     report.add("Stimmähnlichkeit", "ok", f"speechbrain vorhanden, {hinweis}")
 
 
+def check_hub(report: Report, settings: Settings) -> None:
+    """Ob am Hub ein Token anliegt -- und warum das eine Nebensache ist.
+
+    Alle Modelle, die Cloney holt, sind öffentlich. Ein Token ist für keines
+    davon nötig; es hebt nur die Ratengrenze für unangemeldete Zugriffe an und
+    lässt die Warnung verstummen, die huggingface_hub sonst bei jedem Lauf
+    ausgibt. Deshalb steht hier ein Hinweis und kein Mangel.
+    """
+    try:
+        from huggingface_hub import get_token
+    except ImportError:
+        return
+
+    if get_token():
+        report.add("Hugging Face", "ok", "Token gesetzt")
+        return
+    report.add(
+        "Hugging Face",
+        "warn",
+        "kein Token -- Downloads laufen unangemeldet",
+        "CLONEY_HF_TOKEN oder HF_TOKEN in die .env. Nötig ist es nicht: die "
+        "Modelle sind öffentlich, und geladen wird nur beim ersten Mal.",
+    )
+
+
 def check_f5(report: Report, settings: Settings) -> None:
     try:
         import f5_tts  # noqa: F401
@@ -460,6 +485,7 @@ def run_checks(settings: Settings) -> Report:
     check_ffmpeg(report)
     check_asr(report, settings)
     check_similarity(report, settings)
+    check_hub(report, settings)
     check_f5(report, settings)
     check_higgs(report, settings)
     check_data_dir(report, settings)
