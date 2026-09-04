@@ -475,6 +475,29 @@ Ein helles Schema gibt es nicht mehr -- dunkel ist hier kein Modus, sondern das
 Design. `color-scheme: dark` sorgt dafür, dass auch Abspieler, Rollbalken und
 Auswahlfelder mitziehen.
 
+### Warum jede Tonadresse eine Zahl trägt
+
+```html
+<audio src="/projects/…/chunks/0/audio?v=1788513159167706520">
+```
+
+Ein neu gerenderter Satz liegt unter derselben Adresse wie der alte. Ein
+`<audio>`-Element fragt für eine **unveränderte** Adresse aber gar nicht erneut
+an — es behält, was es beim ersten Mal geholt hat. Im Browser gemessen: nach
+einem *Text übernehmen und neu rendern* lagen auf Platte 8,11 Sekunden und im
+Abspieler weiterhin 3,90, bei genau einer einzigen Anfrage an die Tonadresse.
+
+`Cache-Control: no-cache` half nicht und konnte nicht helfen: die Kopfzeile
+verlangt eine Rückfrage, und wo keine Anfrage gestellt wird, gibt es nichts
+zurückzufragen. Sie steht weiterhin da, für den Fall, dass jemand die Adresse
+ohne Zahl aufruft.
+
+Deshalb wandert der Änderungszeitpunkt der Datei in die Adresse. Ändert sich der
+Ton, ändert sich die Adresse; bleibt er gleich, darf der Zwischenspeicher weiter
+greifen. Betroffen waren alle fünf Stellen, die Ton ausliefern — Satz, fertige
+Spur, Referenzaufnahme, Lage und Vergleichsvariante. Ein Test hält fest, dass
+keine Vorlage einen Abspieler ohne diese Zahl zurückbringt.
+
 ### Während des Laufs mithören
 
 Die Ansicht hält sich selbst aktuell: solange ein Lauf läuft, holen sich

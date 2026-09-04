@@ -120,7 +120,7 @@ Klicken, um eine andere zu wählen.">{{ project.lage_of(chunk) }}</button>
 
     {% if chunk.audio_file %}
       <audio class="satzton" controls preload="none"
-             src="/projects/{{ project.id }}/chunks/{{ chunk.index }}/audio"></audio>
+             src="/projects/{{ project.id }}/chunks/{{ chunk.index }}/audio?v={{ tonstand(project.chunk_path(chunk.index)) }}"></audio>
     {% endif %}
     <div class="rowactions">
       <button class="small secondary" type="submit" form="satz-{{ chunk.index }}">

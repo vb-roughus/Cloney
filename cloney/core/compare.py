@@ -195,6 +195,18 @@ class Comparison(BaseModel):
     def variant_project(self, slug: str) -> Project:
         return Project.load(self.variant_root(slug))
 
+    def variant_output(self, slug: str) -> Path:
+        """Wo die fertige Spur einer Variante liegt -- ohne ihr Projekt zu laden.
+
+        Die Oberfläche braucht den Pfad je Zeile, nur um den Änderungszeitpunkt
+        abzulesen. Dafür zwölfmal ein Manifest von Platte zu holen wäre reine
+        Verschwendung.
+        """
+        variant = self.variant(slug)
+        if not variant.project_id:
+            return self.variants_dir / "-" / "output.wav"
+        return self.variants_dir / variant.project_id / "output.wav"
+
     def prepare(self, slug: str, engine: EngineInfo, reference_seconds: float) -> Project:
         """Legt das Projekt einer Variante an -- oder gibt das vorhandene zurück.
 

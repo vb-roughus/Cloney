@@ -46,7 +46,8 @@
         <span class="muted">rund {{ "%.0f"|format(rate) }} Zeichen/s</span>
       {% endif %}
     </div>
-    <audio controls preload="none" src="/voices/{{ v.name }}/audio"></audio>
+    <audio controls preload="none"
+           src="/voices/{{ v.name }}/audio?v={{ tonstand(v.audio_path) }}"></audio>
 
     <form method="post" action="/voices/{{ v.name }}/transcript">
       <label>Wortlaut der Aufnahme
@@ -85,7 +86,7 @@
           {% endif %}
         </div>
         <audio controls preload="none"
-               src="/voices/{{ v.name }}/lagen/{{ l.lage }}/audio"></audio>
+               src="/voices/{{ v.name }}/lagen/{{ l.lage }}/audio?v={{ tonstand(l.audio_path) }}"></audio>
         <form method="post" action="/voices/{{ v.name }}/lagen/{{ l.lage }}/transcript">
           <label>Wortlaut dieser Aufnahme
             <textarea name="transcript" rows="2">{{ l.transcript }}</textarea></label>
