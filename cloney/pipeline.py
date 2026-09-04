@@ -22,6 +22,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
+
 from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import Segment, assemble, read_wav, write_wav
@@ -276,12 +278,22 @@ def _measure_similarity(
             )
 
 
-def assemble_output(
-    project: Project,
-    settings: Settings,
-    on_event: ProgressCallback = _noop,
-) -> None:
-    """Phase ASSEMBLE. Alle vorhandenen Chunks zur fertigen Spur."""
+class AssembleError(RuntimeError):
+    """Es gibt nichts zusammenzubauen. Die Meldung ist für Menschen."""
+
+
+def _zusammenbauen(project: Project, settings: Settings) -> tuple[np.ndarray, int, int]:
+    """Die vorhandenen Sätze der Reihe nach zu einer Spur.
+
+    Gibt Ton, Abtastrate und die Zahl der verwendeten Sätze zurück. Fehlende
+    werden übersprungen und nicht durch Stille ersetzt: ein Platzhalter von
+    geratener Länge sagte nichts über den Fluss, um dessentwillen man hört, und
+    machte aus einer Lücke eine hörbare Pause, die es nie geben wird.
+
+    Die Dateien werden atomar geschrieben (siehe ``write_wav``). Deshalb darf
+    hier auch gelesen werden, während ein Lauf schreibt -- was der Prototyp
+    ausnutzt.
+    """
     segments = []
     raten: set[int] = set()
     for chunk in project.chunks:
@@ -293,27 +305,19 @@ def assemble_output(
         segments.append(Segment(audio, chunk.ends_paragraph, chunk.is_heading))
 
     if not segments:
-        on_event(ProgressEvent("assemble", "Nichts zusammenzubauen -- kein Chunk erzeugt"))
-        return
+        raise AssembleError("Kein einziger Satz ist erzeugt -- es gibt nichts zusammenzubauen.")
 
     # Maßgeblich ist, was in den Dateien steht, nicht was beim Anlegen des
     # Projekts angenommen wurde. Eine Engine hinter einem Server kann eine
     # andere Rate liefern als ihre EngineInfo verspricht; würde hier die
     # Annahme gelten, liefe die fertige Spur zu langsam oder zu schnell.
     if len(raten) > 1:
-        on_event(
-            ProgressEvent(
-                "assemble",
-                f"Chunks haben verschiedene Abtastraten ({sorted(raten)}) -- "
-                "die betroffenen Sätze neu rendern",
-            )
+        raise AssembleError(
+            f"Die Sätze haben verschiedene Abtastraten ({sorted(raten)}) -- "
+            "die betroffenen Sätze neu rendern"
         )
-        return
-    sample_rate = raten.pop()
-    if sample_rate != project.sample_rate:
-        project.sample_rate = sample_rate
-        project.save()
 
+    sample_rate = raten.pop()
     track = assemble(
         segments,
         sample_rate,
@@ -324,15 +328,53 @@ def assemble_output(
         edge_fade_ms=settings.edge_fade_ms,
         trim_threshold_db=settings.trim_threshold_db,
     )
+    return track, sample_rate, len(segments)
+
+
+def assemble_output(
+    project: Project,
+    settings: Settings,
+    on_event: ProgressCallback = _noop,
+) -> None:
+    """Phase ASSEMBLE. Alle vorhandenen Chunks zur fertigen Spur."""
+    try:
+        track, sample_rate, anzahl = _zusammenbauen(project, settings)
+    except AssembleError as exc:
+        on_event(ProgressEvent("assemble", str(exc)))
+        return
+
+    if sample_rate != project.sample_rate:
+        project.sample_rate = sample_rate
+
     write_wav(project.output_path, track, sample_rate)
     project.output_file = project.output_path.name
     project.save()
     on_event(
         ProgressEvent(
             "assemble",
-            f"{len(segments)} Chunks, {len(track) / sample_rate:.1f}s geschrieben",
+            f"{anzahl} Chunks, {len(track) / sample_rate:.1f}s geschrieben",
         )
     )
+
+
+def build_prototype(project: Project, settings: Settings) -> tuple[int, float]:
+    """Was bis jetzt erzeugt ist, der Reihe nach zum Anhören.
+
+    Ein Kapitel läuft Stunden. Ob die Stimme trägt, ob die Pausen sitzen, ob
+    zwei Sätze aneinander stocken -- das hört man erst am Stück, und darauf bis
+    zum Ende zu warten heißt, einen Fehler erst zu bemerken, wenn alles daran
+    hängt.
+
+    Geschrieben wird deshalb in eine eigene Datei und **nichts** ins Manifest:
+    der Prototyp entsteht typischerweise mitten in einem Lauf, und der Lauf
+    führt dort seinen eigenen Stand. Ein zweiter Schreiber machte aus einem
+    Mithören eine Ursache für verlorenen Fortschritt.
+
+    Gibt die Zahl der verwendeten Sätze und die Dauer in Sekunden zurück.
+    """
+    track, sample_rate, anzahl = _zusammenbauen(project, settings)
+    write_wav(project.prototype_path, track, sample_rate)
+    return anzahl, len(track) / sample_rate
 
 
 def run_project(

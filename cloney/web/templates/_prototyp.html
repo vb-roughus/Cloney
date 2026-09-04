@@ -1,0 +1,39 @@
+{#
+  Der Prototyp: was bis jetzt erzeugt ist, der Reihe nach zum Anhören.
+
+  Steht bewusst **außerhalb** der Statusleiste. Die tauscht sich während eines
+  Laufs alle anderthalb Sekunden aus, und ein Abspieler darin wäre mitsamt der
+  laufenden Wiedergabe weg -- gerade während eines Laufs will man aber
+  mithören. Dieser Block hier rührt sich nur, wenn jemand den Knopf drückt.
+
+  Braucht: project, bericht (optional).
+#}
+<div id="prototyp" class="prototyp">
+  <div class="prototypzeile">
+    <button class="secondary"
+            hx-post="/projects/{{ project.id }}/prototyp"
+            hx-target="#prototyp" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="this"
+            title="Die bis jetzt erzeugten Sätze der Reihe nach zu einer Spur zusammenfügen.
+Fehlende werden übersprungen -- an ihrer Stelle steht kein Platzhalter.">
+      {% include "_spinner.html" %}
+      {% if project.prototype_path.exists() %}Prototyp erneuern{% else %}Prototyp erstellen{% endif %}
+    </button>
+
+    {% if project.prototype_path.exists() %}
+      {#
+        Ein Prototyp, der aussieht wie der aktuelle Stand und einer von vor
+        zwanzig Sätzen ist, wäre die unangenehmste Art von Fehler: man hörte
+        einem Ergebnis nach, das es so nicht mehr gibt.
+      #}
+      {% if project.prototype_stale %}
+        <span class="badge warn" title="Seit diesem Prototyp sind Sätze dazugekommen
+oder neu erzeugt worden. Erneuern, um sie zu hören.">veraltet</span>
+      {% endif %}
+      <audio class="prototypton" controls preload="none"
+             src="/projects/{{ project.id }}/prototyp?v={{ tonstand(project.prototype_path) }}"></audio>
+      <a class="button secondary small" href="/projects/{{ project.id }}/prototyp">Laden</a>
+    {% endif %}
+  </div>
+  {% if bericht %}<p class="joblog">{{ bericht }}</p>{% endif %}
+</div>

@@ -31,7 +31,7 @@ from cloney.core.pronounce import acronyms, spell_out
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
-from cloney.pipeline import quality_check, synthesize_chunks
+from cloney.pipeline import AssembleError, build_prototype, quality_check, synthesize_chunks
 from cloney.web.filters import LABELS, select
 from cloney.web.jobs import ComparisonRunner, JobRunner
 from cloney.web.overview import summarize
@@ -847,6 +847,42 @@ def create_app(
             raise HTTPException(404, "Für diesen Chunk gibt es noch kein Audio")
         return datei(path, "audio/wav")
 
+    @app.post("/projects/{project_id}/prototyp", response_class=HTMLResponse)
+    def prototyp_bauen(request: Request, project_id: str) -> HTMLResponse:
+        """Die bis jetzt erzeugten Sätze der Reihe nach zu einer Spur.
+
+        Auch während eines Laufs: gelesen werden fertig geschriebene Dateien,
+        und ins Manifest schreibt der Prototyp nichts -- dort führt der Lauf
+        seinen eigenen Stand.
+        """
+        project = load(project_id)
+        try:
+            saetze, sekunden = build_prototype(project, settings)
+        except AssembleError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+        fehlend = len(project.chunks) - saetze
+        bericht = (
+            f"Prototyp aus {saetze} von "
+            f"{anzahl(len(project.chunks), 'Satz', 'Sätzen')}, {dauer(sekunden)}."
+        )
+        if fehlend:
+            bericht += (
+                " Ein Satz fehlt und wurde übersprungen."
+                if fehlend == 1
+                else f" {fehlend} Sätze fehlen und wurden übersprungen."
+            )
+        return templates.TemplateResponse(
+            request, "_prototyp.html", {"project": project, "bericht": bericht}
+        )
+
+    @app.get("/projects/{project_id}/prototyp")
+    def prototyp_datei(project_id: str) -> FileResponse:
+        project = load(project_id)
+        if not project.prototype_path.exists():
+            raise HTTPException(404, "Für dieses Projekt gibt es keinen Prototyp")
+        return datei(project.prototype_path, "audio/wav")
+
     @app.get("/projects/{project_id}/output")
     def output(project_id: str) -> FileResponse:
         project = load(project_id)
@@ -1438,6 +1474,22 @@ def tabellenadresse(
 def anzahl(wert: int, eins: str, viele: str) -> str:
     """'1 Vergleich' statt '1 Vergleiche'."""
     return f"{wert} {eins if wert == 1 else viele}"
+
+
+def dauer(sekunden: float) -> str:
+    """Sekunden lesbar: '48 s', '6:12 min', '1:04:30 h'.
+
+    Ein Kapitel dauert Minuten bis Stunden -- '3762.4s' beantwortet die Frage
+    'wie lang ist das geworden?' nicht.
+    """
+    ganz = int(round(sekunden))
+    if ganz < 60:
+        return f"{ganz} s"
+    stunden, rest = divmod(ganz, 3600)
+    minuten, s = divmod(rest, 60)
+    if stunden:
+        return f"{stunden}:{minuten:02d}:{s:02d} h"
+    return f"{minuten}:{s:02d} min"
 
 
 def zeitpunkt(iso: str) -> str:
