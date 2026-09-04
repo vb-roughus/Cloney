@@ -35,8 +35,12 @@ seinen Zweck:
    Welche Aufnahme das ist, entscheidet die **Emotionslage** des Satzes. Sie
    steht wie der Seed im Manifest -- beide zusammen machen ihn reproduzierbar.
    Eine Lage zu wechseln verwirft den Ton und behält den Seed: nur so ist zu
-   hören, was die Lage bewirkt, statt zugleich den Zufall zu bewegen. Nicht
-   gewählt heißt neutral, und das ist die Hauptaufnahme der Stimme.
+   hören, was die Lage bewirkt, statt zugleich den Zufall zu bewegen.
+
+   `Chunk.lage` trägt dabei nur, was von `Project.lage` abweicht; die geltende
+   Lage beantwortet allein `Project.lage_of(chunk)`. Beides leer heißt neutral,
+   und das ist die Hauptaufnahme der Stimme. Wer die Frage am Satz allein zu
+   beantworten versucht, übergeht die Vorgabe des Projekts.
 
    Der Vergleichslauf (`cloney/core/compare.py`) zieht daraus die Konsequenz:
    alle Varianten teilen sich die aus der Vergleichskennung abgeleiteten Seeds

@@ -44,9 +44,13 @@ class Chunk(BaseModel):
     #: bekommt beim Zusammenbau eine längere Pause.
     is_heading: bool = False
     seed: int
-    #: Emotionslage, gegen deren Aufnahme dieser Satz konditioniert wird. Leer
-    #: heißt neutral -- so bleiben Manifeste von vor den Lagen gültig, ohne
-    #: dass irgendwo ein Wert nachgetragen werden müsste.
+    #: Emotionslage dieses Satzes. Leer heißt: die des Projekts. Ein Satz trägt
+    #: also nur, was von ihr abweicht -- wird die Vorgabe des Projekts später
+    #: geändert, ziehen alle nicht abweichenden mit, und die drei von Hand
+    #: gesetzten bleiben stehen.
+    #:
+    #: Manifeste von vor den Lagen bleiben damit gültig: dort ist überall leer,
+    #: die Vorgabe des Projekts ebenfalls, und leer heißt dort wie hier neutral.
     lage: str = ""
     status: ChunkStatus = ChunkStatus.PENDING
     audio_file: str | None = None
@@ -63,11 +67,6 @@ class Chunk(BaseModel):
     @property
     def needs_synthesis(self) -> bool:
         return self.status in (ChunkStatus.PENDING, ChunkStatus.FAILED)
-
-    @property
-    def lage_name(self) -> str:
-        """Die Lage, ausgeschrieben. Für Anzeige und Nachschlagen."""
-        return self.lage or NEUTRAL
 
 
 class Project(BaseModel):
@@ -87,6 +86,10 @@ class Project(BaseModel):
     #: Trainierter Stand, gegen den gerendert wird. Leer = der Pretrain aus der
     #: Konfiguration.
     model: str = ""
+    #: Emotionslage, die für alle Sätze gilt, die keine eigene tragen. Leer =
+    #: neutral. Ein ganzes Kapitel ernst zu sprechen ist damit eine Einstellung
+    #: und nicht hundert Klicks.
+    lage: str = ""
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
     #: Warum die Stimmähnlichkeit nicht gemessen wurde. Steht im Manifest und
@@ -413,18 +416,61 @@ class Project(BaseModel):
         chunk.error = None
         return chunk
 
-    def set_lage(self, index: int, lage: str) -> Chunk:
-        """Die Emotionslage eines Satzes wechseln.
+    def lage_of(self, chunk: Chunk) -> str:
+        """Die Lage, gegen die dieser Satz tatsächlich konditioniert wird.
 
-        Der Ton wird verworfen, der Seed bleibt. Anders als beim Neuwürfeln
-        wechselt also nur die Referenzaufnahme -- derselbe Wurf, eine andere
-        Lage. Nur so ist zu hören, was die Lage bewirkt, statt zugleich den
-        Zufall zu bewegen.
+        Ein Satz trägt nur, was von der Vorgabe des Projekts abweicht. Die Frage
+        lässt sich deshalb nicht am Satz allein beantworten -- sie geht immer
+        über das Projekt.
+        """
+        return chunk.lage or self.lage or NEUTRAL
+
+    def set_lage(self, index: int, lage: str) -> bool:
+        """Die Emotionslage eines Satzes wechseln. True, wenn sie sich ändert.
+
+        Ein leerer Wert heißt: wieder der Vorgabe des Projekts folgen.
+
+        Ändert sie sich, wird der Ton verworfen und der Seed behalten. Anders
+        als beim Neuwürfeln wechselt also nur die Referenzaufnahme -- derselbe
+        Wurf, eine andere Lage. Nur so ist zu hören, was die Lage bewirkt, statt
+        zugleich den Zufall zu bewegen.
+
+        Ändert sie sich nicht, bleibt alles stehen. Zweimal dieselbe Lage zu
+        wählen ist keine Änderung und darf keine Arbeit kosten -- beim Anwenden
+        auf eine Auswahl trifft man sonst regelmäßig Sätze, die schon so
+        stehen.
         """
         chunk = self.chunks[index]
+        vorher = self.lage_of(chunk)
+        chunk.lage = (lage or "").strip()
+        if self.lage_of(chunk) == vorher:
+            return False
+        self.discard_audio(index)
+        return True
+
+    def set_lage_many(self, indices: Iterable[int], lage: str) -> int:
+        """Eine Lage auf mehrere Sätze anwenden. Gibt zurück, wie viele sich ändern."""
+        geaendert = sum(1 for index in indices if self.set_lage(index, lage))
+        if geaendert:
+            self.save()
+        return geaendert
+
+    def set_default_lage(self, lage: str) -> int:
+        """Die Vorgabe des Projekts setzen. Gibt zurück, wie viele Sätze das trifft.
+
+        Getroffen wird nur, wer keine eigene trägt -- von Hand gesetzte Lagen
+        überleben den Wechsel. Deren Ton fällt weg, denn er stammt aus einer
+        anderen Aufnahme; alles Übrige bleibt stehen.
+        """
         gewaehlt = (lage or "").strip()
-        chunk.lage = "" if gewaehlt.lower() == NEUTRAL else gewaehlt
-        return self.discard_audio(index)
+        if gewaehlt == self.lage:
+            return 0
+        betroffen = [c.index for c in self.chunks if not c.lage and c.audio_file]
+        self.lage = gewaehlt
+        for index in betroffen:
+            self.discard_audio(index)
+        self.save()
+        return len(betroffen)
 
     def retext(self, index: int, raw_text: str, lexicon: Lexicon | None = None) -> Chunk:
         """Text eines Chunks ersetzen und neu normalisieren."""

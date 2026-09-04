@@ -176,6 +176,49 @@
     zaehler.textContent = laenge ? laenge + " Zeichen" : "noch leer";
   }, true);
 
+  // Die Sammelleiste zeigt sich, sobald etwas markiert ist.
+  //
+  // Ohne Markierung hätte sie nichts, worauf sie wirken könnte, und stünde nur
+  // im Weg. Gezählt wird mit, weil "auf Auswahl anwenden" sonst eine Zahl
+  // verschweigt, die man vor dem Klick wissen will -- gerade wenn die Auswahl
+  // durch einen Filter teilweise außer Sicht ist.
+  function markierungen() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('input[name="auswahl"]')
+    );
+  }
+
+  function leisteAuffrischen() {
+    var leiste = document.getElementById("sammelform");
+    if (!leiste) return;
+    var gewaehlt = markierungen().filter(function (k) {
+      return k.checked;
+    }).length;
+    leiste.hidden = gewaehlt === 0;
+    var zaehler = leiste.querySelector("[data-markiert]");
+    if (zaehler) zaehler.textContent = String(gewaehlt);
+  }
+
+  document.addEventListener("change", function (ereignis) {
+    var ziel = ereignis.target;
+    if (ziel && ziel.name === "auswahl") leisteAuffrischen();
+  });
+
+  document.addEventListener("click", function (ereignis) {
+    var ziel = ereignis.target;
+    if (!ziel || !ziel.closest || !ziel.closest("[data-abwaehlen]")) return;
+    ereignis.preventDefault();
+    markierungen().forEach(function (k) {
+      k.checked = false;
+    });
+    leisteAuffrischen();
+  });
+
+  // Nach jedem Tausch neu zählen: die Tabelle kommt frisch vom Server, und mit
+  // ihr sind alle Häkchen weg -- die Leiste wüsste sonst nichts davon und
+  // bliebe mit einer alten Zahl offen stehen.
+  document.body.addEventListener("htmx:afterSettle", leisteAuffrischen);
+
   document.body.addEventListener("htmx:responseError", function (ereignis) {
     melden(fehlertext(ereignis.detail.xhr), "error");
   });

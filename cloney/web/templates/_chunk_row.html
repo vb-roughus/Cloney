@@ -1,6 +1,40 @@
-<tr id="chunk-{{ chunk.index }}" class="chunk {{ status_class(chunk.status) }}">
+{#
+  Eine Satzzeile. Zwei Spalten: Kennzahlen links, alles zum Satz rechts.
+
+  Im kompakten Zustand bleibt rechts nur der Rohtext in einer Zeile stehen. Ein
+  Kapitel hat schnell hundert Sätze, und jeder trägt ausgeklappt ein Textfeld,
+  zwei Rückschriften, einen Abspieler und vier Knöpfe -- zusammen mehrere Meter
+  Bildschirm. Wer nur nachsehen will, wo etwas auffällig ist, scrollt daran
+  vorbei.
+
+  Ausgeklappt wird über die Adresse und nicht im Browser: die Tabelle tauscht
+  sich während eines Laufs alle zwei Sekunden aus, und ein Zustand, der nur im
+  DOM steht, wäre nach dem ersten Tausch weg -- derselbe Grund wie beim Filter.
+
+  Braucht: project, chunk, lagen, kompakt (optional), offen (optional).
+#}
+{% set eingeklappt = kompakt and chunk.index not in (offen or ()) %}
+<tr id="chunk-{{ chunk.index }}"
+    class="chunk {{ status_class(chunk.status) }}{% if eingeklappt %} eingeklappt{% endif %}">
   <td class="meta">
-    <div class="nummer">{{ chunk.index + 1 }}</div>
+    <div class="nummernzeile">
+      {#
+        Das Kästchen gehört zum Sammelformular in der Tabelle, steht aber in
+        einer Tabellenzelle -- 'form' verbindet beides über die Zeilengrenze
+        hinweg.
+      #}
+      <label class="markierung" title="Diesen Satz für eine Sammeländerung vormerken">
+        <input type="checkbox" name="auswahl" value="{{ chunk.index }}"
+               form="sammelform" aria-label="Satz {{ chunk.index + 1 }} markieren">
+      </label>
+      <span class="nummer">{{ chunk.index + 1 }}</span>
+      {% if kompakt %}
+      <button class="klapper" title="{{ "Ausklappen" if eingeklappt else "Einklappen" }}"
+              aria-label="Satz {{ chunk.index + 1 }} {{ "ausklappen" if eingeklappt else "einklappen" }}"
+              hx-get="/projects/{{ project.id }}/table{{ klappziel(chunk.index) }}"
+              hx-target="#chunks" hx-swap="outerHTML">{{ "▸" if eingeklappt else "▾" }}</button>
+      {% endif %}
+    </div>
     <span class="badge {{ status_class(chunk.status) }}">{{ status_label(chunk.status) }}</span>
     {% if chunk.is_heading %}
       <span class="badge titel" title="Als Titel erkannt: wird für sich gesprochen,
@@ -11,6 +45,10 @@ mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
       welche Aufnahme dieser Satz konditioniert wird. Erst der Klick holt die
       Auswahl; hundert dauerhaft ausgeklappte Listen wären keine Tabelle mehr.
 
+      Gestrichelt heißt: folgt der Vorgabe des Projekts. Durchgezogen heißt: an
+      diesem Satz von Hand gesetzt. Der Unterschied ist der, den man beim
+      Wechseln der Vorgabe wissen muss.
+
       Hat die Stimme nur die neutrale Lage, gäbe es nichts zu wählen. Dann steht
       der Chip auch nicht da: er verspräche eine Wahl, die keine ist.
     #}
@@ -19,10 +57,11 @@ mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
         <button class="badge lage{% if chunk.lage %} gesetzt{% endif %}"
                 hx-get="/projects/{{ project.id }}/chunks/{{ chunk.index }}/lage"
                 hx-target="#lage-{{ chunk.index }}" hx-swap="outerHTML"
-                title="Emotionslage: gegen diese Aufnahme wird der Satz konditioniert.
-Klicken, um eine andere zu wählen.">{{ chunk.lage_name }}</button>
+                title="{% if chunk.lage %}An diesem Satz gesetzt{% else %}Folgt der Vorgabe des Projekts{% endif %}.
+Klicken, um eine andere zu wählen.">{{ project.lage_of(chunk) }}</button>
       </span>
     {% endif %}
+    {% if not eingeklappt %}
     <dl class="messwerte">
       <div>
         <dt>Fehlerrate</dt>
@@ -47,9 +86,21 @@ Klicken, um eine andere zu wählen.">{{ chunk.lage_name }}</button>
       <p class="muted" title="Ein Stück der Referenz stand am Anfang und wurde entfernt">
         &minus;{{ "%.2f"|format(chunk.trimmed_bleed_s) }}&nbsp;s Vorspann</p>
     {% endif %}
+    {% endif %}
   </td>
 
   <td class="text">
+    {% if eingeklappt %}
+      {#
+        Eingeklappt zählt nur, worum es geht: der Wortlaut. Der Klick darauf
+        klappt aus -- die Zeile selbst ist der Griff, nicht nur das Dreieck.
+      #}
+      <button class="zeilentext"
+              hx-get="/projects/{{ project.id }}/table{{ klappziel(chunk.index) }}"
+              hx-target="#chunks" hx-swap="outerHTML"
+              title="Ausklappen">{{ chunk.raw_text }}</button>
+      {% if chunk.error %}<span class="error">{{ chunk.error }}</span>{% endif %}
+    {% else %}
     {#
       Der Abspieler steht unmittelbar unter dem Satz, die Handgriffe darunter in
       einer Reihe. Der Knopf zum Übernehmen gehört zum Formular, steht aber
@@ -111,5 +162,6 @@ Klicken, um eine andere zu wählen.">{{ chunk.lage_name }}</button>
         </button>
       {% endif %}
     </div>
+    {% endif %}
   </td>
 </tr>

@@ -417,6 +417,49 @@ progress.fortschritt::-moz-progress-bar { background: var(--accent); border-radi
 }
 .toast-close:hover { color: var(--ink); background: none; }
 
+/* --- Einklappen und Markieren -------------------------------------------- */
+
+.nummernzeile { display: flex; align-items: center; gap: .35rem; }
+.nummernzeile .nummer {
+  font-size: 1.5rem; font-weight: 300; line-height: 1;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.markierung { margin: 0; }
+.markierung input { width: auto; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+button.klapper {
+  margin: 0 0 0 auto; padding: 0 .35rem; line-height: 1.2;
+  font-size: .9rem; color: var(--muted);
+  background: transparent; border: none; cursor: pointer;
+}
+button.klapper:hover { color: var(--ink); background: var(--erhoben); }
+
+/* Eingeklappt zählt nur der Wortlaut -- und der ist zugleich der Griff zum
+   Ausklappen. Er sieht deshalb wie Text aus und nicht wie ein Knopf. */
+button.zeilentext {
+  display: block; width: 100%; margin: 0; padding: .1rem 0;
+  font: inherit; text-align: left; color: var(--ink);
+  background: none; border: none; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+button.zeilentext:hover { background: none; color: var(--akzent-hell); }
+table.chunks.kompakt td { padding-top: .45rem; padding-bottom: .45rem; }
+tr.chunk.eingeklappt td.meta .badge { margin-top: .2rem; }
+
+/* Das hidden-Attribut zuerst: eine eigene display-Angabe überstimmt sonst die
+   Regel des Browsers, und die Leiste stünde immer da. */
+.sammelleiste[hidden] { display: none; }
+.sammelleiste {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+  margin: .6rem 0; padding: .6rem .8rem;
+  background: var(--akzent-bg); border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.sammelleiste label { margin: 0; display: flex; align-items: center; gap: .4rem; }
+.sammelleiste select { width: auto; margin-top: 0; }
+.sammelleiste button { margin-top: 0; }
+.sammelleiste .markiert { font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* --- Emotionslagen ------------------------------------------------------- */
 
 /* Der Chip in der Satzzeile ist ein Knopf, soll aber wie die Marken daneben
