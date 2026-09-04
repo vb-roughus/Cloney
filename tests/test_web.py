@@ -1828,3 +1828,59 @@ def test_der_picker_fuehrt_zur_vorgabe_zurueck(settings: Settings, voice_store: 
     auswahl = client.get(f"/projects/{project_id}/chunks/0/lage").text
 
     assert "wie Projekt" in auswahl
+
+
+# -- Der Ton im Zwischenspeicher des Browsers ------------------------------
+
+
+def test_die_tonadresse_traegt_ihren_stand(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ein <audio>-Element fragt für eine unveränderte Adresse gar nicht erneut.
+
+    Im Browser gemessen: nach einem 'Text übernehmen und neu rendern' lagen auf
+    Platte 8,11 Sekunden und im Abspieler weiterhin 3,90 -- bei genau einer
+    einzigen Anfrage an die Tonadresse. 'Cache-Control: no-cache' verlangt eine
+    Rückfrage; wo keine Anfrage gestellt wird, gibt es nichts zurückzufragen.
+    """
+    client = _client(settings)
+    project_id = _create_project(client, text="Ein Satz.")
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+
+    assert re.search(rf"/projects/{project_id}/chunks/0/audio\?v=\d+", tabelle)
+
+
+def test_der_stand_wechselt_beim_neurendern(settings: Settings, voice_store: VoiceStore) -> None:
+    """Der eigentliche Punkt: gleiche Adresse hieße gleiche Aufnahme im Browser."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Ein Satz.")
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    vorher = re.search(r"chunks/0/audio\?v=(\d+)", client.get(f"/projects/{project_id}/table").text)
+
+    client.post(
+        f"/projects/{project_id}/chunks/0/text",
+        data={"raw_text": "Ein deutlich längerer Satz, der anders klingen muss."},
+    )
+
+    nachher = re.search(
+        r"chunks/0/audio\?v=(\d+)", client.get(f"/projects/{project_id}/table").text
+    )
+    assert vorher and nachher
+    assert vorher.group(1) != nachher.group(1)
+
+
+def test_jede_tonadresse_traegt_einen_stand() -> None:
+    """Fünf Stellen liefern Ton unter fester Adresse aus -- alle fünf hatten
+    denselben Fehler. Ein neuer Abspieler in einer Vorlage soll ihn nicht
+    zurückholen."""
+    vorlagen = Path(__file__).resolve().parents[1] / "cloney/web/templates"
+
+    ohne_stand = []
+    for pfad in vorlagen.rglob("*.html"):
+        for treffer in re.findall(r'src="(/[^"]*(?:audio|output)[^"]*)"', pfad.read_text("utf-8")):
+            if "?v=" not in treffer:
+                ohne_stand.append(f"{pfad.name}: {treffer}")
+
+    assert ohne_stand == []

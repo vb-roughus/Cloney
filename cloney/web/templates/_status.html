@@ -78,7 +78,8 @@
 
   {% if project.output_file %}
     <div class="ergebnis">
-      <audio controls preload="none" src="/projects/{{ project.id }}/output"></audio>
+      <audio controls preload="none"
+             src="/projects/{{ project.id }}/output?v={{ tonstand(project.output_path) }}"></audio>
       <a class="button secondary small" href="/projects/{{ project.id }}/output">Laden</a>
     </div>
   {% endif %}

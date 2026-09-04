@@ -60,6 +60,7 @@ def create_app(
     templates.env.filters["zeitpunkt"] = zeitpunkt
     templates.env.globals["status_label"] = lambda s: STATUS_LABEL[s][0]
     templates.env.globals["status_class"] = lambda s: STATUS_LABEL[s][1]
+    templates.env.globals["tonstand"] = tonstand
 
     runner = JobRunner(settings)
     vergleiche = ComparisonRunner(settings)
@@ -69,9 +70,9 @@ def create_app(
     def datei(path: Path, media_type: str) -> FileResponse:
         """Eine Tondatei ausliefern, ohne sie im Browser altern zu lassen.
 
-        Ein neu gewürfelter Satz liegt unter derselben Adresse wie der alte.
-        Ohne diese Kopfzeile könnte der Browser den vorherigen Stand aus dem
-        Zwischenspeicher zeigen -- und man hörte, was man gerade ersetzt hat.
+        Die Kopfzeile allein reicht nicht -- siehe ``tonstand``. Sie bleibt
+        trotzdem: sie deckt den Fall ab, dass jemand die Adresse ohne Stand
+        aufruft, etwa aus einem Lesezeichen.
         """
         return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
 
@@ -1265,6 +1266,30 @@ def create_app(
         return templates.TemplateResponse(request, "voices.html", _voice_context(check=check))
 
     return app
+
+
+def tonstand(path: Path) -> str:
+    """Wie alt der Ton unter diesem Pfad ist -- als Anhängsel für seine Adresse.
+
+    Ein neu gerenderter Satz liegt unter derselben Adresse wie der alte, und ein
+    <audio>-Element fragt für eine unveränderte Adresse **gar nicht erneut**.
+    Im Browser gemessen: nach einem 'Text übernehmen und neu rendern' lagen auf
+    Platte 8,11 Sekunden und im Abspieler weiterhin 3,90 -- bei genau einer
+    einzigen Anfrage an die Tonadresse, ganz am Anfang. 'Cache-Control:
+    no-cache' verlangt eine Rückfrage; wo keine Anfrage gestellt wird, gibt es
+    auch nichts zurückzufragen.
+
+    Deshalb wandert der Änderungszeitpunkt der Datei in die Adresse. Ändert sich
+    der Ton, ändert sich die Adresse, und der Browser holt sie neu. Bleibt er
+    gleich, bleibt sie gleich, und der Zwischenspeicher darf weiter greifen.
+
+    Fehlt die Datei, steht dort eine Null -- die Adresse führt dann ohnehin auf
+    einen 404, und ein Ausnahmefall in der Vorlage wäre nur Lärm.
+    """
+    try:
+        return str(path.stat().st_mtime_ns)
+    except OSError:
+        return "0"
 
 
 def anzahl(wert: int, eins: str, viele: str) -> str:

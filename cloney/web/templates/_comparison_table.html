@@ -76,7 +76,7 @@
       <td>
         {% if v.is_done %}
           <audio controls preload="none"
-                 src="/comparisons/{{ comparison.id }}/variants/{{ v.slug }}/audio"></audio>
+                 src="/comparisons/{{ comparison.id }}/variants/{{ v.slug }}/audio?v={{ tonstand(comparison.variant_output(v.slug)) }}"></audio>
         {% elif v.error %}<span class="error">{{ v.error }}</span>
         {% else %}<span class="muted">&mdash;</span>{% endif %}
       </td>
