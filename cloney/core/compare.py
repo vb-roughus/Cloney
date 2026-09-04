@@ -218,10 +218,10 @@ class Comparison(BaseModel):
         )
         for chunk in project.chunks:
             chunk.seed = derive_seed(self.id, chunk.index, 0)
-            # Die Lage gehört zur Variante, nicht zum einzelnen Satz: verglichen
-            # wird eine Aufnahme gegen eine andere, nicht ein Satz gegen den
-            # nächsten.
-            chunk.lage = variant.lage
+        # Die Lage gehört zur Variante, nicht zum einzelnen Satz: verglichen wird
+        # eine Aufnahme gegen eine andere, nicht ein Satz gegen den nächsten.
+        # Sie steht deshalb als Vorgabe am Projekt und nicht an hundert Sätzen.
+        project.lage = variant.lage
         project.engine_options = dict(variant.options)
         project.save()
 

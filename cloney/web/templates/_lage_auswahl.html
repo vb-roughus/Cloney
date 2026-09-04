@@ -3,12 +3,23 @@
   wieder, sobald eine gewählt ist -- in hundert Satzzeilen dauerhaft eine Liste
   zu zeigen, machte die Tabelle unlesbar.
 
-  Die gerade gesetzte Lage steht mit dabei und ist der Weg zurück, ohne dass es
-  einen eigenen Abbrechen-Knopf braucht.
+  Der erste Eintrag ist der Weg zurück zur Vorgabe des Projekts. Ohne ihn
+  bliebe ein einmal von Hand gesetzter Satz für immer von ihr abgekoppelt: er
+  trüge seine Lage weiter, auch wenn das ganze Kapitel später umgestellt wird.
+
+  Die gerade geltende Lage steht hervorgehoben mit dabei und ist zugleich der
+  Weg heraus, ohne dass es einen eigenen Abbrechen-Knopf braucht.
 #}
 <span class="lagenwahl" id="lage-{{ chunk.index }}">
+  <button class="small {% if not chunk.lage %}gewaehlt{% else %}secondary{% endif %}"
+          hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/lage"
+          hx-vals='{"lage": ""}'
+          hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
+          hx-disabled-elt="closest .lagenwahl"
+          hx-indicator="#chunk-{{ chunk.index }}"
+          title="Der Vorgabe des Projekts folgen">wie Projekt&nbsp;({{ project.lage or "neutral" }})</button>
   {% for lage in lagen %}
-    <button class="small {% if lage == chunk.lage_name %}gewaehlt{% else %}secondary{% endif %}"
+    <button class="small {% if lage == chunk.lage %}gewaehlt{% else %}secondary{% endif %}"
             hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/lage"
             hx-vals='{"lage": {{ lage | tojson }}}'
             hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"

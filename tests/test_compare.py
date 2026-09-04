@@ -360,7 +360,10 @@ def test_die_lage_landet_auf_allen_saetzen(settings: Settings, voice_store: Voic
 
     project = comparison.prepare(comparison.variants[1].slug, DummyEngine.info, 8.0)
 
-    assert {c.lage for c in project.chunks} == {"ernst"}
+    # Als Vorgabe am Projekt, nicht an hundert Sätzen -- gemessen wird, wogegen
+    # jeder Satz tatsächlich konditioniert wird.
+    assert project.lage == "ernst"
+    assert {project.lage_of(c) for c in project.chunks} == {"ernst"}
 
 
 def test_slugs_bleiben_eindeutig(settings: Settings) -> None:

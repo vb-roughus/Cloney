@@ -968,6 +968,47 @@ Ein Klick darauf zeigt die Auswahl, ein zweiter setzt sie. Dabei gilt:
 * **Hat eine Stimme nur die neutrale Lage**, steht auch keine Marke da. Sie
   verspräche eine Wahl, die es nicht gibt.
 
+#### Die Vorgabe des Projekts
+
+Ein ganzes Kapitel ernst zu sprechen soll eine Einstellung sein und nicht
+hundert Klicks. Unter **Einstellungen → Emotionslage** steht deshalb die Vorgabe
+für das ganze Projekt.
+
+Ein Satz trägt danach nur noch, was davon **abweicht**. Das ist der Unterschied,
+auf den es ankommt: wird die Vorgabe später geändert, ziehen alle mit, die ihr
+folgen — die von Hand gesetzten Ausnahmen bleiben stehen. Ohne diese Trennung
+kostete jede Korrektur am Kapitel die Feinarbeit an den Ausnahmen.
+
+Die Marke in der Satzzeile zeigt immer die **geltende** Lage. Gestrichelt heißt
+„folgt der Vorgabe", durchgezogen heißt „an diesem Satz gesetzt". Im Auswahlmenü
+steht als erster Eintrag *wie Projekt* — der Weg zurück, ohne den ein einmal von
+Hand gesetzter Satz für immer abgekoppelt bliebe.
+
+Beim Wechsel der Vorgabe fällt nur der Ton derer weg, die ihr folgen. Er stammt
+aus einer anderen Aufnahme; alles Übrige bleibt stehen.
+
+#### Mehrere Sätze auf einmal
+
+Jede Zeile hat ein Kästchen. Sobald eines gesetzt ist, erscheint über der Tabelle
+eine Leiste mit der Zahl der markierten Sätze und einer Lagenauswahl — *Auf
+Auswahl anwenden* setzt sie auf alle. Sätze, die schon so stehen, kostet das
+nichts: sie behalten ihren Ton, weil sich an ihnen nichts ändert.
+
+Filter und Klappzustand reisen dabei mit. Die Antwort ersetzt die ganze Tabelle,
+und ohne sie stünde danach die ungefilterte, ausgeklappte Liste da.
+
+#### Einklappen
+
+Ausgeklappt trägt jeder Satz ein Textfeld, zwei Rückschriften, einen Abspieler
+und vier Knöpfe — bei hundert Sätzen mehrere Meter Bildschirm. **Einklappen** in
+der Filterleiste lässt nur Nummer, Zustand, Lage und Wortlaut stehen; im Test
+mit acht Sätzen schrumpfte die Tabelle auf 39 % ihrer Höhe. Das Dreieck an der
+Nummer klappt einen einzelnen wieder auf, der Klick auf den Wortlaut ebenso.
+
+Wie der Filter hängt beides an der Adresse und nicht am Browser: die Tabelle
+tauscht sich während eines Laufs alle zwei Sekunden aus, und was nur im DOM
+stünde, wäre nach dem ersten Tausch weg.
+
 Zwei Nebenwirkungen, die nicht offensichtlich sind:
 
 Die **Chunk-Länge** richtet sich nach der **längsten** Lage. Referenz und

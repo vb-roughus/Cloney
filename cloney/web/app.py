@@ -13,6 +13,7 @@ import contextlib
 from datetime import datetime
 from html import escape
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -146,9 +147,40 @@ def create_app(
         """
         return voices.lagen(voice) if voices.exists(voice) else []
 
-    def _tabelle(project: Project, status: str = "alle", q: str = "") -> dict[str, object]:
+    def _tabelle(
+        project: Project,
+        status: str = "alle",
+        q: str = "",
+        kompakt: bool = False,
+        offen: tuple[int, ...] = (),
+    ) -> dict[str, object]:
         """Kontext der Satztabelle. Eine Stelle, damit die Seite und ihr
-        Nachladen nicht mit verschiedenen Filtern enden."""
+        Nachladen nicht mit verschiedenen Filtern enden.
+
+        Filter, Klappzustand und die einzeln ausgeklappten Sätze hängen alle an
+        der Adresse. Die Tabelle tauscht sich während eines Laufs alle zwei
+        Sekunden aus -- was nur im DOM stünde, wäre nach dem ersten Tausch weg.
+        """
+
+        def adresse(**abweichung: object) -> str:
+            """Die Adresse dieser Tabelle, wahlweise mit geändertem Zustand."""
+            werte = {"status": status, "q": q, "kompakt": kompakt, "offen": list(offen)}
+            werte.update(abweichung)
+            teile = [
+                f"status={werte['status']}",
+                f"q={quote(str(werte['q']))}",
+            ]
+            if werte["kompakt"]:
+                teile.append("kompakt=1")
+            if werte["offen"]:
+                teile.append("offen=" + ",".join(str(i) for i in sorted(werte["offen"])))
+            return "?" + "&".join(teile)
+
+        def klappziel(index: int) -> str:
+            """Die Adresse, die genau diesen Satz auf- oder zuklappt."""
+            gewechselt = set(offen) ^ {index}
+            return adresse(offen=sorted(gewechselt))
+
         return {
             "project": project,
             "threshold": settings.cer_threshold,
@@ -156,7 +188,22 @@ def create_app(
             "auswahl": select(project.chunks, status, q),
             "gruppen": LABELS,
             "lagen": _lagen_der_stimme(project.voice),
+            "kompakt": kompakt,
+            "offen": set(offen),
+            "adresse": adresse,
+            "klappziel": klappziel,
         }
+
+    def _offene(roh: str) -> tuple[int, ...]:
+        """'0,3,7' zu Zahlen. Unlesbares wird übergangen -- der Wert kommt aus
+        einer Adresse, und ein Tippfehler darin soll die Tabelle nicht kippen."""
+        gelesen = []
+        for stueck in roh.replace(",", " ").split():
+            try:
+                gelesen.append(int(stueck))
+            except ValueError:
+                continue
+        return tuple(dict.fromkeys(gelesen))
 
     def render_row(request: Request, project: Project, index: int) -> HTMLResponse:
         """Eine einzelne Satzzeile -- und die Nachricht, dass der Zähler nicht
@@ -382,10 +429,62 @@ def create_app(
         )
 
     @app.get("/projects/{project_id}/table", response_class=HTMLResponse)
-    def table(request: Request, project_id: str, status: str = "alle", q: str = "") -> HTMLResponse:
+    def table(
+        request: Request,
+        project_id: str,
+        status: str = "alle",
+        q: str = "",
+        kompakt: int = 0,
+        offen: str = "",
+    ) -> HTMLResponse:
         project = load(project_id)
         return templates.TemplateResponse(
-            request, "_chunk_table.html", _tabelle(project, status, q)
+            request,
+            "_chunk_table.html",
+            _tabelle(project, status, q, bool(kompakt), _offene(offen)),
+        )
+
+    @app.post("/projects/{project_id}/lage", response_class=HTMLResponse)
+    def projekt_lage(request: Request, project_id: str, lage: str = Form("")) -> HTMLResponse:
+        """Die Emotionslage des ganzen Projekts setzen.
+
+        Getroffen wird nur, wer keine eigene trägt -- von Hand gesetzte Lagen
+        überleben den Wechsel.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        betroffen = project.set_default_lage(lage)
+        bericht = f"Vorgabe auf „{lage or 'neutral'}“ gesetzt. " + (
+            f"{anzahl(betroffen, 'Satz verliert', 'Sätze verlieren')} ihren Ton."
+            if betroffen
+            else "Kein Satz hatte Ton, der davon betroffen wäre."
+        )
+        return project_page(request, project, bericht=bericht, aktiver_reiter="einstellungen")
+
+    @app.post("/projects/{project_id}/chunks/lage", response_class=HTMLResponse)
+    async def saetze_lage(request: Request, project_id: str) -> HTMLResponse:
+        """Eine Lage auf alle markierten Sätze anwenden.
+
+        Der Filter und der Klappzustand reisen im Formular mit: die Antwort
+        ersetzt die ganze Tabelle, und ohne sie stünde danach die ungefilterte,
+        ausgeklappte Liste da.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        formular = await request.form()
+        indices = [int(i) for i in formular.getlist("auswahl") if str(i).isdigit()]
+        gueltig = [i for i in indices if 0 <= i < len(project.chunks)]
+        project.set_lage_many(gueltig, str(formular.get("lage") or ""))
+        return templates.TemplateResponse(
+            request,
+            "_chunk_table.html",
+            _tabelle(
+                project,
+                str(formular.get("status") or "alle"),
+                str(formular.get("q") or ""),
+                str(formular.get("kompakt") or "0") == "1",
+            ),
+            headers={"HX-Trigger": "satz-geaendert"},
         )
 
     @app.post("/projects/{project_id}/rename", response_class=HTMLResponse)
@@ -447,6 +546,7 @@ def create_app(
                 "voices": voices.list_all(),
                 "engines": available_engines(),
                 "models": modelle.list_all(),
+                "lagen": _lagen_der_stimme(project.voice),
                 **_reference_context(project),
             },
         )

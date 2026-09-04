@@ -160,7 +160,7 @@ def test_saetze_sind_zunaechst_neutral(settings, voice_store: VoiceStore) -> Non
     projekt = _projekt(settings)
 
     assert all(c.lage == "" for c in projekt.chunks)
-    assert all(c.lage_name == NEUTRAL for c in projekt.chunks)
+    assert all(projekt.lage_of(c) == NEUTRAL for c in projekt.chunks)
 
 
 def test_lage_wechseln_behaelt_den_seed(settings, voice_store: VoiceStore) -> None:
@@ -189,15 +189,20 @@ def test_lage_wechseln_verwirft_den_ton(settings, voice_store: VoiceStore) -> No
     assert projekt.chunks[0].audio_file is None
 
 
-def test_zurueck_auf_neutral_leert_das_feld(settings, voice_store: VoiceStore) -> None:
-    """Damit ein Manifest nicht zwei Schreibweisen für denselben Zustand kennt."""
+def test_leer_heisst_der_vorgabe_folgen(settings, voice_store: VoiceStore) -> None:
+    """Ein Satz trägt nur, was von der Vorgabe des Projekts abweicht."""
     projekt = _projekt(settings)
-    projekt.set_lage(0, "ernst")
-
+    projekt.set_default_lage("ernst")
     projekt.set_lage(0, "neutral")
 
-    assert projekt.chunks[0].lage == ""
-    assert projekt.chunks[0].lage_name == NEUTRAL
+    assert projekt.chunks[0].lage == "neutral"
+    assert projekt.lage_of(projekt.chunks[0]) == NEUTRAL
+    # Der zweite folgt weiterhin dem Projekt.
+    assert projekt.chunks[1].lage == ""
+    assert projekt.lage_of(projekt.chunks[1]) == "ernst"
+
+    projekt.set_lage(0, "")
+    assert projekt.lage_of(projekt.chunks[0]) == "ernst"
 
 
 def test_die_lage_uebersteht_das_neu_segmentieren(settings, voice_store: VoiceStore) -> None:
@@ -260,3 +265,115 @@ def test_eine_geloeschte_lage_bricht_den_lauf_nicht_ab(
     synthesize_chunks(projekt, projekt.chunks, voice_store, DummyEngine)
 
     assert all(c.status == ChunkStatus.SYNTHESIZED for c in projekt.chunks)
+
+
+# -- Vorgabe des Projekts ---------------------------------------------------
+
+
+def test_die_vorgabe_gilt_fuer_alle_ohne_eigene(settings, voice_store: VoiceStore) -> None:
+    """Ein ganzes Kapitel ernst zu sprechen ist eine Einstellung, keine hundert
+    Klicks."""
+    projekt = _projekt(settings)
+
+    projekt.set_default_lage("ernst")
+
+    assert all(projekt.lage_of(c) == "ernst" for c in projekt.chunks)
+    assert all(c.lage == "" for c in projekt.chunks)
+
+
+def test_von_hand_gesetzte_lagen_ueberleben_den_wechsel(settings, voice_store: VoiceStore) -> None:
+    """Sonst kostete jede Korrektur der Vorgabe die Feinarbeit an den Ausnahmen."""
+    projekt = _projekt(settings)
+    projekt.set_lage(1, "freundlich")
+
+    projekt.set_default_lage("ernst")
+
+    assert projekt.lage_of(projekt.chunks[0]) == "ernst"
+    assert projekt.lage_of(projekt.chunks[1]) == "freundlich"
+
+
+def test_die_vorgabe_verwirft_nur_den_ton_der_betroffenen(
+    settings, voice_store: VoiceStore
+) -> None:
+    projekt = _projekt(settings)
+    projekt.set_lage(1, "freundlich")
+    for chunk in projekt.chunks:
+        chunk.status = ChunkStatus.OK
+        chunk.audio_file = f"chunk_{chunk.index:04d}.wav"
+
+    betroffen = projekt.set_default_lage("ernst")
+
+    assert betroffen == 1
+    assert projekt.chunks[0].audio_file is None
+    assert projekt.chunks[1].audio_file == "chunk_0001.wav"
+
+
+def test_dieselbe_vorgabe_noch_einmal_kostet_nichts(settings, voice_store: VoiceStore) -> None:
+    projekt = _projekt(settings)
+    projekt.set_default_lage("ernst")
+    for chunk in projekt.chunks:
+        chunk.audio_file = f"chunk_{chunk.index:04d}.wav"
+
+    assert projekt.set_default_lage("ernst") == 0
+    assert all(c.audio_file for c in projekt.chunks)
+
+
+def test_die_vorgabe_uebersteht_das_neu_segmentieren(settings, voice_store: VoiceStore) -> None:
+    from cloney.engines.registry import engine_info
+
+    projekt = _projekt(settings)
+    projekt.set_default_lage("ernst")
+
+    projekt.reconfigure(text="Ganz anderer Text.", voice="test-stimme", engine=engine_info("dummy"))
+
+    assert projekt.lage == "ernst"
+
+
+# -- Auf mehrere Sätze anwenden --------------------------------------------
+
+
+def test_eine_lage_auf_mehrere_saetze(settings, voice_store: VoiceStore) -> None:
+    projekt = _projekt(settings, "Eins.\n\nZwei.\n\nDrei.")
+
+    geaendert = projekt.set_lage_many([0, 2], "ernst")
+
+    assert geaendert == 2
+    assert [projekt.lage_of(c) for c in projekt.chunks] == ["ernst", NEUTRAL, "ernst"]
+
+
+def test_wer_schon_so_steht_kostet_keine_arbeit(settings, voice_store: VoiceStore) -> None:
+    """Beim Anwenden auf eine Auswahl trifft man regelmäßig Sätze, die schon so
+    stehen -- deren Ton darf das nicht kosten."""
+    projekt = _projekt(settings, "Eins.\n\nZwei.")
+    projekt.set_lage(0, "ernst")
+    projekt.chunks[0].audio_file = "chunk_0000.wav"
+    projekt.chunks[0].status = ChunkStatus.OK
+
+    geaendert = projekt.set_lage_many([0, 1], "ernst")
+
+    assert geaendert == 1
+    assert projekt.chunks[0].audio_file == "chunk_0000.wav"
+    assert projekt.chunks[0].status == ChunkStatus.OK
+
+
+def test_der_lauf_folgt_der_vorgabe(
+    settings, voice_store: VoiceStore, zweite_aufnahme: Path
+) -> None:
+    """Der eigentliche Punkt der Vorgabe: die Engine bekommt die Aufnahme, die
+    dazu gehört -- auch für Sätze, an denen nichts steht."""
+    voice_store.add_lage("test-stimme", "ernst", zweite_aufnahme, transcript="Ernst.")
+    projekt = _projekt(settings)
+    projekt.set_default_lage("ernst")
+    projekt.set_lage(1, "neutral")
+    projekt.save()
+
+    benutzt: list[str] = []
+
+    class Mitschrift(DummyEngine):
+        def synthesize(self, text, voice, seed):  # noqa: ANN001, ANN202
+            benutzt.append(voice.lage)
+            return super().synthesize(text, voice, seed)
+
+    synthesize_chunks(projekt, projekt.chunks, voice_store, Mitschrift)
+
+    assert benutzt == ["ernst", NEUTRAL]

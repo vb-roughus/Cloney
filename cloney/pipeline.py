@@ -54,9 +54,16 @@ def _noop(event: ProgressEvent) -> None:
     return None
 
 
-def _referenzen(voice_store: VoiceStore, voice: str, chunks: list[Chunk]) -> dict[str, VoiceRef]:
-    """Die gebrauchten Referenzaufnahmen, eine je vorkommender Lage."""
-    return {lage: voice_store.get(voice, lage) for lage in {c.lage_name for c in chunks}}
+def _referenzen(
+    voice_store: VoiceStore, project: Project, chunks: list[Chunk]
+) -> dict[str, VoiceRef]:
+    """Die gebrauchten Referenzaufnahmen, eine je vorkommender Lage.
+
+    Über das Projekt und nicht über den Satz: ein Satz trägt nur, was von der
+    Vorgabe des Projekts abweicht, und kann die Frage allein nicht beantworten.
+    """
+    lagen = {project.lage_of(c) for c in chunks}
+    return {lage: voice_store.get(project.voice, lage) for lage in lagen}
 
 
 def synthesize_chunks(
@@ -80,12 +87,12 @@ def synthesize_chunks(
     if not chunks:
         return
 
-    referenzen = _referenzen(voice_store, project.voice, chunks)
+    referenzen = _referenzen(voice_store, project, chunks)
     with model_slot(engine_factory) as engine:
         on_event(ProgressEvent("synth", f"Engine '{engine.info.name}' geladen", 0, len(chunks)))
         for done, chunk in enumerate(chunks, start=1):
             text = strip_unsupported_tags(chunk.normalized_text, engine.info.supported_tags)
-            voice = referenzen[chunk.lage_name]
+            voice = referenzen[project.lage_of(chunk)]
             try:
                 audio = engine.synthesize(text, voice, chunk.seed)
             except Exception as exc:  # noqa: BLE001 - Fehler gehört ins Manifest, nicht in den Stack
@@ -233,7 +240,7 @@ def _measure_similarity(
     zu_pruefen: list[Chunk],
     on_event: ProgressCallback,
 ) -> None:
-    referenzen = _referenzen(voice_store, project.voice, zu_pruefen)
+    referenzen = _referenzen(voice_store, project, zu_pruefen)
     with model_slot(embedder_factory) as embedder:
         on_event(ProgressEvent("similarity", "Stimmvergleich geladen", 0, len(zu_pruefen)))
         # Verglichen wird mit der Aufnahme, gegen die auch konditioniert wurde.
@@ -246,7 +253,9 @@ def _measure_similarity(
 
         for done, chunk in enumerate(zu_pruefen, start=1):
             audio, sample_rate = read_wav(project.chunk_path(chunk.index))
-            wert = cosine_similarity(vektoren[chunk.lage_name], embedder.embed(audio, sample_rate))
+            wert = cosine_similarity(
+                vektoren[project.lage_of(chunk)], embedder.embed(audio, sample_rate)
+            )
             chunk.speaker_similarity = round(wert, 4)
             if settings.similarity_threshold > 0 and wert < settings.similarity_threshold:
                 chunk.status = ChunkStatus.NEEDS_REVIEW

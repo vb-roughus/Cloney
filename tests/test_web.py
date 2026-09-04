@@ -1649,3 +1649,182 @@ def test_unbekannte_lage_faellt_aus_dem_zuschnitt(
 
     assert antwort.status_code == 400
     assert "mindestens zwei Varianten" in antwort.text
+
+
+# -- Einklappen, Markieren, Vorgabe ----------------------------------------
+
+
+def _mit_lage(client: TestClient) -> None:
+    """Der Stimme eine zweite Lage geben -- ohne die gäbe es nichts zu wählen."""
+    _lage_anlegen(client)
+
+
+def test_eingeklappt_bleibt_nur_der_wortlaut(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ein Kapitel hat schnell hundert Sätze, und jeder trägt ausgeklappt ein
+    Textfeld, zwei Rückschriften, einen Abspieler und vier Knöpfe."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Der erste Satz.\n\nDer zweite Satz.")
+
+    tabelle = client.get(f"/projects/{project_id}/table", params={"kompakt": 1}).text
+
+    assert "Der erste Satz." in tabelle
+    assert "<textarea" not in tabelle
+    assert "Neu würfeln" not in tabelle
+
+
+def test_ein_einzelner_satz_laesst_sich_ausklappen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Der erste Satz.\n\nDer zweite Satz.")
+
+    tabelle = client.get(f"/projects/{project_id}/table", params={"kompakt": 1, "offen": "1"}).text
+
+    # Genau einer trägt sein Textfeld, der andere nicht.
+    assert tabelle.count("<textarea") == 1
+
+
+def test_der_klappzustand_haengt_an_der_adresse(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sonst käme nach zwei Sekunden die ausgeklappte Liste zurück."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    monkeypatch.setattr(JobRunner, "is_running", lambda self, key: True)
+
+    tabelle = client.get(f"/projects/{project_id}/table", params={"kompakt": 1}).text
+
+    # Jinja schreibt das kaufmännische Und als Entität -- der Browser liest es
+    # richtig, der Test muss es also so erwarten.
+    assert f"/projects/{project_id}/table?status=alle&amp;q=&amp;kompakt=1" in tabelle
+
+
+def test_unlesbare_klappliste_kippt_die_tabelle_nicht(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der Wert kommt aus einer Adresse."""
+    antwort = _client(settings).get(
+        f"/projects/{_create_project(_client(settings))}/table",
+        params={"kompakt": 1, "offen": "0,x,zwei"},
+    )
+
+    assert antwort.status_code in (200, 404)
+
+
+def test_markierte_saetze_bekommen_dieselbe_lage(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client, text="Eins.\n\nZwei.\n\nDrei.")
+
+    client.post(
+        f"/projects/{project_id}/chunks/lage",
+        data={"auswahl": ["0", "2"], "lage": "ernst", "status": "alle", "q": ""},
+    )
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert [c.lage for c in project.chunks] == ["ernst", "", "ernst"]
+
+
+def test_die_sammelanwendung_haelt_den_filter(settings: Settings, voice_store: VoiceStore) -> None:
+    """Die Antwort ersetzt die ganze Tabelle -- ohne den Filter stünde danach
+    die ungefilterte Liste da."""
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client, text="Eins.\n\nZwei.")
+
+    tabelle = client.post(
+        f"/projects/{project_id}/chunks/lage",
+        data={"auswahl": ["0"], "lage": "ernst", "status": "offen", "q": "eins", "kompakt": "1"},
+    ).text
+
+    assert 'value="offen"\n               checked' in tabelle or "offen" in tabelle
+    assert "kompakt=1" in tabelle
+
+
+def test_verborgenes_bleibt_auch_im_stylesheet_verborgen() -> None:
+    """Eine eigene display-Angabe überstimmt das hidden-Attribut.
+
+    Im Browser gemessen: die Sammelleiste stand trotz hidden von Anfang an da,
+    weil '.sammelleiste { display: flex }' die Regel des Browsers schlägt. Ein
+    Test auf das Attribut allein merkt davon nichts -- deshalb hier auf die
+    Regel, die es zurückholt.
+    """
+    css = (Path(__file__).resolve().parents[1] / "cloney/web/static/style.css").read_text("utf-8")
+
+    ohne_kommentare = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    mit_display = set(re.findall(r"\.([a-z-]+)\s*\{[^}]*\bdisplay\s*:", ohne_kommentare))
+    with_hidden = set(re.findall(r"\.([a-z-]+)\[hidden\]", ohne_kommentare))
+
+    assert "sammelleiste" in mit_display
+    assert "sammelleiste" in with_hidden
+
+
+def test_die_sammelleiste_startet_verborgen(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ohne Markierung hätte sie nichts, worauf sie wirken könnte."""
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client)
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+
+    assert '<form id="sammelform" class="sammelleiste" hidden' in tabelle
+
+
+def test_ohne_zweite_lage_keine_sammelleiste(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    assert 'id="sammelform"' not in client.get(f"/projects/{project_id}/table").text
+
+
+def test_die_vorgabe_des_projekts_laesst_sich_setzen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client, text="Eins.\n\nZwei.")
+
+    seite = client.post(f"/projects/{project_id}/lage", data={"lage": "ernst"}).text
+
+    assert "Vorgabe auf" in seite
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.lage == "ernst"
+    assert all(project.lage_of(c) == "ernst" for c in project.chunks)
+
+
+def test_die_vorgabe_waehrend_eines_laufs_wird_abgelehnt(
+    settings: Settings, voice_store: VoiceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client)
+    monkeypatch.setattr(JobRunner, "is_running", lambda self, key: True)
+
+    antwort = client.post(f"/projects/{project_id}/lage", data={"lage": "ernst"})
+
+    assert antwort.status_code == 409
+
+
+def test_der_chip_zeigt_die_geltende_lage(settings: Settings, voice_store: VoiceStore) -> None:
+    """Auch wenn sie von der Vorgabe kommt und am Satz nichts steht."""
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/lage", data={"lage": "ernst"})
+
+    tabelle = client.get(f"/projects/{project_id}/table").text
+
+    assert ">ernst</button>" in tabelle
+
+
+def test_der_picker_fuehrt_zur_vorgabe_zurueck(settings: Settings, voice_store: VoiceStore) -> None:
+    """Ohne ihn bliebe ein von Hand gesetzter Satz für immer abgekoppelt."""
+    client = _client(settings)
+    _mit_lage(client)
+    project_id = _create_project(client)
+
+    auswahl = client.get(f"/projects/{project_id}/chunks/0/lage").text
+
+    assert "wie Projekt" in auswahl

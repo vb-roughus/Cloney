@@ -50,6 +50,38 @@
     </form>
   </div>
 
+  {#
+    Die Vorgabe steht hier und nicht bei den Sätzen: sie bestimmt den Klang des
+    ganzen Kapitels, wie Stimme und Engine. Unter „Sätze" wird nur noch die
+    Ausnahme gesetzt.
+
+    Hat die Stimme nur die neutrale Lage, gäbe es nichts zu wählen -- dann steht
+    die Karte auch nicht da.
+  #}
+  {% if lagen | length > 1 %}
+  <div class="card">
+    <h3>Emotionslage</h3>
+    <p class="muted">
+      Gilt für jeden Satz, an dem nichts anderes steht. Von Hand gesetzte Lagen
+      überleben den Wechsel &mdash; getroffen wird nur, wer der Vorgabe folgt, und
+      dessen Ton fällt weg, weil er aus einer anderen Aufnahme stammt.
+    </p>
+    <form method="post" action="/projects/{{ project.id }}/lage">
+      <div class="modelle">
+        {% for lage in lagen %}
+        <label class="ankreuz{% if lage == (project.lage or "neutral") %} gewaehlt{% endif %}">
+          <input type="radio" name="lage" value="{{ lage }}"
+                 {% if lage == (project.lage or "neutral") %}checked{% endif %}> {{ lage }}
+        </label>
+        {% endfor %}
+      </div>
+      <button class="small" type="submit"
+              data-frage="Alle Sätze ohne eigene Lage verlieren ihren Ton. Fortfahren?"
+              data-frage-ja="Übernehmen">Vorgabe übernehmen</button>
+    </form>
+  </div>
+  {% endif %}
+
   {% if not engine.reproducible_seed %}
   <p class="hinweis">
     <strong>{{ project.engine }} nimmt keinen Seed entgegen.</strong>
