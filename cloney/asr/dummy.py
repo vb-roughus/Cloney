@@ -25,12 +25,18 @@ class DummyASR:
         corrupt_seeds: set[int] | None = None,
         always_corrupt: bool = False,
         bleed_words: str = "",
+        stummer_vorspann: float = 0.0,
     ) -> None:
         self.corrupt_seeds = corrupt_seeds or set()
         self.always_corrupt = always_corrupt
         #: Wörter, die der Rückschrift vorangestellt werden -- bildet den
         #: Referenz-Vorspann nach, den F5-TTS am Anfang stehen lassen kann.
         self.bleed_words = bleed_words
+        #: Sekunden Vorspann, den die Erkennung *nicht* aufschreibt. Der andere
+        #: und häufigere Fall: eine angerissene Silbe ist zu hören, aber kein
+        #: Wort, das sich zuordnen ließe. Verraten wird sie nur dadurch, dass
+        #: das erste Wort erst spät beginnt.
+        self.stummer_vorspann = stummer_vorspann
 
     def transcribe(self, audio: np.ndarray, sample_rate: int, language: str = "de") -> Transcript:
         found = lookup(audio)
@@ -45,9 +51,15 @@ class DummyASR:
         # Gleichmäßig über die Dauer verteilte Zeiten genügen: geprüft wird die
         # Zuordnung von Wörtern zu Zeiten, nicht die Genauigkeit von Whisper.
         dauer = len(audio) / sample_rate if len(audio) else 0.0
-        schritt = dauer / len(alle) if alle else 0.0
+        rest = max(0.0, dauer - self.stummer_vorspann)
+        schritt = rest / len(alle) if alle else 0.0
         woerter = tuple(
-            TranscribedWord(wort, i * schritt, (i + 1) * schritt) for i, wort in enumerate(alle)
+            TranscribedWord(
+                wort,
+                self.stummer_vorspann + i * schritt,
+                self.stummer_vorspann + (i + 1) * schritt,
+            )
+            for i, wort in enumerate(alle)
         )
         return Transcript(text=" ".join(alle), words=woerter)
 

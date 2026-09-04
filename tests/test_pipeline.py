@@ -172,6 +172,29 @@ def test_referenz_vorspann_wird_abgeschnitten(settings: Settings, voice_store: V
     assert duration_seconds(audio, rate) > 0
 
 
+def test_ein_nicht_aufgeschriebener_vorspann_wird_auch_gefunden(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der häufigere Fall: die angerissene Silbe ergibt kein Wort, das sich
+    zuordnen ließe. Die Rückschrift passt dann Wort für Wort -- und trotzdem
+    steht eine halbe Sekunde Referenz am Anfang. Verraten wird sie allein
+    dadurch, dass das erste Wort erst spät beginnt."""
+    project = _project(settings)
+    run_project(
+        project,
+        settings,
+        voice_store,
+        DummyEngine,
+        lambda: DummyASR(stummer_vorspann=0.5),
+    )
+
+    erster = project.chunks[0]
+    assert erster.trimmed_bleed_s is not None
+    assert 0 < erster.trimmed_bleed_s <= 0.55
+    # Kein Wort war zu verwerfen: gemessen wird gegen die volle Rückschrift.
+    assert erster.cer == 0.0
+
+
 def test_ohne_vorspann_wird_nichts_angetastet(settings: Settings, voice_store: VoiceStore) -> None:
     from cloney.core.audio import read_wav
 
