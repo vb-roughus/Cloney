@@ -1278,6 +1278,38 @@ cloney finetune train anna --dry-run    # zeigt nur, was liefe
 cloney finetune train anna --neu        # vom Pretrain aus, statt fortzusetzen
 ```
 
+#### Die Warnung des Hugging Face Hub
+
+```
+Warning: You are sending unauthenticated requests to the HF Hub.
+Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+```
+
+Sie ist harmlos und lässt sich ignorieren. Alle Modelle, die Cloney holt, sind
+öffentlich; ein Token ist für keines davon nötig, und geladen wird ohnehin nur
+beim ersten Mal — danach liegt alles im Zwischenspeicher unter
+`~/.cache/huggingface`. Was ein Token bringt, steht in der Warnung selbst: eine
+höhere Ratengrenze. Die greift für unangemeldete Zugriffe je IP-Adresse und
+kann eine Erstinstallation bremsen; einen laufenden Trainingslauf berührt sie
+nicht mehr.
+
+Wer sie loswerden will, schreibt ein Token in die `.env`:
+
+```ini
+HF_TOKEN=hf_...
+```
+
+**Beide Namen wirken** — `HF_TOKEN` wie in der Warnung, und `CLONEY_HF_TOKEN`
+wie jede andere Einstellung. Cloney hebt den Wert beim Start in die Umgebung;
+ohne diesen Schritt bliebe er wirkungslos, denn `pydantic-settings` liest die
+`.env` in sein eigenes Objekt und **nicht** in die Umgebung, und
+`huggingface_hub` sieht ausschließlich die Umgebung. Nachgemessen: ohne den
+Schritt gibt `huggingface_hub.get_token()` nichts zurück, obwohl die Zeile in
+der `.env` steht.
+
+Ein bereits gesetztes `HF_TOKEN` gewinnt — wer sich mit `huggingface-cli login`
+angemeldet hat, meinte das so. `cloney doctor` zeigt an, ob eines anliegt.
+
 **Material erweitern und noch einmal trainieren geht -- und macht mehr, als man
 erwartet.** Trainingsdaten sind kein Verbrauchsgut: über hundert Epochen sieht
 das Modell dieselben Segmente ohnehin hundertfach. Wer eine Lesung verlängert,
@@ -1459,6 +1491,7 @@ setzen; die Standardwerte stehen in [`cloney/config.py`](cloney/config.py).
 | `CLONEY_MAX_RETRIES` | `2` | Neuversuche je Satz, bevor er zur Durchsicht bleibt |
 | `CLONEY_TARGET_CHUNK_SECONDS` | `20.0` | angestrebte Chunk-Länge |
 | `CLONEY_TARGET_LUFS` | `-16.0` | Ziel-Lautheit der fertigen Spur |
+| `HF_TOKEN` | – | Zugang zum Hugging Face Hub; `CLONEY_HF_TOKEN` wirkt ebenso |
 | `CLONEY_HIGGS_BASE_URL` | `http://localhost:8000/v1` | Adresse des Modellservers |
 | `CLONEY_HIGGS_MODEL` | `bosonai/higgs-audio-v3-tts-4b` | muss dem `--model-path` des Servers entsprechen |
 | `CLONEY_HIGGS_REFERENCE_MODE` | `base64` | `base64`/`auto`/`wsl`/`path` — wie der Server an die Referenz kommt |

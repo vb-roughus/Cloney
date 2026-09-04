@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -78,6 +80,20 @@ class Settings(BaseSettings):
     # --- F5-TTS mit deutschem Finetune -----------------------------------
     # Die Dateinamen unterscheiden sich zwischen den Finetunes. Passen sie nicht,
     # nennt die Fehlermeldung der Engine die zu setzenden Variablen.
+    # --- Hugging Face Hub ---------------------------------------------------
+    #: Zugangstoken für den Hub. Leer heißt: unangemeldet laden.
+    #:
+    #: Die Modelle, die Cloney holt, sind öffentlich -- ein Token ist für keines
+    #: davon nötig. Es hebt nur die Ratengrenze an, die für unangemeldete
+    #: Zugriffe je IP-Adresse gilt, und lässt die Warnung verstummen, die
+    #: huggingface_hub sonst bei jedem Lauf ausgibt.
+    #:
+    #: Angenommen wird beides: CLONEY_HF_TOKEN wie jede andere Einstellung, und
+    #: HF_TOKEN unter dem Namen, den die Warnung selbst nennt. Ohne den zweiten
+    #: schriebe man das Naheliegende in die .env und wunderte sich, dass nichts
+    #: geschieht -- siehe apply_hf_token.
+    hf_token: str = Field(default="", validation_alias=AliasChoices("CLONEY_HF_TOKEN", "HF_TOKEN"))
+
     f5_repo_id: str = "aihpi/F5-TTS-German"
     f5_model_config: str = "F5TTS_Base"
     # Leer = im Repo nachsehen und selbst wählen.
@@ -132,14 +148,46 @@ class Settings(BaseSettings):
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
 
+def apply_hf_token(settings: Settings) -> bool:
+    """Das Token aus der Konfiguration in die Umgebung heben. True, wenn gesetzt.
+
+    Nötig, weil pydantic-settings die .env in dieses Objekt liest und **nicht**
+    in die Umgebung exportiert. Nachgemessen: mit ``HF_TOKEN=...`` in der .env
+    steht der Wert im Settings-Objekt, ``os.environ`` bleibt leer, und
+    ``huggingface_hub.get_token()`` gibt nichts zurück. Wer das Naheliegende
+    tut, hätte also weiterhin die Warnung und keine Wirkung.
+
+    huggingface_hub liest ausschließlich die Umgebung und
+    ``~/.cache/huggingface/token``. Ein durchgereichtes Argument genügte
+    ohnehin nicht: das Training läuft in einem eigenen Prozess, und F5 lädt dort
+    selbst nach. Der Kindprozess erbt die Umgebung -- und damit auch das hier
+    Gesetzte.
+
+    Ein bereits gesetztes HF_TOKEN gewinnt: wer sich mit ``huggingface-cli
+    login`` angemeldet oder die Variable im Terminal gesetzt hat, meinte das so.
+    """
+    if os.environ.get("HF_TOKEN"):
+        return True
+    if not settings.hf_token.strip():
+        return False
+    os.environ["HF_TOKEN"] = settings.hf_token.strip()
+    return True
+
+
 _settings: Settings | None = None
 
 
 def get_settings() -> Settings:
-    """Prozessweite Settings-Instanz (in Tests via set_settings ersetzbar)."""
+    """Prozessweite Settings-Instanz (in Tests via set_settings ersetzbar).
+
+    Hier wird zugleich das Hub-Token wirksam gemacht. Die Stelle ist bewusst
+    diese: alles -- Kommandozeile wie Weboberfläche -- kommt hier vorbei, und
+    eine Einstellung, die nur im Objekt steht und nirgends wirkt, wäre keine.
+    """
     global _settings
     if _settings is None:
         _settings = Settings()
+        apply_hf_token(_settings)
     return _settings
 
 
