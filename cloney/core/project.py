@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 from collections.abc import Iterable
+from contextlib import suppress
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -210,6 +211,39 @@ class Project(BaseModel):
     def output_path(self) -> Path:
         return self.root / "output.wav"
 
+    @property
+    def prototype_path(self) -> Path:
+        """Der Zwischenstand als eine Spur -- bewusst nicht ``output.wav``.
+
+        Ein Prototyp ist unvollständig. Ihn unter demselben Namen abzulegen
+        machte aus einem Zwischenstand unbemerkt ein Ergebnis: er wäre über
+        dieselbe Adresse zu laden und stünde in der Oberfläche an der Stelle,
+        an der sonst die fertige Spur steht.
+        """
+        return self.root / "prototyp.wav"
+
+    @property
+    def prototype_stale(self) -> bool:
+        """Ist seit dem Prototyp ein Satz dazugekommen oder neu erzeugt worden?
+
+        Beantwortet über die Uhrzeiten der Dateien und nicht über einen eigenen
+        Eintrag im Manifest: die Dateien wissen es genauer, und ein Eintrag
+        müsste an jeder Stelle mitgepflegt werden, an der ein Satz entsteht.
+
+        Ohne diese Frage wäre der unangenehmste Fehler möglich: ein Prototyp,
+        der aussieht wie der aktuelle Stand und einer von vor zwanzig Sätzen
+        ist. Man hörte einem Ergebnis nach, das es so nicht mehr gibt.
+        """
+        try:
+            stand = self.prototype_path.stat().st_mtime_ns
+        except OSError:
+            return False
+        for pfad in self.chunks_dir.glob("chunk_*.wav"):
+            with suppress(OSError):
+                if pfad.stat().st_mtime_ns > stand:
+                    return True
+        return False
+
     # -- Abfragen ----------------------------------------------------------
 
     def chunk(self, index: int) -> Chunk:
@@ -345,8 +379,7 @@ class Project(BaseModel):
         # ein unverändertes Übernehmen übersteht, macht das Formular gefahrlos
         # wiederholbar.
         if not (behalten == len(neue) == vorher):
-            self.output_path.unlink(missing_ok=True)
-            self.output_file = None
+            self._verwerfe_spur()
         verloren = self.handschnitt and not erhalten
         self.handschnitt = erhalten
         self.save()
@@ -446,10 +479,20 @@ class Project(BaseModel):
         betroffen = sum(1 for c in self.chunks if c.audio_file or c.status != ChunkStatus.PENDING)
         for chunk in self.chunks:
             self.discard_audio(chunk.index)
-        self.output_path.unlink(missing_ok=True)
-        self.output_file = None
+        self._verwerfe_spur()
         self.save()
         return betroffen
+
+    def _verwerfe_spur(self) -> None:
+        """Fertige Spur und Prototyp verwerfen.
+
+        Beide gehören zu einem Satzbestand. Ändert der sich, sind beide
+        überholt -- der Prototyp sogar auf die stillere Art: er trüge Sätze in
+        sich, die es nicht mehr gibt, und keine Uhrzeit verriete das.
+        """
+        self.output_path.unlink(missing_ok=True)
+        self.output_file = None
+        self.prototype_path.unlink(missing_ok=True)
 
     def reroll(self, index: int) -> Chunk:
         """Neuer Seed für einen Chunk -- die Grundlage des 'Neu würfeln' in der UI."""
@@ -688,8 +731,7 @@ class Project(BaseModel):
         self._move_chunk_audio(umzug)
         self._entferne_ueberzaehligen_ton()
         # Die fertige Spur gehörte zum alten Satzbestand und wäre jetzt eine Lüge.
-        self.output_path.unlink(missing_ok=True)
-        self.output_file = None
+        self._verwerfe_spur()
         self.source_text = self.text_aus_chunks()
         self.handschnitt = True
         self.save()

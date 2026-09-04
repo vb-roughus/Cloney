@@ -222,6 +222,15 @@ button.small { padding: .28rem .55rem; font-size: .82rem; white-space: nowrap;
 .ergebnis { display: flex; gap: .6rem; align-items: center; margin-top: .75rem; }
 .ergebnis audio { flex: 1; min-width: 0; }
 .ergebnis .button { margin-top: 0; }
+/* Der Prototyp steht unter der Statusleiste und nicht darin: die tauscht sich
+   während eines Laufs alle anderthalb Sekunden aus, und ein Abspieler darin
+   wäre mitsamt der laufenden Wiedergabe weg -- gerade dann will man mithören. */
+.prototyp { margin: -0.5rem 0 1.25rem; }
+.prototypzeile { display: flex; flex-wrap: wrap; gap: .5rem .6rem; align-items: center; }
+.prototypzeile button, .prototypzeile .button { margin-top: 0; }
+.prototypzeile audio { flex: 1; min-width: 12rem; }
+.prototyp .joblog { margin: .5rem 0 0; }
+
 .aktionen { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .aktionen form { display: inline; }
 

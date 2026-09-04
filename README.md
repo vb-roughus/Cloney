@@ -527,6 +527,33 @@ Die Reiter sind reines CSS über versteckte Radioknöpfe. Ohne Skript heißt: de
 gewählte Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber
 austauscht.
 
+### Zwischendurch hören: der Prototyp
+
+Ein Kapitel läuft Stunden. Ob die Stimme trägt, ob die Pausen sitzen, ob zwei
+Sätze aneinander stocken — das hört man erst am Stück, und darauf bis zum Ende
+zu warten hieße, einen Fehler erst zu bemerken, wenn alles daran hängt.
+
+Der Knopf **Prototyp erstellen** unter der Statusleiste fügt die bis jetzt
+erzeugten Sätze der Reihe nach zu einer Spur zusammen — mit denselben
+Lautheiten, Pausen und Übergängen wie das fertige Ergebnis, denn es ist
+derselbe Zusammenbau. Noch fehlende Sätze werden übersprungen und **nicht**
+durch Stille ersetzt: ein Platzhalter geratener Länge sagte nichts über den
+Fluss, um dessentwillen man hört, und machte aus einer Lücke eine hörbare
+Pause, die es nie geben wird. Wie viele fehlen, steht unter dem Abspieler.
+
+Das geht auch **während** eines Laufs. Die Tondateien werden atomar
+geschrieben, es ist also nie eine halbe zu lesen, und ins Manifest schreibt der
+Prototyp nichts — dort führt der Lauf seinen eigenen Stand. Der Abspieler steht
+deshalb außerhalb der Statusleiste: die tauscht sich während eines Laufs alle
+anderthalb Sekunden aus, und ein Abspieler darin wäre mitsamt der laufenden
+Wiedergabe weg.
+
+Der Prototyp liegt in `prototyp.wav` und nicht in `output.wav`. Ihn unter
+demselben Namen abzulegen machte aus einem Zwischenstand unbemerkt ein
+Ergebnis. Kommt danach ein Satz dazu oder wird einer neu erzeugt, trägt der
+Prototyp die Marke **veraltet** — beantwortet über die Uhrzeiten der Dateien,
+die es genauer wissen als jeder mitgeführte Zähler.
+
 ### Den Satzbau von Hand nachbessern
 
 Der eigene Schnitt trennt feiner, als es der Sprechfluss oft verträgt. F5-TTS

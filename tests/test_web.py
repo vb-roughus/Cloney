@@ -2064,3 +2064,107 @@ def test_der_umbau_meldet_zahlen_die_lage_einen_satz(
     lage = client.post(f"/projects/{project_id}/lage", data={"lage": "neutral"}).text
     assert "Vorgabe auf" in lage
     assert "Übernommen:" not in lage
+
+
+# -- Prototyp ---------------------------------------------------------------
+
+
+def test_prototyp_fasst_die_bisherigen_saetze_zusammen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein Kapitel läuft Stunden. Ob die Stimme trägt und die Pausen sitzen,
+    hört man erst am Stück -- und darauf bis zum Ende zu warten hieße, einen
+    Fehler erst zu bemerken, wenn alles daran hängt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    # Nur den ersten Satz erzeugen: genau die Lage, um die es geht.
+    client.post(f"/projects/{project_id}/chunks/0/render")
+
+    antwort = client.post(f"/projects/{project_id}/prototyp")
+
+    assert antwort.status_code == 200
+    assert "Prototyp aus 1 von" in antwort.text
+    assert Project.load(settings.projects_dir / project_id).prototype_path.exists()
+    ton = client.get(f"/projects/{project_id}/prototyp")
+    assert ton.status_code == 200
+    assert ton.headers["content-type"] == "audio/wav"
+
+
+def test_der_prototyp_meldet_die_fehlenden_saetze(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Fehlende werden übersprungen, nicht durch Stille ersetzt -- ein
+    Platzhalter geratener Länge sagte nichts über den Fluss. Dass gesprungen
+    wurde, gehört aber dazugesagt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/chunks/0/render")
+
+    text = client.post(f"/projects/{project_id}/prototyp").text
+
+    assert "übersprungen" in text
+
+
+def test_ohne_einen_einzigen_satz_gibt_es_nichts_zusammenzubauen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    antwort = client.post(f"/projects/{project_id}/prototyp")
+
+    assert antwort.status_code == 400
+    assert "nichts zusammenzubauen" in antwort.text
+
+
+def test_der_prototyp_ueberschreibt_die_fertige_spur_nicht(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ihn unter demselben Namen abzulegen machte aus einem Zwischenstand
+    unbemerkt ein Ergebnis."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    project = Project.load(settings.projects_dir / project_id)
+    fertig = project.output_path.read_bytes()
+
+    client.post(f"/projects/{project_id}/chunks/0/discard")
+    client.post(f"/projects/{project_id}/prototyp")
+
+    assert project.output_path.read_bytes() == fertig
+    assert project.prototype_path.exists()
+    assert project.prototype_path.read_bytes() != fertig
+
+
+def test_ein_veralteter_prototyp_wird_als_solcher_ausgewiesen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Ein Prototyp, der aussieht wie der aktuelle Stand und einer von vor
+    zwanzig Sätzen ist, wäre die unangenehmste Art von Fehler."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/chunks/0/render")
+    assert "veraltet" not in client.post(f"/projects/{project_id}/prototyp").text
+
+    # Ein weiterer Satz entsteht -- der Prototyp kennt ihn nicht.
+    client.post(f"/projects/{project_id}/chunks/1/render")
+
+    assert "veraltet" in client.get(f"/projects/{project_id}").text
+
+
+def test_der_prototyp_faellt_mit_dem_satzbestand(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Nach einem Verschmelzen trüge er Sätze in sich, die es nicht mehr gibt --
+    und keine Uhrzeit verriete das."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/chunks/0/render")
+    client.post(f"/projects/{project_id}/prototyp")
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.prototype_path.exists()
+
+    client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
+
+    assert not project.prototype_path.exists()
