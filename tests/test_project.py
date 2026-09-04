@@ -159,7 +159,7 @@ def test_unveraenderte_saetze_behalten_ihren_ton(
     geaendert = nachher["Erster Satz geändert."]
     assert geaendert.status == ChunkStatus.PENDING
     assert not project.chunk_path(geaendert.index).exists()
-    assert bericht == {"behalten": 2, "neu": 1, "entfernt": 1}
+    assert bericht == {"behalten": 2, "neu": 1, "entfernt": 1, "neu_geschnitten": False}
 
 
 def test_umnummerierte_saetze_finden_ihren_ton_wieder(
@@ -334,7 +334,7 @@ def test_unveraendertes_uebernehmen_laesst_alles_stehen(
         target_seconds=1.5,
     )
 
-    assert bericht == {"behalten": 2, "neu": 0, "entfernt": 0}
+    assert bericht == {"behalten": 2, "neu": 0, "entfernt": 0, "neu_geschnitten": False}
     assert project.output_file is not None
     assert project.output_path.read_bytes() == spur
 

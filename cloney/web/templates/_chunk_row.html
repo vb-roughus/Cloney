@@ -14,6 +14,13 @@
   Braucht: project, chunk, lagen, kompakt (optional), offen (optional).
 #}
 {% set eingeklappt = kompakt and chunk.index not in (offen or ()) %}
+{#
+  Die Adresse der Tabelle: Filter, Klappzustand, offene Sätze. Die Handgriffe am
+  Satzbau antworten mit der ganzen Tabelle und müssen sie mitgeben. Eine einzeln
+  nachgeladene Zeile kennt sie nicht -- dort gilt der Zustand einer frisch
+  geladenen Seite.
+#}
+{% set tabellenadresse = adresse() if adresse is defined else "?status=alle&q=" %}
 <tr id="chunk-{{ chunk.index }}"
     class="chunk {{ status_class(chunk.status) }}{% if eingeklappt %} eingeklappt{% endif %}">
   <td class="meta">
@@ -39,6 +46,17 @@
     {% if chunk.is_heading %}
       <span class="badge titel" title="Als Titel erkannt: wird für sich gesprochen,
 mit Punkt in der Sprechfassung und einer längeren Pause danach">Titel</span>
+    {% endif %}
+    {#
+      Von Hand verschmolzene Sätze können über die Grenze der Engine geraten.
+      Verweigert wird der Handgriff deswegen nicht -- wer zwei Sätze zusammen
+      haben will, meint es --, aber dass die Engine hier selbst teilt, gehört
+      dazugesagt: genau diese Naht lässt sich nicht mehr einzeln nachbessern.
+    #}
+    {% if grenze_zeichen and chunk.normalized_text | length > grenze_zeichen %}
+      <span class="badge warn" title="Länger, als {{ project.engine }} am Stück erzeugt
+({{ "%.0f"|format(project.target_chunk_seconds) }} s). Die Engine teilt den Satz dann selbst
+und blendet die Teile ineinander -- diese Naht lässt sich nicht einzeln nachbessern.">zu lang</span>
     {% endif %}
     {#
       Die Lage steht als Chip in jeder Zeile -- man sieht auf einen Blick, gegen
@@ -159,6 +177,36 @@ Klicken, um eine andere zu wählen.">{{ project.lage_of(chunk) }}</button>
                 hx-target="#chunk-{{ chunk.index }}" hx-swap="outerHTML"
                 hx-disabled-elt="this" hx-indicator="this">
           {% include "_spinner.html" %}Trotzdem behalten
+        </button>
+      {% endif %}
+    </div>
+    {#
+      Der Satzbau steht in einer eigenen Zeile unter den Handgriffen: er ändert
+      nicht diesen Satz, sondern ihre Zahl, und die Antwort ist deshalb die ganze
+      Tabelle statt dieser Zeile.
+
+      Der Schnitt der Engine trennt feiner, als es der Sprechfluss oft verträgt --
+      zwei kurze Sätze in einem Zug gesprochen tragen die Betonung über eine
+      Grenze hinweg, an der sonst zwei getrennte Generierungen aneinanderstoßen.
+    #}
+    <div class="satzbau" id="satzbau-{{ chunk.index }}">
+      <span class="muted">Satzbau</span>
+      <button class="small secondary"
+              hx-get="/projects/{{ project.id }}/chunks/{{ chunk.index }}/einfuegen{{ tabellenadresse }}&amp;danach=0"
+              hx-target="#satzbau-{{ chunk.index }}" hx-swap="outerHTML"
+              title="Einen neuen Satz vor diesen setzen">Satz davor</button>
+      <button class="small secondary"
+              hx-get="/projects/{{ project.id }}/chunks/{{ chunk.index }}/einfuegen{{ tabellenadresse }}&amp;danach=1"
+              hx-target="#satzbau-{{ chunk.index }}" hx-swap="outerHTML"
+              title="Einen neuen Satz hinter diesen setzen">Satz danach</button>
+      {% if chunk.index + 1 < project.chunks | length %}
+        <button class="small secondary"
+                hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/verschmelzen{{ tabellenadresse }}"
+                hx-target="#chunks" hx-swap="outerHTML"
+                hx-disabled-elt="this" hx-indicator="#chunk-{{ chunk.index }}"
+                title="Diesen und den folgenden Satz zu einem zusammenziehen.
+Der Ton beider fällt weg -- er stammt aus zwei getrennten Läufen.">
+          {% include "_spinner.html" %}Mit dem nächsten verschmelzen
         </button>
       {% endif %}
     </div>

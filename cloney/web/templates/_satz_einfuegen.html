@@ -1,0 +1,32 @@
+{#
+  Das Feld für einen neu einzufügenden Satz. Es ersetzt die Satzbau-Leiste der
+  Zeile und verschwindet mit ihr, sobald der Satz steht -- in hundert Zeilen
+  dauerhaft ein zweites Textfeld zu zeigen machte aus der Tabelle eine Wand aus
+  Eingabefeldern.
+
+  Ein leerer Satz entsteht dabei nicht: das Feld verlangt Inhalt, und der Server
+  weist ihn ebenfalls ab. Ein Chunk ohne Wortlaut ginge sonst in die Synthese
+  und käme als Stille zurück.
+
+  Abgebrochen wird über die Tabelle selbst -- sie holt sich ihren Stand ohnehin
+  unter derselben Adresse, und ein eigener Weg zurück wäre einer zu viel.
+
+  Braucht: project, chunk, danach, tabellenadresse.
+#}
+<form class="satzbau einfuegen" id="satzbau-{{ chunk.index }}"
+      hx-post="/projects/{{ project.id }}/chunks/{{ chunk.index }}/einfuegen{{ tabellenadresse }}"
+      hx-target="#chunks" hx-swap="outerHTML"
+      hx-disabled-elt="find button">
+  <input type="hidden" name="danach" value="{{ 1 if danach else 0 }}">
+  <label>
+    {{ "Neuer Satz nach diesem" if danach else "Neuer Satz vor diesem" }}
+    <textarea name="raw_text" rows="2" required autofocus
+              placeholder="Wortlaut des neuen Satzes"></textarea>
+  </label>
+  <div class="rowactions">
+    <button class="small" type="submit">{% include "_spinner.html" %}Einfügen</button>
+    <button class="small secondary" type="button"
+            hx-get="/projects/{{ project.id }}/table{{ tabellenadresse }}"
+            hx-target="#chunks" hx-swap="outerHTML">Abbrechen</button>
+  </div>
+</form>

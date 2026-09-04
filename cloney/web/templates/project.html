@@ -29,11 +29,19 @@
 
 {% include "_status.html" %}
 
-{% if bericht %}
+{% if umbau %}
   <p class="hinweis">
-    Übernommen: {{ bericht.behalten }}
-    {{ "Satz behält" if bericht.behalten == 1 else "Sätze behalten" }} den vorhandenen Ton,
-    {{ bericht.neu }} neu angelegt, {{ bericht.entfernt }} verworfen.
+    Übernommen: {{ umbau.behalten }}
+    {{ "Satz behält" if umbau.behalten == 1 else "Sätze behalten" }} den vorhandenen Ton,
+    {{ umbau.neu }} neu angelegt, {{ umbau.entfernt }} verworfen.
+    {#
+      Der Handschnitt ist Arbeit, und dass sie weg ist, muss dastehen. Sonst
+      suchte man nach dem Übernehmen vergeblich die verschmolzenen Sätze.
+    #}
+    {% if umbau.neu_geschnitten %}
+      <br>Der von Hand geänderte Satzbau ist dabei verlorengegangen: der Text wurde
+      frisch geschnitten.
+    {% endif %}
   </p>
 {% endif %}
 

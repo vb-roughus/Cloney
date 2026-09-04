@@ -527,6 +527,45 @@ Die Reiter sind reines CSS über versteckte Radioknöpfe. Ohne Skript heißt: de
 gewählte Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber
 austauscht.
 
+### Den Satzbau von Hand nachbessern
+
+Der eigene Schnitt trennt feiner, als es der Sprechfluss oft verträgt. F5-TTS
+erzeugt rund 22 Sekunden am Stück, die Referenzaufnahme geht davon ab, und was
+übrig bleibt, teilt einen Absatz mitunter in Stücke, die einzeln richtig klingen
+und nacheinander stockend. Zwei kurze Sätze in einem Zug gesprochen tragen die
+Betonung über eine Grenze hinweg, an der sonst zwei getrennte Generierungen
+aneinanderstoßen.
+
+Unter den Handgriffen jeder Zeile steht deshalb **Satzbau**:
+
+* **Satz davor** und **Satz danach** setzen einen neuen Satz an diese Stelle.
+  Der neue tritt dem Absatz dessen bei, an dem er eingesetzt wurde, und erbt
+  seine Emotionslage -- sonst fiele ein Satz mitten in einer ernst gesprochenen
+  Passage als einziger in die Vorgabe des Projekts zurück.
+* **Mit dem nächsten verschmelzen** zieht zwei Sätze zu einem zusammen. Fehlt
+  dem ersten das Satzzeichen -- bei einem Titel etwa --, kommt ein Punkt
+  dazwischen; er steht im Rohtext, wo er zu sehen und zu ändern ist. Ein Komma
+  bleibt dagegen stehen: dort war ein überlanger Satz nur zur Not getrennt
+  worden.
+
+Der Ton der beteiligten Sätze fällt weg. Er stammte aus zwei getrennten Läufen,
+und aneinandergeklebt hörte man genau die Naht, deretwegen verschmolzen wurde.
+Alle anderen Aufnahmen ziehen mit um: sie heißen nach ihrer Nummer, und die
+verschiebt sich.
+
+Eine Obergrenze erzwingt das Verschmelzen nicht -- wer zwei Sätze zusammen haben
+will, meint es. Gerät das Ergebnis über das, was die Engine am Stück erzeugt,
+trägt die Zeile ein **zu lang**: die Engine teilt den Satz dann selbst und
+blendet die Teile ineinander, und genau diese Naht lässt sich nicht mehr einzeln
+nachbessern.
+
+Von der ersten Handänderung an ist die **Satzliste die Vorlage** und nicht mehr
+der Schnitt des Quelltexts. Der Text unter „Einstellungen" wird aus ihr
+geschrieben, und ein Klick auf „Vorlage übernehmen" schneidet nicht neu, solange
+er unverändert bleibt -- sonst nähme schon ein Wechsel der Stimme jedes
+Verschmelzen zurück. Wer im Textfeld etwas ändert, meint den Text: dann gilt
+wieder er, und der Handschnitt ist dahin. Die Meldung über der Tabelle sagt es.
+
 ### Text, Stimme, Engine oder Modell nachträglich ändern
 
 Ein anderer Text heißt neu segmentieren, und damit wandern die Chunk-Grenzen.
