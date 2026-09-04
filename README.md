@@ -847,9 +847,31 @@ weiterlaufen zu lassen behebt die Ursache.
 Bleibt trotzdem etwas stehen, schneidet die Qualitätskontrolle es weg. Nach
 Lautstärke ginge das nicht — der Vorspann ist Sprache. Über die Rückschrift
 schon: sie sagt, ab welchem Wort der gewünschte Text beginnt, und die Wortzeiten
-sagen, wann. Geschnitten wird nur, was sich sicher zuordnen lässt; im Zweifel
-bleibt der Ton unangetastet. Was entfernt wurde, steht im Manifest und in der
-Satzliste. Abschaltbar über `CLONEY_TRIM_REFERENCE_BLEED=false`.
+sagen, wann.
+
+Dabei sind zwei Fälle zu unterscheiden. Manchmal schreibt die Erkennung den
+Vorspann als Wörter auf — dann steht vor dem gewünschten Text etwas, das nicht
+dazugehört. Häufiger ist der andere: eine angerissene Silbe ergibt **kein Wort**,
+das sich zuordnen ließe. Die Rückschrift passt dann Wort für Wort, und trotzdem
+ist der Vorspann zu hören. Verraten wird er allein dadurch, dass das erste Wort
+erst spät beginnt — und genau das genügt, denn was vor dem ersten Wort liegt,
+gehört nicht zum Satz.
+
+Wo genau getrennt wird, ist eine eigene Frage. Whispers Wortzeiten sind
+geschätzt, nicht gemessen; ein paar Hundertstel zu spät geschnitten kostet dem
+ersten Wort seinen Anlaut, und aus „Bargeld" würde „argeld" — niemand käme
+darauf, das im Schnitt zu suchen. Der gemeldete Wortanfang ist deshalb nur der
+Kandidat. Gesucht wird um ihn herum die leiseste Stelle der Wellenform: zwischen
+Vorspann und Satz liegt fast immer eine kurze Ruhe. Das Fenster reicht weit
+zurück und kaum nach vorn, fällt im Zweifel also zu früh aus — dann bleibt etwas
+Stille stehen, die beim Zusammenbau ohnehin von den kalibrierten Pausen abgelöst
+wird.
+
+Geschnitten wird nur, was sich sicher zuordnen lässt; findet sich der gewünschte
+Text in der Rückschrift gar nicht wieder, bleibt der Ton unangetastet. Was
+entfernt wurde, steht im Manifest und in der Satzliste. Abschaltbar über
+`CLONEY_TRIM_REFERENCE_BLEED=false`, die Mindestlänge über
+`CLONEY_MIN_BLEED_SECONDS`.
 
 Dafür muss die Qualitätskontrolle laufen — ohne `faster-whisper` gibt es keine
 Rückschrift und damit keine Erkennung.

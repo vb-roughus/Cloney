@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import Segment, assemble, read_wav, write_wav
-from cloney.core.bleed import find_content_start
+from cloney.core.bleed import cut_point, find_content_start
 from cloney.core.compare import Comparison, Variant, VariantStatus
 from cloney.core.metrics import cer, cosine_similarity
 from cloney.core.project import Chunk, ChunkStatus, Project
@@ -178,17 +178,23 @@ def _trim_reference_bleed(
 
     Erkannt wird nur, was sich sicher zuordnen lässt; im Zweifel bleibt das
     Audio unangetastet.
+
+    Der gemeldete Wortanfang ist der Kandidat, nicht der Schnitt. Wo genau
+    getrennt wird, entscheidet ``cut_point`` an der Wellenform: Whispers Zeiten
+    sind geschätzt, und ein paar Hundertstel zu spät kosten dem ersten Wort
+    seinen Anlaut.
     """
     start, vorspann_woerter = find_content_start(transcript.words, spoken)
     if start is None or start < settings.min_bleed_seconds:
         return transcript.text
 
-    ab = int(start * sample_rate)
-    if ab >= len(audio):
+    schnitt = cut_point(audio, sample_rate, start)
+    ab = int(schnitt * sample_rate)
+    if ab <= 0 or ab >= len(audio):
         return transcript.text
 
     write_wav(project.chunk_path(chunk.index), audio[ab:], sample_rate)
-    chunk.trimmed_bleed_s = round(start, 3)
+    chunk.trimmed_bleed_s = round(schnitt, 3)
     # Verglichen wird gegen die Rückschrift ohne den Vorspann -- sonst zählte
     # der eben entfernte Teil als Fehler.
     return " ".join(w.text for w in transcript.words[vorspann_woerter:])
