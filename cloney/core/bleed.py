@@ -29,16 +29,23 @@ from cloney.core.metrics import normalize_for_comparison
 #: kommen im Vorspann genauso vor wie im gewünschten Text.
 _BESTAETIGENDE_WOERTER = 3
 
-#: Wie weit um den gemeldeten Wortanfang herum nach der Ruhestelle gesucht wird.
-_SUCHFENSTER_SEKUNDEN = 0.25
+#: Wie weit vor dem gemeldeten Wortanfang nach der Ruhestelle gesucht wird.
+#: Bemessen nach dem, was zu berichtigen ist -- der Ungenauigkeit von Whispers
+#: Wortzeiten --, und nicht nach der Länge des Vorspanns. Ein weites Fenster
+#: fände irgendeine Senke mitten im Vorspann, und der Schnitt fiele zu früh:
+#: gemessen blieb die Silbe dann stehen, nur kürzer.
+_SUCHFENSTER_SEKUNDEN = 0.15
 
 #: Länge eines Rahmens bei dieser Suche.
 _RAHMEN_SEKUNDEN = 0.01
 
-#: Wie weit die Suche über den gemeldeten Wortanfang hinausgeht. Bewusst kurz:
-#: zu früh geschnitten bleibt etwas Stille stehen, zu spät geschnitten fehlt ein
-#: Anlaut. Nur der zweite Fehler ist zu hören.
+#: Wie weit die Suche über den gemeldeten Wortanfang hinausgeht.
 _NACHLAUF_SEKUNDEN = 0.05
+
+#: Ab welchem Anteil des lautesten Rahmens im Fenster ein Rahmen als Ruhe gilt.
+#: Kein absoluter Pegel: wie laut der Vorspann ist, hängt an Aufnahme und
+#: Modell -- wie viel leiser die Lücke dazwischen ist, nicht.
+_RUHE_ANTEIL = 0.15
 
 
 def _wortliste(text: str) -> list[str]:
@@ -93,15 +100,22 @@ def cut_point(
     im Schnitt zu suchen.
 
     Zwischen Vorspann und Satz liegt fast immer eine kurze Ruhestelle. Gesucht
-    wird deshalb im Fenster um den Kandidaten der leiseste Rahmen. Das braucht
-    keine Schwelle: gefragt ist nicht, *ob* es leise ist, sondern *wo* es am
-    leisesten ist. Läuft der Vorspann ohne Pause in den Satz, ist das immer noch
-    die beste verfügbare Stelle.
+    wird deshalb im Fenster um den Kandidaten die **letzte** ruhige Stelle: dort
+    hört der Vorspann auf und der Satz fängt an.
 
-    Das Fenster reicht weit zurück und kaum nach vorn. Es fällt damit im Zweifel
-    zu früh aus, und der Zweifel geht so auf die Seite des harmloseren Fehlers:
-    stehen bleibt dann etwas Stille, die beim Zusammenbau ohnehin von den
-    kalibrierten Pausen abgelöst wird.
+    Nicht die leiseste. Der erste Anlauf tat das und schnitt zu früh -- Sprache
+    hat Senken, eine Verschlusslaut-Pause mitten im Vorspann ist leiser als die
+    Lücke danach, und getroffen wurde sie. Hörbar war das als eine Silbe, die
+    blieb, nur kürzer.
+
+    Und deshalb reicht das Fenster auch nur so weit zurück, wie Whispers Zeiten
+    danebenliegen, nicht so weit, wie der Vorspann lang ist. Sonst geriete die
+    letzte Ruhe schon in den Satz hinein -- eine Verschlusslaut-Pause im ersten
+    Wort --, und der Schnitt nähme ihm seinen Anlaut.
+
+    Ist im Fenster nichts ruhig, läuft der Vorspann ohne Absetzen in den Satz.
+    Dann bleibt es beim Kandidaten: eine Senke zu suchen, die es nicht gibt,
+    hieße raten.
     """
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
@@ -116,4 +130,10 @@ def cut_point(
 
     werte = stueck[: rahmen * schritt].astype(np.float64).reshape(rahmen, schritt)
     energie = np.sqrt((werte**2).mean(axis=1))
-    return ab + (int(energie.argmin()) + 0.5) * _RAHMEN_SEKUNDEN
+    ruhig = np.flatnonzero(energie <= energie.max() * _RUHE_ANTEIL)
+    if not ruhig.size:
+        return kandidat
+    # An den Anfang des letzten ruhigen Rahmens und nicht an sein Ende: die
+    # zehn Hundertstel Ruhe, die dadurch stehen bleiben, hört niemand -- einen
+    # angeschnittenen Anlaut schon.
+    return ab + int(ruhig[-1]) * _RAHMEN_SEKUNDEN

@@ -888,11 +888,19 @@ Wo genau getrennt wird, ist eine eigene Frage. Whispers Wortzeiten sind
 geschätzt, nicht gemessen; ein paar Hundertstel zu spät geschnitten kostet dem
 ersten Wort seinen Anlaut, und aus „Bargeld" würde „argeld" — niemand käme
 darauf, das im Schnitt zu suchen. Der gemeldete Wortanfang ist deshalb nur der
-Kandidat. Gesucht wird um ihn herum die leiseste Stelle der Wellenform: zwischen
-Vorspann und Satz liegt fast immer eine kurze Ruhe. Das Fenster reicht weit
-zurück und kaum nach vorn, fällt im Zweifel also zu früh aus — dann bleibt etwas
-Stille stehen, die beim Zusammenbau ohnehin von den kalibrierten Pausen abgelöst
-wird.
+Kandidat. Gesucht wird um ihn herum die **letzte** ruhige Stelle der Wellenform:
+zwischen Vorspann und Satz liegt fast immer eine kurze Ruhe, und dort hört der
+Vorspann auf.
+
+Nicht die *leiseste* — daran ist ein erster Anlauf gescheitert. Sprache hat
+Senken: eine Verschlusslaut-Pause mitten im Vorspann ist stiller als die Lücke
+danach, und genau sie wurde getroffen. Zu hören war das als eine einleitende
+Silbe, die blieb, nur kürzer. Aus demselben Grund reicht das Fenster nur so weit
+zurück, wie Whispers Zeiten danebenliegen (0,15 s), und nicht so weit, wie ein
+Vorspann lang sein kann: sonst geriete die letzte Ruhe schon in den Satz hinein.
+Ist im Fenster nichts ruhig, läuft der Vorspann ohne Absetzen in den Satz — dann
+bleibt es beim Kandidaten, denn eine Grenze zu suchen, die es nicht gibt, hieße
+raten.
 
 Geschnitten wird nur, was sich sicher zuordnen lässt; findet sich der gewünschte
 Text in der Rückschrift gar nicht wieder, bleibt der Ton unangetastet. Was

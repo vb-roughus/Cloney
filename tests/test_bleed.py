@@ -102,25 +102,45 @@ def test_der_schnitt_faellt_in_die_pause_dazwischen() -> None:
     assert 0.30 <= schnitt <= 0.40
 
 
-def test_ein_zu_spaet_gemeldeter_beginn_kostet_keinen_anlaut() -> None:
-    """Der schlimmere Fehler: aus 'Bargeld' würde 'argeld'. Die Suche reicht
-    weit zurück und kaum nach vorn -- der Zweifel geht auf die harmlose Seite."""
-    audio = _tonspur((0.30, 0.4), (0.10, 0.0), (0.60, 0.4))
+def test_eine_senke_im_vorspann_zieht_den_schnitt_nicht_an() -> None:
+    """Der gemessene Fehler. Sprache hat Senken: eine Verschlusslaut-Pause
+    mitten im Vorspann ist leiser als die Lücke danach. Wer die leiseste Stelle
+    nimmt, trifft sie -- und schneidet weit vor der Grenze. Zu hören war das als
+    eine Silbe, die blieb, nur kürzer.
 
-    # Um zwei Zehntel zu spät gemeldet: der Satz läuft an dieser Stelle längst.
-    schnitt = cut_point(audio, RATE, 0.60)
+    Gesucht wird deshalb die *letzte* ruhige Stelle, nicht die leiseste.
+    """
+    audio = _tonspur(
+        (0.30, 0.4),  # Vorspann
+        (0.06, 0.0),  # Senke darin -- vollkommen still
+        (0.10, 0.4),  # Vorspann geht weiter
+        (0.08, 0.02),  # die eigentliche Grenze: leise, aber nicht still
+        (0.60, 0.4),  # der Satz
+    )
 
-    assert schnitt <= 0.40
+    schnitt = cut_point(audio, RATE, 0.56)
+
+    assert 0.46 <= schnitt <= 0.55
 
 
-def test_ohne_pause_bleibt_die_leiseste_stelle_die_beste() -> None:
-    """Läuft der Vorspann ohne Absetzen in den Satz, gibt es nichts Besseres --
-    aber auch keinen Grund, weit danebenzuliegen."""
+def test_ohne_ruhe_bleibt_es_beim_kandidaten() -> None:
+    """Läuft der Vorspann ohne Absetzen in den Satz, gibt es keine Grenze zu
+    finden. Eine Senke zu suchen, die es nicht gibt, hieße raten."""
     audio = _tonspur((0.40, 0.4), (0.05, 0.1), (0.40, 0.4))
 
-    schnitt = cut_point(audio, RATE, 0.42)
+    assert cut_point(audio, RATE, 0.42) == 0.42
 
-    assert 0.38 <= schnitt <= 0.47
+
+def test_das_fenster_reicht_nur_so_weit_wie_die_ungenauigkeit() -> None:
+    """Es ist nach Whispers Zeiten bemessen, nicht nach der Länge des
+    Vorspanns. Ein weites Fenster fände Ruhe mitten im Vorspann -- oder, bei
+    einem zu spät gemeldeten Anfang, im Satz, und nähme dem ersten Wort seinen
+    Anlaut."""
+    audio = _tonspur((0.30, 0.4), (0.10, 0.0), (0.60, 0.4))
+
+    # Um zwei Zehntel zu spät gemeldet: so weit greift die Berichtigung nicht
+    # mehr zurück, und der Kandidat bleibt stehen.
+    assert cut_point(audio, RATE, 0.60) == 0.60
 
 
 def test_zu_kurzes_audio_bleibt_beim_kandidaten() -> None:
