@@ -658,6 +658,37 @@ label.regler .muted { display: block; font-size: .82rem; }
 }
 .seitenkopf .button { margin-top: 0; }
 
+/* Drei Punkte neben einer Überschrift. Auf <details> gebaut: Aufklappen und
+   Tastaturbedienung kommen damit vom Browser. */
+.menue { position: relative; }
+.menue > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); color: var(--muted);
+  font-size: 1.1rem; line-height: 1;
+}
+.menue > summary::-webkit-details-marker { display: none; }
+.menue > summary:hover, .menue[open] > summary { color: var(--ink); background: var(--erhoben); }
+.menue > summary:focus-visible { outline: 2px solid var(--akzent-hell); outline-offset: 2px; }
+.menue > ul {
+  position: absolute; right: 0; top: calc(100% + .35rem); z-index: 30;
+  margin: 0; padding: .25rem; list-style: none; min-width: 10rem;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-md); box-shadow: 0 8px 24px rgb(0 0 0 / .45);
+}
+.menue > ul a {
+  display: block; padding: .4rem .6rem; border-radius: var(--radius-sm);
+  color: var(--ink); text-decoration: none; white-space: nowrap;
+}
+.menue > ul a:hover { background: var(--erhoben); color: var(--akzent-hell); }
+
+/* Für Bildschirmleser da, für Augen nicht. */
+.nurlesbar {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
 .kacheln {
   display: grid; gap: .8rem; margin: 1rem 0;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));

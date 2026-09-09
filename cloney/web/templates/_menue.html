@@ -1,0 +1,20 @@
+{#
+  Ein Menü hinter drei Punkten, neben einer Überschrift.
+
+  Gebaut auf <details> und nicht auf einem Knopf mit JavaScript: das Auf- und
+  Zuklappen, die Bedienung mit der Tastatur und der Zustand kommen damit vom
+  Browser. app.js schließt es nur noch, wenn daneben geklickt oder Escape
+  gedrückt wird -- was <details> von sich aus nicht tut.
+
+  Braucht: menuepunkte -- eine Liste aus (Beschriftung, Ziel).
+#}
+<details class="menue">
+  <summary aria-haspopup="menu" title="Weitere Aktionen">
+    <span aria-hidden="true">&#8943;</span><span class="nurlesbar">Menü</span>
+  </summary>
+  <ul role="menu">
+    {% for beschriftung, ziel in menuepunkte %}
+      <li role="none"><a role="menuitem" href="{{ ziel }}">{{ beschriftung }}</a></li>
+    {% endfor %}
+  </ul>
+</details>

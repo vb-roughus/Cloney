@@ -2168,3 +2168,72 @@ def test_der_prototyp_faellt_mit_dem_satzbestand(
     client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
 
     assert not project.prototype_path.exists()
+
+
+# -- Anlegen hinter drei Punkten, auf eigener Seite --------------------------
+
+
+def test_das_formular_haengt_nicht_mehr_an_der_stimmenliste(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Am Ende der Liste stand es hinter allem, was man dort sonst tut, und
+    wuchs mit jeder Stimme weiter nach unten -- gebraucht wird es je Stimme
+    genau einmal."""
+    client = _client(settings)
+
+    liste = client.get("/voices").text
+    # Die Formulare in den Stimmenkarten bleiben: sie gehören zu ihrer Stimme.
+    # Weg ist das eine, das an nichts hing und alles nach unten schob.
+    assert 'action="/voices"' not in liste
+    assert 'href="/voices/new"' in liste
+
+    formular = client.get("/voices/new")
+    assert formular.status_code == 200
+    assert 'enctype="multipart/form-data"' in formular.text
+    assert 'name="transcript"' in formular.text
+
+
+def test_die_eigene_seite_faengt_keinen_stimmennamen_ab(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """'/voices/new' steht vor '/voices/{name}/...'. Eine Stimme namens 'new'
+    ist damit nicht zu erreichen -- der Preis ist bekannt und klein."""
+    client = _client(settings)
+    assert client.get("/voices/test-stimme/audio").status_code == 200
+
+
+def test_anlegen_von_der_eigenen_seite_aus_fuehrt_zur_liste(
+    settings: Settings,
+    reference_wav,  # noqa: ANN001
+) -> None:
+    """Die Prüfung der Aufnahme ist der Grund, warum es zur Liste zurückgeht:
+    ihr Ergebnis steht dort."""
+    client = _client(settings)
+
+    antwort = client.post(
+        "/voices",
+        data={"name": "neue-stimme", "transcript": "Wortlaut der Aufnahme."},
+        files={"audio": ("referenz.wav", reference_wav.read_bytes(), "audio/wav")},
+    )
+
+    assert antwort.status_code == 200
+    assert "Prüfung" in antwort.text
+    assert "Vorhandene Stimmen" in antwort.text
+
+
+def test_projekte_bieten_das_anlegen_im_menue_an(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    seite = _client(settings).get("/projects").text
+
+    assert 'details class="menue"' in seite.replace("<", "")
+    assert 'href="/projects/new"' in seite
+    # Kein Knopf mehr daneben, der dasselbe tut.
+    assert ">Neues Projekt<" not in seite
+
+
+def test_ohne_stimme_gibt_es_nichts_anzulegen(settings: Settings) -> None:
+    seite = _client(settings).get("/projects").text
+
+    assert 'href="/projects/new"' not in seite
+    assert "Zuerst eine Stimme anlegen" in seite

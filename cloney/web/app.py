@@ -1391,6 +1391,17 @@ def create_app(
             raise HTTPException(404, "Für diese Lage gibt es keine Aufnahme")
         return datei(stimme.audio_path, "audio/wav")
 
+    @app.get("/voices/new", response_class=HTMLResponse)
+    def new_voice(request: Request) -> HTMLResponse:
+        """Das Anlegen hat eine eigene Seite.
+
+        Am Ende der Stimmenliste stand es hinter allem, was man dort sonst tut,
+        und wuchs mit jeder Stimme weiter nach unten -- gebraucht wird es je
+        Stimme genau einmal. Die Route steht vor '/voices/{name}/...', damit
+        kein Name sie abfängt.
+        """
+        return templates.TemplateResponse(request, "voice_new.html", {})
+
     @app.get("/voices", response_class=HTMLResponse)
     def voice_list(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(request, "voices.html", _voice_context())

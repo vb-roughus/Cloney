@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Stimmen &mdash; Cloney{% endblock %}
 {% block content %}
-<h1>Referenzstimmen</h1>
+<div class="seitenkopf">
+  <h1>Referenzstimmen</h1>
+  {% set menuepunkte = [("Erstellen", "/voices/new")] %}
+  {% include "_menue.html" %}
+</div>
 <p class="muted">
   Eine schlechte Referenzaufnahme ist die häufigste Ursache für einen schlechten Klon.
   Sie wird deshalb beim Anlegen geprüft &mdash; nicht erst, wenn ein Kapitel gerendert ist.
@@ -145,18 +149,4 @@
   </p>
 </details>
 
-<h2>Stimme anlegen</h2>
-<form method="post" action="/voices" enctype="multipart/form-data" class="card">
-  <label>Name <input type="text" name="name" required placeholder="erzaehlstimme"></label>
-  <label>Referenzaufnahme (6&ndash;12 s sauber gesprochen)
-    <input type="file" name="audio" accept="audio/*" required>
-    <span class="muted">Die Datei wird unverändert übernommen &mdash; Samplerate, Kanäle
-      und Auflösung bleiben, wie sie sind. WAV, FLAC und alles Weitere, was die
-      Audio-Bibliothek lesen kann.</span></label>
-  <label>Transkript &mdash; der <strong>Wortlaut</strong> des Gesprochenen
-    <textarea name="transcript" rows="2"
-      placeholder="Wort für Wort, was in der Aufnahme gesagt wird."></textarea></label>
-  <button type="submit">Stimme anlegen</button>
-  <p class="muted">Ein bereits vorhandener Name ersetzt die dortige Aufnahme.</p>
-</form>
 {% endblock %}
