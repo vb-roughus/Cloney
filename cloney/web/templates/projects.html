@@ -3,7 +3,10 @@
 {% block content %}
 <div class="seitenkopf">
   <h1>Projekte</h1>
-  {% if voices %}<a class="button" href="/projects/new">Neues Projekt</a>{% endif %}
+  {% if voices %}
+    {% set menuepunkte = [("Erstellen", "/projects/new")] %}
+    {% include "_menue.html" %}
+  {% endif %}
 </div>
 
 {% if not voices %}

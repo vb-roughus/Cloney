@@ -442,6 +442,20 @@ anlegen zu müssen.
 **Projekt** sammelt Umbenennen, Kopie, Ton verwerfen und Löschen an einer
 Stelle, weg von den Dingen, die man ständig braucht.
 
+### Anlegen steht hinter drei Punkten
+
+Auf den Listenseiten — Projekte, Stimmen — sitzt neben der Überschrift ein
+Menü aus drei Punkten mit dem Eintrag **Erstellen**. Das Formular öffnet dann
+eine eigene Seite.
+
+Der Grund ist der Platz, an dem so ein Formular sonst landet: unten, hinter
+allem. Es steht damit hinter dem, was man ständig tut, wächst mit jedem Eintrag
+weiter nach unten und ist doch je Projekt oder Stimme genau einmal gebraucht.
+
+Gebaut ist das Menü auf `<details>`: Aufklappen, Tastaturbedienung und Zustand
+kommen damit vom Browser. `app.js` schließt es nur noch, wenn daneben geklickt
+oder Escape gedrückt wird — was `<details>` von sich aus nicht tut.
+
 ### Das Aussehen
 
 Cloney trägt das Design von [OBSCURA](https://github.com/vb-roughus/OBSCURA):
@@ -907,6 +921,56 @@ Text in der Rückschrift gar nicht wieder, bleibt der Ton unangetastet. Was
 entfernt wurde, steht im Manifest und in der Satzliste. Abschaltbar über
 `CLONEY_TRIM_REFERENCE_BLEED=false`, die Mindestlänge über
 `CLONEY_MIN_BLEED_SECONDS`.
+
+#### Der Fetzen, den die Rückschrift nicht sehen kann
+
+Es gibt einen dritten Fall, und er ist der hartnäckigste: der Vorspann ist nur
+ein Bruchteil eines Lautes. Endet die Referenz auf „Washington.", steht am
+Anfang das auslaufende „n" — wenige Hundertstel.
+
+Über die Rückschrift ist das nicht zu fassen, und zwar grundsätzlich nicht:
+Whispers Wortzeiten sind auf Hundertstel gerundet und entstehen aus einer
+Ausrichtung über die Aufmerksamkeit, geglättet mit einem Medianfilter über
+sieben Rahmen zu je 20 ms (`faster_whisper/transcribe.py`, `find_alignment`).
+Die Unschärfe liegt damit bei rund ±70 ms und ist größer als das, was zu finden
+wäre.
+
+Hier zählt deshalb nur die Wellenform. Ein Fetzen hat eine eigene Gestalt, und
+drei Bedingungen zusammen beschreiben sie — jede für sich wäre zu wenig:
+
+* Er **beginnt ganz vorn** (< 0,05 s). F5 trennt Referenz und Text an einer
+  berechneten Stelle; was übersteht, liegt dort und nirgendwo sonst.
+* Er ist **kurz** (< 0,12 s). Ein Fetzen ist der Rest eines einzelnen Lautes,
+  keine gesprochene Einheit.
+* Dahinter steht eine **Pause** (≥ 0,12 s). Das ist der Grund, warum er sich
+  überhaupt abtrennen lässt: F5 hängt an den Referenztext ein Satzende samt
+  Pause an, das Modell setzt danach also ab.
+
+Die Pausengrenze ist dabei nicht willkürlich, sondern an dem bemessen, wovon sie
+zu unterscheiden ist: ein Verschlusslaut mitten im ersten Wort — das `p` in
+„Kapitel" — ist drei bis acht Hundertstel still. Läge die Grenze dort, hielte die
+Erkennung eine Anfangssilbe für einen Fetzen und schnitte sie weg, ohne dass es
+auffiele: die Fehlerrate misst gegen die Rückschrift von vorher.
+
+Als vierte Bedingung zählt das **erste erwartete Wort** mit. „Ja," sieht aus wie
+ein Fetzen mit Pause dahinter; ein Fetzen ist aber deutlich kürzer, als dieses
+Wort dauern kann — gerechnet über dieselbe Zeichen-pro-Sekunde-Annahme wie beim
+Chunking.
+
+#### Nachsehen, was am Anfang steht
+
+Ob diese Schwellen zur eigenen Stimme passen, ist eine Frage an Zahlen und nicht
+an das Gefühl:
+
+```bash
+cloney vorspann <projekt-kennung>
+```
+
+Der Befehl liest die fertigen Tondateien — keine GPU, kein Modell, kein Netz —
+und zeigt je Satz, wann das erste Hörbare beginnt, wie lange es anhält, wie
+lange es danach ruhig bleibt und ob geschnitten würde. Steht überall `nein` und
+ist trotzdem etwas zu hören, sagen `Dauer` und `Pause`, welche Schwelle
+danebenliegt.
 
 Dafür muss die Qualitätskontrolle laufen — ohne `faster-whisper` gibt es keine
 Rückschrift und damit keine Erkennung.

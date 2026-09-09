@@ -195,6 +195,49 @@ def test_ein_nicht_aufgeschriebener_vorspann_wird_auch_gefunden(
     assert erster.cer == 0.0
 
 
+def test_ein_fetzen_ohne_wort_wird_an_der_wellenform_gefunden(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der gemeldete Fall: die Referenz endet auf 'Washington.', und am Anfang
+    steht der auslaufende Nasal -- ein paar Hundertstel.
+
+    Die Rückschrift sieht ihn nicht und kann ihn nicht sehen: ihre Wortzeiten
+    sind auf Hundertstel gerundet und über sieben Rahmen zu 20 ms geglättet.
+    Gefunden wird er allein an seiner Gestalt in der Wellenform.
+    """
+    import numpy as np
+
+    from cloney.core.audio import read_wav
+
+    class FetzenEngine(DummyEngine):
+        """Wie die Dummy-Engine, aber mit einem Nasal-Rest samt Pause davor.
+
+        Die Kennung bleibt vorn: sonst fände DummyASR den Text nicht. Sie geht
+        unmittelbar in den Fetzen über und bildet mit ihm ein Geräusch.
+        """
+
+        def synthesize(self, text, voice, seed):  # type: ignore[no-untyped-def]
+            echt = super().synthesize(text, voice, seed)
+            rate = self.info.sample_rate
+            t = np.arange(int(0.04 * rate), dtype=np.float32) / rate
+            fetzen = (0.15 * np.sin(2 * np.pi * 180 * t)).astype(np.float32)
+            pause = np.zeros(int(0.15 * rate), dtype=np.float32)
+            kennung, rest = echt[:320], echt[320:]
+            return np.concatenate([kennung, fetzen, pause, rest])
+
+    project = _project(settings)
+    run_project(project, settings, voice_store, FetzenEngine, DummyASR)
+
+    erster = project.chunks[0]
+    assert erster.trimmed_bleed_s is not None
+    # Fetzen und Pause zusammen sind rund 0,19 s -- so viel muss weg.
+    assert 0.15 <= erster.trimmed_bleed_s <= 0.21
+    # Kein Wort war zu verwerfen: gemessen wird gegen die volle Rückschrift.
+    assert erster.cer == 0.0
+    audio, rate = read_wav(project.chunk_path(0))
+    assert len(audio) > 0
+
+
 def test_ohne_vorspann_wird_nichts_angetastet(settings: Settings, voice_store: VoiceStore) -> None:
     from cloney.core.audio import read_wav
 

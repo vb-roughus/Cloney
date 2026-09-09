@@ -24,7 +24,9 @@ from cloney.engines.base import EngineInfo, EngineOption, VoiceRef
 _REGISTRY: dict[str, tuple[str, int]] = {}
 
 _CHARS_PER_SECOND = 14.0
-_LEAD_SILENCE_S = 0.12
+#: Stille am Ende, damit Trimmen und Lautheitsmessung auf einem Signal mit
+#: echten Rändern arbeiten.
+_TRAILING_SILENCE_S = 0.12
 _KEY_NIBBLES = 40  # SHA1 in Hex
 _SAMPLES_PER_NIBBLE = 8
 _KEY_STEP = 0.0125  # ~400x über dem PCM16-Rundungsfehler von ~3e-5
@@ -116,8 +118,14 @@ class DummyEngine:
         syllables = 0.5 + 0.5 * np.sin(2 * np.pi * 4.0 * t)
         signal *= (0.25 * syllables).astype(np.float32)
 
-        pad = np.zeros(int(_LEAD_SILENCE_S * sample_rate), dtype=np.float32)
-        audio = np.concatenate([_encode_key(key), pad, signal, pad]).astype(np.float32)
+        # Die Kennung geht unmittelbar in das Signal über. Stille dazwischen
+        # gäbe der Ausgabe genau die Gestalt, an der die Pipeline einen
+        # Referenz-Vorspann erkennt -- kurzes Geräusch, Pause, dann Sprache
+        # (siehe cloney/core/bleed.py). Sie würde die Kennung wegschneiden, und
+        # das mit Recht: sie ist keine Sprache, sondern eine ins Signal
+        # geschmuggelte Notiz.
+        pad = np.zeros(int(_TRAILING_SILENCE_S * sample_rate), dtype=np.float32)
+        audio = np.concatenate([_encode_key(key), signal, pad]).astype(np.float32)
 
         _REGISTRY[key] = (text, seed)
         return audio

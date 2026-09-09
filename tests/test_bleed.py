@@ -23,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 
 from cloney.asr.base import TranscribedWord
-from cloney.core.bleed import cut_point, find_content_start
+from cloney.core.bleed import cut_point, find_content_start, first_word, leading_fragment
 
 RATE = 24000
 
@@ -146,3 +146,122 @@ def test_das_fenster_reicht_nur_so_weit_wie_die_ungenauigkeit() -> None:
 def test_zu_kurzes_audio_bleibt_beim_kandidaten() -> None:
     assert cut_point(np.zeros(10, dtype=np.float32), RATE, 0.5) == 0.5
     assert cut_point(np.zeros(0, dtype=np.float32), RATE, 0.5) == 0.5
+
+
+# -- Der Fetzen, den die Rückschrift nicht sieht ----------------------------
+
+
+def test_ein_kurzer_fetzen_mit_pause_dahinter_wird_gefunden() -> None:
+    """Der gemeldete Fall: die Referenz endet auf 'Washington.', und am Anfang
+    jedes Satzes steht der auslaufende Nasal.
+
+    Für die Rückschrift ist er unsichtbar -- ihre Wortzeiten sind auf
+    Hundertstel gerundet und über sieben Rahmen zu 20 ms geglättet. Was ihn
+    verrät, ist seine Gestalt: ganz am Anfang, kurz, Pause dahinter.
+    """
+    audio = _tonspur((0.04, 0.15), (0.15, 0.0), (0.60, 0.4))
+
+    schnitt = leading_fragment(audio, RATE, "erster", 14.0)
+
+    assert schnitt is not None
+    assert 0.15 <= schnitt <= 0.19
+
+
+def test_faengt_es_erst_spaeter_an_ist_es_der_satz() -> None:
+    """F5 trennt Referenz und Text an einer berechneten Stelle. Was übersteht,
+    liegt am Anfang und nirgendwo sonst."""
+    audio = _tonspur((0.10, 0.0), (0.60, 0.4))
+
+    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+
+
+def test_ein_langer_anfang_ist_kein_fetzen_sondern_sprache() -> None:
+    audio = _tonspur((0.30, 0.4), (0.10, 0.0), (0.40, 0.4))
+
+    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+
+
+def test_ein_kurzes_erstes_wort_wird_nicht_fuer_einen_fetzen_gehalten() -> None:
+    """'Ja,' sieht aus wie ein Fetzen mit Pause dahinter. Deshalb zählt das
+    erste erwartete Wort mit: ein Fetzen ist ein Bruchteil eines Lautes und
+    damit deutlich kürzer, als dieses Wort dauern kann.
+
+    Dieselbe Tonspur, zwei Erwartungen, zwei Antworten -- das ist der Punkt.
+    """
+    audio = _tonspur((0.09, 0.3), (0.15, 0.0), (0.40, 0.4))
+
+    assert leading_fragment(audio, RATE, "ja", 14.0) is None
+    assert leading_fragment(audio, RATE, "unerwartet", 14.0) is not None
+
+
+def test_ohne_pause_dahinter_ist_nichts_zu_unterscheiden() -> None:
+    """Acht Hundertstel: das ist die Länge eines Verschlusslauts, keine Grenze."""
+    audio = _tonspur((0.04, 0.15), (0.08, 0.0), (0.60, 0.4))
+
+    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+
+
+def test_ohne_sprache_dahinter_wird_nicht_geschnitten() -> None:
+    """Kommt hinter der Pause nichts mehr, war der 'Fetzen' vielleicht alles,
+    was der Satz hat."""
+    audio = _tonspur((0.04, 0.15), (0.60, 0.0))
+
+    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+
+
+def test_ohne_bekanntes_erstes_wort_zaehlt_nur_die_kuerze() -> None:
+    audio = _tonspur((0.09, 0.3), (0.15, 0.0), (0.40, 0.4))
+
+    assert leading_fragment(audio, RATE) is not None
+
+
+def test_first_word_nimmt_den_wortlaut_ohne_satzzeichen() -> None:
+    assert first_word("Der erste Satz.") == "der"
+    assert first_word("") == ""
+
+
+# -- Der Befehl, der die Zahlen zeigt ---------------------------------------
+
+
+def test_vorspann_zeigt_die_zahlen(settings, voice_store, monkeypatch) -> None:  # noqa: ANN001
+    """Der Befehl ist da, damit die nächste Runde auf Zahlen beruht und nicht
+    auf Adjektiven: 'Dauer' sagt, wie lang der Fetzen ist, 'Pause', wie deutlich
+    er absetzt. Ohne GPU, ohne Modell, ohne Netz."""
+    from typer.testing import CliRunner
+
+    from cloney.asr.dummy import DummyASR
+    from cloney.cli import app
+    from cloney.core.project import Project
+    from cloney.engines.dummy import DummyEngine
+    from cloney.pipeline import run_project
+
+    project = Project.create(
+        name="Kapitel",
+        text="Erster Satz hier. Zweiter Satz da.",
+        voice="test-stimme",
+        engine=DummyEngine.info,
+        projects_dir=settings.projects_dir,
+        target_seconds=1.5,
+    )
+    run_project(project, settings, voice_store, DummyEngine, DummyASR)
+    monkeypatch.setattr("cloney.config._settings", settings)
+
+    ergebnis = CliRunner().invoke(app, ["vorspann", project.id])
+
+    assert ergebnis.exit_code == 0, ergebnis.output
+    assert "Beginn" in ergebnis.output
+    assert "Dauer" in ergebnis.output
+    # Das Testsignal trägt keinen Fetzen: es geht unmittelbar in Sprache über.
+    assert "ja " not in ergebnis.output
+
+
+def test_vorspann_ohne_projekt_sagt_es(settings, monkeypatch) -> None:  # noqa: ANN001
+    from typer.testing import CliRunner
+
+    from cloney.cli import app
+
+    monkeypatch.setattr("cloney.config._settings", settings)
+    ergebnis = CliRunner().invoke(app, ["vorspann", "gibt-es-nicht"])
+
+    assert ergebnis.exit_code == 1
+    assert "gibt es nicht" in ergebnis.output

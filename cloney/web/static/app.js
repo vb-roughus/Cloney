@@ -262,6 +262,29 @@
   // Gelesen wird dabei das Dokument, nicht das Ereignis: bei einem
   // outerHTML-Tausch verweist detail.target auf das ersetzte, also alte
   // Element. Dessen Zustand ist genau der von vor dem Tausch.
+  // <details> klappt von sich aus nicht wieder zu, wenn daneben geklickt wird.
+  // Für ein Menü ist genau das die Erwartung.
+  function menuesSchliessen(ausser) {
+    var offene = document.querySelectorAll("details.menue[open]");
+    for (var i = 0; i < offene.length; i++) {
+      if (offene[i] !== ausser) offene[i].removeAttribute("open");
+    }
+  }
+
+  document.addEventListener("click", function (ereignis) {
+    var ziel = ereignis.target.closest ? ereignis.target.closest("details.menue") : null;
+    menuesSchliessen(ziel);
+  });
+
+  document.addEventListener("keydown", function (ereignis) {
+    if (ereignis.key !== "Escape") return;
+    var offen = document.querySelector("details.menue[open]");
+    if (!offen) return;
+    offen.removeAttribute("open");
+    var griff = offen.querySelector("summary");
+    if (griff) griff.focus();
+  });
+
   var liefBisher = false;
   document.body.addEventListener("htmx:afterSettle", function () {
     var karte = document.getElementById("status");
