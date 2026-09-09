@@ -19,6 +19,8 @@ legen, siehe ``cut_point``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from cloney.asr.base import TranscribedWord
@@ -47,9 +49,66 @@ _NACHLAUF_SEKUNDEN = 0.05
 #: Modell -- wie viel leiser die Lücke dazwischen ist, nicht.
 _RUHE_ANTEIL = 0.15
 
+# -- Der Fetzen am Anfang ---------------------------------------------------
+#
+# Ein Vorspann von wenigen Hundertstel -- der auslaufende Nasal eines
+# "Washington." etwa -- ist für die Rückschrift unsichtbar. Nicht, weil Whisper
+# ihn überhört, sondern weil seine Zeitangaben ihn nicht auflösen können: sie
+# sind auf Hundertstel gerundet und entstehen aus einer Ausrichtung über die
+# Aufmerksamkeit, geglättet mit einem Medianfilter über sieben Rahmen zu je
+# 20 ms (``faster_whisper/transcribe.py``, ``find_alignment``). Die Unschärfe
+# liegt damit bei rund ±70 ms und ist größer als das, was zu finden wäre.
+#
+# Hier zählt deshalb nur die Wellenform. Der Fetzen hat eine eigene Gestalt: er
+# liegt ganz am Anfang -- F5 trennt genau dort --, er ist kurz, und hinter ihm
+# steht eine Pause, weil F5 an den Referenztext ein Satzende anhängt und das
+# Modell danach absetzt.
+
+#: Bis hierhin muss ein Fetzen anfangen. Was später beginnt, ist der Satz.
+FETZEN_BEGINN_MAX = 0.05
+
+#: Länger als das ist kein Fetzen mehr, sondern eine Silbe. Ein Fetzen ist der
+#: Rest eines einzelnen Lautes -- das auslaufende "n" eines "Washington." --,
+#: keine gesprochene Einheit.
+FETZEN_DAUER_MAX = 0.12
+
+#: So lange muss die Pause dahinter mindestens sein. Bemessen an dem, wovon sie
+#: zu unterscheiden ist: ein Verschlusslaut mitten im ersten Wort -- das /p/ in
+#: "Kapitel" -- ist drei bis acht Hundertstel still. Wäre die Grenze dort, hielte
+#: die Erkennung eine Anfangssilbe für einen Fetzen und schnitte sie weg, ohne
+#: dass es auffiele: die Fehlerrate misst gegen die Rückschrift von vorher.
+#:
+#: Die Pause hinter einem echten Fetzen ist länger, und das hat einen Grund:
+#: F5 hängt an den Referenztext ein Satzende samt Pause an, das Modell setzt
+#: danach also ab.
+PAUSE_MIN_SEKUNDEN = 0.12
+
+#: So weit wird am Anfang überhaupt gesucht.
+_FETZEN_FENSTER_SEKUNDEN = 0.6
+
+#: Ab welchem Anteil des lautesten Rahmens im Fenster etwas als hörbar gilt.
+#: Tiefer als die Ruheschwelle: ein auslaufender Nasal ist deutlich leiser als
+#: ein Vokal, und er soll trotzdem gefunden werden.
+_FETZEN_SCHWELLE = 0.08
+
+#: Wie viel kürzer als das erste erwartete Wort ein Fetzen sein muss. Ein Satz,
+#: der mit "Ja," beginnt, sieht sonst aus wie ein Fetzen mit Pause dahinter --
+#: und würde weggeschnitten.
+_FETZEN_ANTEIL_VOM_WORT = 0.5
+
 
 def _wortliste(text: str) -> list[str]:
     return normalize_for_comparison(text).split()
+
+
+def _rahmenenergie(stueck: np.ndarray, sample_rate: int) -> np.ndarray:
+    """Lautstärke je Rahmen von ``_RAHMEN_SEKUNDEN``."""
+    schritt = max(1, int(_RAHMEN_SEKUNDEN * sample_rate))
+    rahmen = len(stueck) // schritt
+    if rahmen < 1:
+        return np.zeros(0)
+    werte = stueck[: rahmen * schritt].astype(np.float64).reshape(rahmen, schritt)
+    return np.sqrt((werte**2).mean(axis=1))
 
 
 def find_content_start(
@@ -122,14 +181,10 @@ def cut_point(
     dauer = len(audio) / sample_rate if sample_rate else 0.0
     ab = max(0.0, kandidat - fenster)
     bis = min(dauer, kandidat + _NACHLAUF_SEKUNDEN)
-    schritt = max(1, int(_RAHMEN_SEKUNDEN * sample_rate))
-    stueck = audio[int(ab * sample_rate) : int(bis * sample_rate)]
-    rahmen = len(stueck) // schritt
-    if rahmen < 2:
+    energie = _rahmenenergie(audio[int(ab * sample_rate) : int(bis * sample_rate)], sample_rate)
+    if energie.size < 2 or not energie.max():
         return kandidat
 
-    werte = stueck[: rahmen * schritt].astype(np.float64).reshape(rahmen, schritt)
-    energie = np.sqrt((werte**2).mean(axis=1))
     ruhig = np.flatnonzero(energie <= energie.max() * _RUHE_ANTEIL)
     if not ruhig.size:
         return kandidat
@@ -137,3 +192,111 @@ def cut_point(
     # zehn Hundertstel Ruhe, die dadurch stehen bleiben, hört niemand -- einen
     # angeschnittenen Anlaut schon.
     return ab + int(ruhig[-1]) * _RAHMEN_SEKUNDEN
+
+
+def leading_fragment(
+    audio: np.ndarray,
+    sample_rate: int,
+    erstes_wort: str = "",
+    chars_per_second: float = 14.0,
+) -> float | None:
+    """Ein kurzer Fetzen ganz am Anfang, durch eine Pause vom Satz getrennt.
+
+    Gibt die Stelle zurück, an der der Satz beginnt -- oder ``None``, wenn da
+    kein Fetzen ist.
+
+    Der Weg über die Rückschrift greift hier nicht: ein Vorspann von wenigen
+    Hundertstel liegt unterhalb dessen, was Whispers Wortzeiten auflösen. Was
+    ihn trotzdem verrät, ist seine Gestalt -- ganz am Anfang, kurz, und dahinter
+    eine Pause.
+
+    Drei Bedingungen zusammen, weil jede für sich zu wenig ist. Der Anfang
+    allein nicht: ein Satz fängt auch dort an. Die Kürze allein nicht: "Ja,"
+    ist auch kurz. Die Pause allein nicht: nach "Ja," steht auch eine. Deshalb
+    kommt das erste erwartete Wort als vierte Bedingung dazu -- ein Fetzen ist
+    ein Bruchteil eines Lautes und damit deutlich kürzer, als dieses Wort
+    dauern kann.
+    """
+    befund = describe_start(audio, sample_rate)
+    if befund is None or befund.beginn > FETZEN_BEGINN_MAX:
+        # Fängt erst später an: dann ist das der Satz, und davor war Stille.
+        return None
+    if befund.dauer > FETZEN_DAUER_MAX:
+        return None
+    if befund.dauer >= _hoechstdauer(erstes_wort, chars_per_second):
+        return None
+    if not befund.danach or befund.pause < PAUSE_MIN_SEKUNDEN:
+        # Ohne Pause dahinter -- oder ohne alles dahinter -- ist nicht zu
+        # unterscheiden, ob das der Satz war.
+        return None
+
+    # An den Anfang des letzten stillen Rahmens, aus demselben Grund wie in
+    # ``cut_point``: stehen gebliebene Stille hört niemand, einen
+    # angeschnittenen Anlaut schon.
+    return befund.beginn + befund.dauer + befund.pause - _RAHMEN_SEKUNDEN
+
+
+@dataclass(frozen=True)
+class Anfang:
+    """Was am Anfang eines Chunks steht, in Zahlen statt in Adjektiven.
+
+    Getrennt von der Entscheidung, weil die Zahlen für sich nützlich sind:
+    ``cloney vorspann`` zeigt sie für ein ganzes Projekt, und erst daran ist zu
+    sehen, ob eine Schwelle passt oder danebenliegt.
+    """
+
+    #: Wann das erste Hörbare beginnt.
+    beginn: float
+    #: Wie lange es am Stück anhält.
+    dauer: float
+    #: Wie lange es danach ruhig bleibt.
+    pause: float
+    #: Ob nach dieser Ruhe überhaupt noch etwas kommt.
+    danach: bool
+
+
+def describe_start(audio: np.ndarray, sample_rate: int) -> Anfang | None:
+    """Das erste Geräusch am Anfang und die Ruhe dahinter -- ohne Wertung."""
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    energie = _rahmenenergie(audio[: int(_FETZEN_FENSTER_SEKUNDEN * sample_rate)], sample_rate)
+    if energie.size < 3 or not energie.max():
+        return None
+
+    # '>=' und nicht '>': ist der Fetzen selbst das Lauteste im Fenster --
+    # weil dahinter nur noch Stille kommt --, fiele er sonst durch.
+    hoerbar = energie >= energie.max() * _FETZEN_SCHWELLE
+    if not hoerbar.any():
+        return None
+
+    beginn = int(np.argmax(hoerbar))
+    ende = beginn
+    while ende < hoerbar.size and hoerbar[ende]:
+        ende += 1
+    weiter = ende
+    while weiter < hoerbar.size and not hoerbar[weiter]:
+        weiter += 1
+
+    return Anfang(
+        beginn=beginn * _RAHMEN_SEKUNDEN,
+        dauer=(ende - beginn) * _RAHMEN_SEKUNDEN,
+        pause=(weiter - ende) * _RAHMEN_SEKUNDEN,
+        danach=weiter < hoerbar.size,
+    )
+
+
+def _hoechstdauer(erstes_wort: str, chars_per_second: float) -> float:
+    """Wie lang ein Fetzen höchstens sein darf, damit er keiner ist.
+
+    Ohne bekanntes erstes Wort bleibt es bei der festen Grenze -- dann ist die
+    Kürze das einzige Maß.
+    """
+    if not erstes_wort or chars_per_second <= 0:
+        return FETZEN_DAUER_MAX + 1.0
+    return len(erstes_wort) / chars_per_second * _FETZEN_ANTEIL_VOM_WORT
+
+
+def first_word(text: str) -> str:
+    """Das erste Wort der Sprechfassung, ohne Satzzeichen."""
+    woerter = _wortliste(text)
+    return woerter[0] if woerter else ""

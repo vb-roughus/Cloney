@@ -342,6 +342,86 @@ def resume(
     _run(project, settings, project.engine, qc)
 
 
+@app.command()
+def vorspann(
+    project_id: str = typer.Argument(..., help="Projekt-Kennung."),
+    saetze: int = typer.Option(20, help="Wie viele Sätze gezeigt werden. 0 = alle."),
+) -> None:
+    """Nachsehen, was am Anfang der erzeugten Sätze steht.
+
+    Der Referenz-Vorspann -- ein Rest der Referenzaufnahme, den F5-TTS am Anfang
+    stehen lässt -- wird an seiner Gestalt erkannt: kurz, ganz am Anfang, Pause
+    dahinter. Ob die Schwellen dafür zur eigenen Stimme passen, ist eine Frage
+    an die Zahlen und nicht an das Gefühl. Hier stehen sie.
+
+    Braucht weder GPU noch Modell noch Netz: gelesen werden die fertigen
+    Tondateien.
+    """
+    from cloney.core.audio import read_wav
+    from cloney.core.bleed import (
+        FETZEN_BEGINN_MAX,
+        FETZEN_DAUER_MAX,
+        PAUSE_MIN_SEKUNDEN,
+        describe_start,
+        first_word,
+        leading_fragment,
+    )
+
+    settings = get_settings()
+    root = settings.projects_dir / project_id
+    if not (root / "project.json").exists():
+        typer.secho(f"Projekt '{project_id}' gibt es nicht.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    project = Project.load(root)
+    typer.echo(
+        f"Ein Fetzen gilt als solcher, wenn er vor {FETZEN_BEGINN_MAX:.2f}s beginnt, "
+        f"höchstens {FETZEN_DAUER_MAX:.2f}s dauert\n"
+        f"und mindestens {PAUSE_MIN_SEKUNDEN:.2f}s Ruhe dahinter liegen."
+    )
+    typer.echo("")
+    typer.echo(
+        f"{'Satz':>5}  {'Beginn':>7}  {'Dauer':>7}  {'Pause':>7}  {'Schnitt':>8}  Erstes Wort"
+    )
+
+    gezeigt = 0
+    befunde = 0
+    for chunk in project.chunks:
+        pfad = project.chunk_path(chunk.index)
+        if not pfad.exists():
+            continue
+        audio, rate = read_wav(pfad)
+        befund = describe_start(audio, rate)
+        if befund is None:
+            continue
+        befunde += 1
+        schnitt = leading_fragment(
+            audio, rate, first_word(chunk.normalized_text), settings.chars_per_second
+        )
+        if saetze and gezeigt >= saetze:
+            continue
+        gezeigt += 1
+        # Der Schnitt steht bereits in der Datei, wenn er beim Lauf gegriffen
+        # hat -- was hier steht, ist die Beurteilung des jetzigen Zustands.
+        typer.secho(
+            f"{chunk.index + 1:>5}  {befund.beginn:>7.2f}  {befund.dauer:>7.2f}  "
+            f"{befund.pause:>7.2f}  {('ja ' + format(schnitt, '.2f')) if schnitt else 'nein':>8}  "
+            f"{first_word(chunk.normalized_text)}",
+            fg=typer.colors.YELLOW if schnitt else None,
+        )
+
+    if not befunde:
+        typer.secho("Kein einziger Satz hat Ton -- nichts nachzusehen.", fg=typer.colors.YELLOW)
+        return
+    if saetze and befunde > gezeigt:
+        typer.echo(f"... und {befunde - gezeigt} weitere. Alle zeigen: --saetze 0")
+    typer.echo("")
+    typer.echo(
+        "Steht überall 'nein' und ist trotzdem etwas zu hören, passen die Schwellen nicht:\n"
+        "'Dauer' sagt dann, wie lang der Fetzen wirklich ist, 'Pause', wie deutlich er absetzt."
+    )
+
+
 def _run(project: Project, settings: Settings, engine_name: str, qc: bool) -> None:
     store = VoiceStore(settings.voices_dir)
     modell_settings = _modell_einstellungen(settings, project.model)

@@ -27,7 +27,7 @@ import numpy as np
 from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import Segment, assemble, read_wav, write_wav
-from cloney.core.bleed import cut_point, find_content_start
+from cloney.core.bleed import cut_point, find_content_start, first_word, leading_fragment
 from cloney.core.compare import Comparison, Variant, VariantStatus
 from cloney.core.metrics import cer, cosine_similarity
 from cloney.core.project import Chunk, ChunkStatus, Project
@@ -185,12 +185,25 @@ def _trim_reference_bleed(
     getrennt wird, entscheidet ``cut_point`` an der Wellenform: Whispers Zeiten
     sind geschätzt, und ein paar Hundertstel zu spät kosten dem ersten Wort
     seinen Anlaut.
+
+    Bleibt die Rückschrift stumm, kommt ``leading_fragment`` zum Zug. Ein
+    Vorspann von wenigen Hundertstel -- der auslaufende Nasal eines
+    "Washington." etwa -- liegt unterhalb dessen, was Whispers Wortzeiten
+    auflösen; zu hören ist er trotzdem. Ihn verrät dann allein seine Gestalt in
+    der Wellenform.
     """
     start, vorspann_woerter = find_content_start(transcript.words, spoken)
-    if start is None or start < settings.min_bleed_seconds:
-        return transcript.text
+    if start is not None and start >= settings.min_bleed_seconds:
+        schnitt: float | None = cut_point(audio, sample_rate, start)
+    else:
+        schnitt = leading_fragment(
+            audio, sample_rate, first_word(spoken), settings.chars_per_second
+        )
+        # Kein Wort war zu verwerfen: die Rückschrift hat den Fetzen nie gesehen.
+        vorspann_woerter = 0
 
-    schnitt = cut_point(audio, sample_rate, start)
+    if schnitt is None:
+        return transcript.text
     ab = int(schnitt * sample_rate)
     if ab <= 0 or ab >= len(audio):
         return transcript.text
