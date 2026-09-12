@@ -936,26 +936,38 @@ Die Unschärfe liegt damit bei rund ±70 ms und ist größer als das, was zu fin
 wäre.
 
 Hier zählt deshalb nur die Wellenform. Ein Fetzen hat eine eigene Gestalt, und
-drei Bedingungen zusammen beschreiben sie — jede für sich wäre zu wenig:
+vier Bedingungen zusammen beschreiben sie — jede für sich wäre zu wenig.
 
-* Er **beginnt ganz vorn** (< 0,05 s). F5 trennt Referenz und Text an einer
-  berechneten Stelle; was übersteht, liegt dort und nirgendwo sonst.
-* Er ist **kurz** (< 0,12 s). Ein Fetzen ist der Rest eines einzelnen Lautes,
-  keine gesprochene Einheit.
-* Dahinter steht eine **Pause** (≥ 0,12 s). Das ist der Grund, warum er sich
-  überhaupt abtrennen lässt: F5 hängt an den Referenztext ein Satzende samt
-  Pause an, das Modell setzt danach also ab.
+Die Zahlen dafür sind **gemessen, nicht geschätzt**. Vier Sätze aus einem echten
+Lauf gegen eine Stimme, deren Referenz auf „Washington." endet:
 
-Die Pausengrenze ist dabei nicht willkürlich, sondern an dem bemessen, wovon sie
-zu unterscheiden ist: ein Verschlusslaut mitten im ersten Wort — das `p` in
-„Kapitel" — ist drei bis acht Hundertstel still. Läge die Grenze dort, hielte die
-Erkennung eine Anfangssilbe für einen Fetzen und schnitte sie weg, ohne dass es
-auffiele: die Fehlerrate misst gegen die Rückschrift von vorher.
+| Satz | Beginn | Dauer | Pause | |
+|---|---|---|---|---|
+| 1 | 0,26 s | 0,13 s | 0,01 s | kein Vorspann — der Satz selbst |
+| 2 | 0,10 s | 0,14 s | 0,36 s | Vorspann |
+| 3 | 0,10 s | 0,14 s | 0,36 s | Vorspann |
+| 4 | 0,09 s | 0,14 s | 0,37 s | Vorspann |
 
-Als vierte Bedingung zählt das **erste erwartete Wort** mit. „Ja," sieht aus wie
-ein Fetzen mit Pause dahinter; ein Fetzen ist aber deutlich kürzer, als dieses
-Wort dauern kann — gerechnet über dieselbe Zeichen-pro-Sekunde-Annahme wie beim
-Chunking.
+Daran ist zweierlei abzulesen. Der Fetzen liegt **nicht** bei null: F5 gibt der
+Referenz 50 ms Stille mit, und die steht mit davor. Und die Pause dahinter ist
+riesig — es ist die Pause des Satzendes, das F5 an den Referenztext anhängt.
+Genau sie trennt den Vorspann vom Satz, und genau sie fehlt bei Satz 1.
+
+* Er **beginnt vorn** (< 0,15 s).
+* Er ist **kurz** (< 0,20 s) — der Rest eines Lautes, keine gesprochene Einheit.
+* Dahinter steht eine **Pause von Satzlänge** (≥ 0,25 s). Das ist die tragende
+  Bedingung. Bemessen an dem, wovon sie zu unterscheiden ist: ein Verschlusslaut
+  mitten im ersten Wort — das `p` in „Kapitel" — ist drei bis acht Hundertstel
+  still, eine Kommapause anderthalb bis zwei Zehntel.
+* Und hinter dem ersten Wort steht **kein Satzzeichen**. „Ja," sieht aus wie ein
+  Fetzen mit Pause dahinter; dass dort abgesetzt wird, steht aber im Text.
+
+Die letzte Bedingung rechnete zuerst über die Länge des ersten Wortes und
+beantwortete damit die falsche Frage. Gesucht ist nicht „könnte das ein Wort
+sein?", sondern „ist eine Pause an dieser Stelle gewollt?" — und darauf antwortet
+der Text unmittelbar. In der Messung oben hätte die Längenrechnung Satz 3
+verworfen: vor „sie" stand ein Fetzen von vierzehn Hundertstel, mehr als die
+halbe erwartete Dauer von drei Zeichen. Er war trotzdem einer.
 
 #### Nachsehen, was am Anfang steht
 
@@ -968,9 +980,10 @@ cloney vorspann <projekt-kennung>
 
 Der Befehl liest die fertigen Tondateien — keine GPU, kein Modell, kein Netz —
 und zeigt je Satz, wann das erste Hörbare beginnt, wie lange es anhält, wie
-lange es danach ruhig bleibt und ob geschnitten würde. Steht überall `nein` und
-ist trotzdem etwas zu hören, sagen `Dauer` und `Pause`, welche Schwelle
-danebenliegt.
+lange es danach ruhig bleibt und ob geschnitten würde. Wird nicht geschnitten,
+steht in der Spalte `Grund`, **welche** der vier Bedingungen es verhindert —
+und damit, welche Zahl nicht passt. Genau diese Ausgabe hat die Schwellen oben
+gerade zurechtgerückt.
 
 Dafür muss die Qualitätskontrolle laufen — ohne `faster-whisper` gibt es keine
 Rückschrift und damit keine Erkennung.

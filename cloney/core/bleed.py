@@ -64,37 +64,51 @@ _RUHE_ANTEIL = 0.15
 # steht eine Pause, weil F5 an den Referenztext ein Satzende anhängt und das
 # Modell danach absetzt.
 
+# Alle drei Zahlen unten sind gemessen und nicht geschätzt. Vier Sätze aus einem
+# echten Lauf, gegen eine Stimme, deren Referenz auf "Washington." endet:
+#
+#     Satz   Beginn   Dauer   Pause
+#        1     0.26    0.13    0.01   <- kein Vorspann, der Satz selbst
+#        2     0.10    0.14    0.36
+#        3     0.10    0.14    0.36
+#        4     0.09    0.14    0.37
+#
+# Daran ist zweierlei abzulesen. Erstens liegt der Fetzen *nicht* bei null: F5
+# gibt der Referenz 50 ms Stille mit, und die steht mit davor. Zweitens ist die
+# Pause dahinter riesig -- das ist die Pause des Satzendes, das F5 an den
+# Referenztext anhängt. Genau sie trennt den Vorspann vom Satz, und genau sie
+# fehlt bei Satz 1.
+
 #: Bis hierhin muss ein Fetzen anfangen. Was später beginnt, ist der Satz.
-FETZEN_BEGINN_MAX = 0.05
+FETZEN_BEGINN_MAX = 0.15
 
-#: Länger als das ist kein Fetzen mehr, sondern eine Silbe. Ein Fetzen ist der
-#: Rest eines einzelnen Lautes -- das auslaufende "n" eines "Washington." --,
-#: keine gesprochene Einheit.
-FETZEN_DAUER_MAX = 0.12
+#: Länger als das ist kein Fetzen mehr, sondern eine Silbe.
+FETZEN_DAUER_MAX = 0.20
 
-#: So lange muss die Pause dahinter mindestens sein. Bemessen an dem, wovon sie
-#: zu unterscheiden ist: ein Verschlusslaut mitten im ersten Wort -- das /p/ in
-#: "Kapitel" -- ist drei bis acht Hundertstel still. Wäre die Grenze dort, hielte
-#: die Erkennung eine Anfangssilbe für einen Fetzen und schnitte sie weg, ohne
-#: dass es auffiele: die Fehlerrate misst gegen die Rückschrift von vorher.
+#: So lange muss die Pause dahinter mindestens sein -- die tragende Bedingung.
+#: Bemessen an dem, wovon sie zu unterscheiden ist: ein Verschlusslaut mitten im
+#: ersten Wort (das /p/ in "Kapitel") ist drei bis acht Hundertstel still, eine
+#: Kommapause anderthalb bis zwei Zehntel. Die Pause hinter einem Fetzen ist ein
+#: Satzende und liegt darüber.
 #:
-#: Die Pause hinter einem echten Fetzen ist länger, und das hat einen Grund:
-#: F5 hängt an den Referenztext ein Satzende samt Pause an, das Modell setzt
-#: danach also ab.
-PAUSE_MIN_SEKUNDEN = 0.12
+#: Läge die Grenze tiefer, hielte die Erkennung eine Anfangssilbe für einen
+#: Fetzen und schnitte sie weg, ohne dass es auffiele: die Fehlerrate misst
+#: gegen die Rückschrift von vorher.
+PAUSE_MIN_SEKUNDEN = 0.25
 
-#: So weit wird am Anfang überhaupt gesucht.
-_FETZEN_FENSTER_SEKUNDEN = 0.6
+#: So weit wird am Anfang gesucht. Großzügig: Beginn, Fetzen und Pause zusammen
+#: kamen in der Messung auf 0,60 s, und dahinter muss der Satz noch Platz haben.
+#: Ein knapperes Fenster endete genau dort, wo der Satz anfängt -- dann sähe es
+#: so aus, als käme nach der Pause nichts mehr, und nichts würde geschnitten.
+_FETZEN_FENSTER_SEKUNDEN = 1.5
 
 #: Ab welchem Anteil des lautesten Rahmens im Fenster etwas als hörbar gilt.
 #: Tiefer als die Ruheschwelle: ein auslaufender Nasal ist deutlich leiser als
 #: ein Vokal, und er soll trotzdem gefunden werden.
 _FETZEN_SCHWELLE = 0.08
 
-#: Wie viel kürzer als das erste erwartete Wort ein Fetzen sein muss. Ein Satz,
-#: der mit "Ja," beginnt, sieht sonst aus wie ein Fetzen mit Pause dahinter --
-#: und würde weggeschnitten.
-_FETZEN_ANTEIL_VOM_WORT = 0.5
+#: Satzzeichen, hinter denen eine Pause gewollt ist.
+_PAUSENZEICHEN = ",;:.!?…–—-"
 
 
 def _wortliste(text: str) -> list[str]:
@@ -194,12 +208,7 @@ def cut_point(
     return ab + int(ruhig[-1]) * _RAHMEN_SEKUNDEN
 
 
-def leading_fragment(
-    audio: np.ndarray,
-    sample_rate: int,
-    erstes_wort: str = "",
-    chars_per_second: float = 14.0,
-) -> float | None:
+def leading_fragment(audio: np.ndarray, sample_rate: int, raw_text: str = "") -> float | None:
     """Ein kurzer Fetzen ganz am Anfang, durch eine Pause vom Satz getrennt.
 
     Gibt die Stelle zurück, an der der Satz beginnt -- oder ``None``, wenn da
@@ -210,30 +219,71 @@ def leading_fragment(
     ihn trotzdem verrät, ist seine Gestalt -- ganz am Anfang, kurz, und dahinter
     eine Pause.
 
-    Drei Bedingungen zusammen, weil jede für sich zu wenig ist. Der Anfang
+    Vier Bedingungen zusammen, weil jede für sich zu wenig ist. Der Anfang
     allein nicht: ein Satz fängt auch dort an. Die Kürze allein nicht: "Ja,"
     ist auch kurz. Die Pause allein nicht: nach "Ja," steht auch eine. Deshalb
-    kommt das erste erwartete Wort als vierte Bedingung dazu -- ein Fetzen ist
-    ein Bruchteil eines Lautes und damit deutlich kürzer, als dieses Wort
-    dauern kann.
+    zählt als vierte der Text mit -- steht hinter dem ersten Wort ein
+    Satzzeichen, ist die Pause gewollt und das davor kein Fetzen.
+
+    Welche Bedingung im Einzelfall greift, beantwortet ``beurteile``.
     """
+    return beurteile(audio, sample_rate, raw_text).schnitt
+
+
+@dataclass(frozen=True)
+class Urteil:
+    """Wo geschnitten wird -- und wenn nicht, warum nicht.
+
+    Der Grund ist nicht Beiwerk. Steht am Anfang etwas Hörbares und wird
+    trotzdem nicht geschnitten, ist die Frage, *welche* Bedingung das verhindert;
+    ``cloney vorspann`` zeigt genau das. Ohne die Antwort bliebe nur Raten, und
+    davon hat dieses Problem schon genug gehabt.
+    """
+
+    schnitt: float | None
+    grund: str
+    befund: Anfang | None
+
+
+def beurteile(audio: np.ndarray, sample_rate: int, raw_text: str = "") -> Urteil:
+    """Ist das am Anfang ein Fetzen? Und wenn nein, woran liegt es?"""
     befund = describe_start(audio, sample_rate)
-    if befund is None or befund.beginn > FETZEN_BEGINN_MAX:
-        # Fängt erst später an: dann ist das der Satz, und davor war Stille.
-        return None
+    if befund is None:
+        return Urteil(None, "am Anfang ist nichts zu hören", None)
+    if befund.beginn > FETZEN_BEGINN_MAX:
+        return Urteil(None, f"beginnt erst bei {befund.beginn:.2f}s", befund)
     if befund.dauer > FETZEN_DAUER_MAX:
-        return None
-    if befund.dauer >= _hoechstdauer(erstes_wort, chars_per_second):
-        return None
-    if not befund.danach or befund.pause < PAUSE_MIN_SEKUNDEN:
-        # Ohne Pause dahinter -- oder ohne alles dahinter -- ist nicht zu
-        # unterscheiden, ob das der Satz war.
-        return None
+        return Urteil(None, f"dauert {befund.dauer:.2f}s -- das ist Sprache", befund)
+    if not befund.danach:
+        return Urteil(None, "nach der Pause kommt nichts mehr", befund)
+    if befund.pause < PAUSE_MIN_SEKUNDEN:
+        return Urteil(None, f"nur {befund.pause:.2f}s Pause dahinter", befund)
+    if pause_erwartet(raw_text):
+        return Urteil(None, "hinter dem ersten Wort steht ein Satzzeichen", befund)
 
     # An den Anfang des letzten stillen Rahmens, aus demselben Grund wie in
     # ``cut_point``: stehen gebliebene Stille hört niemand, einen
     # angeschnittenen Anlaut schon.
-    return befund.beginn + befund.dauer + befund.pause - _RAHMEN_SEKUNDEN
+    return Urteil(befund.beginn + befund.dauer + befund.pause - _RAHMEN_SEKUNDEN, "", befund)
+
+
+def pause_erwartet(raw_text: str) -> bool:
+    """Steht hinter dem ersten Wort ein Satzzeichen?
+
+    Das ersetzt die frühere Rechnung über die Länge des Wortes, und zwar weil
+    sie die falsche Frage beantwortete. Gesucht ist nicht "könnte das ein Wort
+    sein?", sondern "ist eine Pause an dieser Stelle gewollt?" -- und darauf
+    antwortet der Text unmittelbar. "Ja, ..." und "Nun, ..." setzen ab, weil es
+    so dasteht; ein "Sie" ohne Satzzeichen tut es nicht.
+
+    Die Längenrechnung hätte in der Messung einen echten Vorspann verworfen:
+    "sie" ist drei Zeichen, der Fetzen davor war vierzehn Hundertstel lang, und
+    damit galt er als zu lang für einen Fetzen. Er war trotzdem einer.
+    """
+    erstes = raw_text.strip().split(maxsplit=1)
+    if not erstes:
+        return False
+    return erstes[0].rstrip("\"')]»›“”")[-1:] in _PAUSENZEICHEN
 
 
 @dataclass(frozen=True)
@@ -283,17 +333,6 @@ def describe_start(audio: np.ndarray, sample_rate: int) -> Anfang | None:
         pause=(weiter - ende) * _RAHMEN_SEKUNDEN,
         danach=weiter < hoerbar.size,
     )
-
-
-def _hoechstdauer(erstes_wort: str, chars_per_second: float) -> float:
-    """Wie lang ein Fetzen höchstens sein darf, damit er keiner ist.
-
-    Ohne bekanntes erstes Wort bleibt es bei der festen Grenze -- dann ist die
-    Kürze das einzige Maß.
-    """
-    if not erstes_wort or chars_per_second <= 0:
-        return FETZEN_DAUER_MAX + 1.0
-    return len(erstes_wort) / chars_per_second * _FETZEN_ANTEIL_VOM_WORT
 
 
 def first_word(text: str) -> str:

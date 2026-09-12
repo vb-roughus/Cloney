@@ -23,7 +23,14 @@ from __future__ import annotations
 import numpy as np
 
 from cloney.asr.base import TranscribedWord
-from cloney.core.bleed import cut_point, find_content_start, first_word, leading_fragment
+from cloney.core.bleed import (
+    beurteile,
+    cut_point,
+    find_content_start,
+    first_word,
+    leading_fragment,
+    pause_erwartet,
+)
 
 RATE = 24000
 
@@ -151,68 +158,111 @@ def test_zu_kurzes_audio_bleibt_beim_kandidaten() -> None:
 # -- Der Fetzen, den die Rückschrift nicht sieht ----------------------------
 
 
-def test_ein_kurzer_fetzen_mit_pause_dahinter_wird_gefunden() -> None:
-    """Der gemeldete Fall: die Referenz endet auf 'Washington.', und am Anfang
-    jedes Satzes steht der auslaufende Nasal.
+def _gemessener_satz(erster_teil: float = 0.10) -> np.ndarray:
+    """Ein Satz, wie er aus einem echten Lauf kam.
 
-    Für die Rückschrift ist er unsichtbar -- ihre Wortzeiten sind auf
-    Hundertstel gerundet und über sieben Rahmen zu 20 ms geglättet. Was ihn
-    verrät, ist seine Gestalt: ganz am Anfang, kurz, Pause dahinter.
+    Die Zahlen stammen aus 'cloney vorspann' gegen eine Stimme, deren Referenz
+    auf "Washington." endet: Vorlauf 0,10 s, Fetzen 0,14 s, Pause 0,36 s, dann
+    der Satz. Genau an dieser Spur sind die Schwellen bemessen.
     """
-    audio = _tonspur((0.04, 0.15), (0.15, 0.0), (0.60, 0.4))
+    return _tonspur((erster_teil, 0.0), (0.14, 0.15), (0.36, 0.0), (2.0, 0.4))
 
-    schnitt = leading_fragment(audio, RATE, "erster", 14.0)
+
+def test_der_gemessene_fetzen_wird_gefunden() -> None:
+    """Der Fall aus der Praxis. Drei Schwellen lagen daneben: der Fetzen beginnt
+    nicht bei null (F5 gibt der Referenz 50 ms Stille mit), er ist länger als
+    angenommen, und das Suchfenster endete genau dort, wo der Satz anfängt --
+    dann sah es aus, als käme nach der Pause nichts mehr."""
+    schnitt = leading_fragment(_gemessener_satz(), RATE, "Diese Zusammenfassung gilt.")
 
     assert schnitt is not None
-    assert 0.15 <= schnitt <= 0.19
+    # Vorlauf, Fetzen und Pause zusammen: rund sechs Zehntel.
+    assert 0.55 <= schnitt <= 0.61
+
+
+def test_ohne_pause_kein_fetzen() -> None:
+    """Satz 1 derselben Messung: Beginn 0,26 s, Dauer 0,13 s, Pause 0,01 s.
+    Das ist der Satz selbst, und die fehlende Pause sagt es."""
+    audio = _tonspur((0.26, 0.4), (0.13, 0.4), (0.01, 0.0), (2.0, 0.4))
+
+    urteil = beurteile(audio, RATE, "Zusammenfassung der Lage.")
+
+    assert urteil.schnitt is None
+
+
+def test_ein_langer_anfang_ist_kein_fetzen_sondern_sprache() -> None:
+    audio = _tonspur((0.30, 0.4), (0.30, 0.0), (1.0, 0.4))
+
+    urteil = beurteile(audio, RATE, "Erster Satz hier.")
+
+    assert urteil.schnitt is None
+    assert "Sprache" in urteil.grund
 
 
 def test_faengt_es_erst_spaeter_an_ist_es_der_satz() -> None:
     """F5 trennt Referenz und Text an einer berechneten Stelle. Was übersteht,
     liegt am Anfang und nirgendwo sonst."""
-    audio = _tonspur((0.10, 0.0), (0.60, 0.4))
+    audio = _tonspur((0.30, 0.0), (0.10, 0.4), (0.40, 0.0), (1.0, 0.4))
 
-    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+    urteil = beurteile(audio, RATE, "Erster Satz hier.")
 
-
-def test_ein_langer_anfang_ist_kein_fetzen_sondern_sprache() -> None:
-    audio = _tonspur((0.30, 0.4), (0.10, 0.0), (0.40, 0.4))
-
-    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+    assert urteil.schnitt is None
+    assert "beginnt erst" in urteil.grund
 
 
-def test_ein_kurzes_erstes_wort_wird_nicht_fuer_einen_fetzen_gehalten() -> None:
-    """'Ja,' sieht aus wie ein Fetzen mit Pause dahinter. Deshalb zählt das
-    erste erwartete Wort mit: ein Fetzen ist ein Bruchteil eines Lautes und
-    damit deutlich kürzer, als dieses Wort dauern kann.
+def test_eine_kommapause_ist_keine_satzpause() -> None:
+    """Ein Verschlusslaut ist drei bis acht Hundertstel still, eine Kommapause
+    anderthalb bis zwei Zehntel. Die Pause hinter einem Fetzen ist ein Satzende
+    und liegt darüber."""
+    audio = _tonspur((0.05, 0.0), (0.12, 0.3), (0.18, 0.0), (1.0, 0.4))
 
-    Dieselbe Tonspur, zwei Erwartungen, zwei Antworten -- das ist der Punkt.
-    """
-    audio = _tonspur((0.09, 0.3), (0.15, 0.0), (0.40, 0.4))
+    urteil = beurteile(audio, RATE, "Nun geht es los.")
 
-    assert leading_fragment(audio, RATE, "ja", 14.0) is None
-    assert leading_fragment(audio, RATE, "unerwartet", 14.0) is not None
+    assert urteil.schnitt is None
+    assert "Pause" in urteil.grund
 
 
-def test_ohne_pause_dahinter_ist_nichts_zu_unterscheiden() -> None:
-    """Acht Hundertstel: das ist die Länge eines Verschlusslauts, keine Grenze."""
-    audio = _tonspur((0.04, 0.15), (0.08, 0.0), (0.60, 0.4))
+def test_ein_satzzeichen_hinter_dem_ersten_wort_schuetzt_den_satz() -> None:
+    """'Ja,' sieht aus wie ein Fetzen mit Pause dahinter -- und ist keiner.
+    Dieselbe Tonspur, zwei Texte, zwei Antworten: das ist der Punkt."""
+    audio = _gemessener_satz()
 
-    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+    assert beurteile(audio, RATE, "Ja, so war es.").schnitt is None
+    assert beurteile(audio, RATE, "Sie kam trotzdem.").schnitt is not None
+
+
+def test_das_laengenmass_haette_einen_echten_vorspann_verworfen() -> None:
+    """Die frühere Regel rechnete den Fetzen gegen die Länge des ersten Wortes.
+    In der Messung stand vor "sie" ein Fetzen von vierzehn Hundertstel -- länger
+    als die halbe erwartete Dauer von drei Zeichen, und damit verworfen. Er war
+    trotzdem einer."""
+    assert leading_fragment(_gemessener_satz(), RATE, "Sie kam trotzdem.") is not None
 
 
 def test_ohne_sprache_dahinter_wird_nicht_geschnitten() -> None:
     """Kommt hinter der Pause nichts mehr, war der 'Fetzen' vielleicht alles,
     was der Satz hat."""
-    audio = _tonspur((0.04, 0.15), (0.60, 0.0))
+    audio = _tonspur((0.04, 0.15), (1.0, 0.0))
 
-    assert leading_fragment(audio, RATE, "erster", 14.0) is None
+    urteil = beurteile(audio, RATE, "Kurz.")
+
+    assert urteil.schnitt is None
+    assert "kommt nichts mehr" in urteil.grund
 
 
-def test_ohne_bekanntes_erstes_wort_zaehlt_nur_die_kuerze() -> None:
-    audio = _tonspur((0.09, 0.3), (0.15, 0.0), (0.40, 0.4))
+def test_ohne_ton_gibt_es_nichts_zu_beurteilen() -> None:
+    urteil = beurteile(np.zeros(RATE, dtype=np.float32), RATE, "Ein Satz.")
 
-    assert leading_fragment(audio, RATE) is not None
+    assert urteil.schnitt is None
+    assert urteil.befund is None
+
+
+def test_pause_erwartet_liest_das_satzzeichen() -> None:
+    assert pause_erwartet("Ja, so war es.")
+    assert pause_erwartet("Nun: es geht los.")
+    assert pause_erwartet('"Ja," sagte er.')
+    assert not pause_erwartet("Sie kam trotzdem.")
+    assert not pause_erwartet("")
 
 
 def test_first_word_nimmt_den_wortlaut_ohne_satzzeichen() -> None:

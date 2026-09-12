@@ -27,7 +27,7 @@ import numpy as np
 from cloney.asr.base import ASREngine
 from cloney.config import Settings
 from cloney.core.audio import Segment, assemble, read_wav, write_wav
-from cloney.core.bleed import cut_point, find_content_start, first_word, leading_fragment
+from cloney.core.bleed import cut_point, find_content_start, leading_fragment
 from cloney.core.compare import Comparison, Variant, VariantStatus
 from cloney.core.metrics import cer, cosine_similarity
 from cloney.core.project import Chunk, ChunkStatus, Project
@@ -196,9 +196,7 @@ def _trim_reference_bleed(
     if start is not None and start >= settings.min_bleed_seconds:
         schnitt: float | None = cut_point(audio, sample_rate, start)
     else:
-        schnitt = leading_fragment(
-            audio, sample_rate, first_word(spoken), settings.chars_per_second
-        )
+        schnitt = leading_fragment(audio, sample_rate, chunk.raw_text)
         # Kein Wort war zu verwerfen: die Rückschrift hat den Fetzen nie gesehen.
         vorspann_woerter = 0
 

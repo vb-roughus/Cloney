@@ -362,9 +362,7 @@ def vorspann(
         FETZEN_BEGINN_MAX,
         FETZEN_DAUER_MAX,
         PAUSE_MIN_SEKUNDEN,
-        describe_start,
-        first_word,
-        leading_fragment,
+        beurteile,
     )
 
     settings = get_settings()
@@ -380,9 +378,7 @@ def vorspann(
         f"und mindestens {PAUSE_MIN_SEKUNDEN:.2f}s Ruhe dahinter liegen."
     )
     typer.echo("")
-    typer.echo(
-        f"{'Satz':>5}  {'Beginn':>7}  {'Dauer':>7}  {'Pause':>7}  {'Schnitt':>8}  Erstes Wort"
-    )
+    typer.echo(f"{'Satz':>5}  {'Beginn':>7}  {'Dauer':>7}  {'Pause':>7}  {'Schnitt':>8}  Grund")
 
     gezeigt = 0
     befunde = 0
@@ -391,23 +387,22 @@ def vorspann(
         if not pfad.exists():
             continue
         audio, rate = read_wav(pfad)
-        befund = describe_start(audio, rate)
-        if befund is None:
+        urteil = beurteile(audio, rate, chunk.raw_text)
+        if urteil.befund is None:
             continue
         befunde += 1
-        schnitt = leading_fragment(
-            audio, rate, first_word(chunk.normalized_text), settings.chars_per_second
-        )
         if saetze and gezeigt >= saetze:
             continue
         gezeigt += 1
         # Der Schnitt steht bereits in der Datei, wenn er beim Lauf gegriffen
         # hat -- was hier steht, ist die Beurteilung des jetzigen Zustands.
+        befund = urteil.befund
         typer.secho(
             f"{chunk.index + 1:>5}  {befund.beginn:>7.2f}  {befund.dauer:>7.2f}  "
-            f"{befund.pause:>7.2f}  {('ja ' + format(schnitt, '.2f')) if schnitt else 'nein':>8}  "
-            f"{first_word(chunk.normalized_text)}",
-            fg=typer.colors.YELLOW if schnitt else None,
+            f"{befund.pause:>7.2f}  "
+            f"{('ja ' + format(urteil.schnitt, '.2f')) if urteil.schnitt else 'nein':>8}  "
+            f"{urteil.grund}",
+            fg=typer.colors.YELLOW if urteil.schnitt else None,
         )
 
     if not befunde:
@@ -417,8 +412,8 @@ def vorspann(
         typer.echo(f"... und {befunde - gezeigt} weitere. Alle zeigen: --saetze 0")
     typer.echo("")
     typer.echo(
-        "Steht überall 'nein' und ist trotzdem etwas zu hören, passen die Schwellen nicht:\n"
-        "'Dauer' sagt dann, wie lang der Fetzen wirklich ist, 'Pause', wie deutlich er absetzt."
+        "Steht 'nein' und ist trotzdem etwas zu hören, sagt die Spalte 'Grund',\n"
+        "welche der Bedingungen es verhindert -- und damit, welche Zahl nicht passt."
     )
 
 
