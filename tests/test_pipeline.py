@@ -219,9 +219,13 @@ def test_ein_fetzen_ohne_wort_wird_an_der_wellenform_gefunden(
         def synthesize(self, text, voice, seed):  # type: ignore[no-untyped-def]
             echt = super().synthesize(text, voice, seed)
             rate = self.info.sample_rate
-            t = np.arange(int(0.04 * rate), dtype=np.float32) / rate
+            # Fetzen und Pause in den Maßen aus 'cloney vorspann' gegen eine
+            # echte Stimme: 0,14 s und 0,36 s. Den Vorlauf von 0,10 s übernimmt
+            # hier die Kennung -- sie steht ohnehin ganz vorn und muss dort
+            # bleiben, sonst fände DummyASR den Text nicht.
+            t = np.arange(int(0.14 * rate), dtype=np.float32) / rate
             fetzen = (0.15 * np.sin(2 * np.pi * 180 * t)).astype(np.float32)
-            pause = np.zeros(int(0.15 * rate), dtype=np.float32)
+            pause = np.zeros(int(0.36 * rate), dtype=np.float32)
             kennung, rest = echt[:320], echt[320:]
             return np.concatenate([kennung, fetzen, pause, rest])
 
@@ -230,8 +234,8 @@ def test_ein_fetzen_ohne_wort_wird_an_der_wellenform_gefunden(
 
     erster = project.chunks[0]
     assert erster.trimmed_bleed_s is not None
-    # Fetzen und Pause zusammen sind rund 0,19 s -- so viel muss weg.
-    assert 0.15 <= erster.trimmed_bleed_s <= 0.21
+    # Fetzen und Pause zusammen sind rund 0,50 s -- so viel muss weg.
+    assert 0.45 <= erster.trimmed_bleed_s <= 0.55
     # Kein Wort war zu verwerfen: gemessen wird gegen die volle Rückschrift.
     assert erster.cer == 0.0
     audio, rate = read_wav(project.chunk_path(0))
