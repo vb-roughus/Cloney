@@ -953,6 +953,20 @@ Referenz 50 ms Stille mit, und die steht mit davor. Und die Pause dahinter ist
 riesig — es ist die Pause des Satzendes, das F5 an den Referenztext anhängt.
 Genau sie trennt den Vorspann vom Satz, und genau sie fehlt bei Satz 1.
 
+Damit diese Zahlen überhaupt etwas bedeuten, muss „still" eine feste Größe sein.
+Sie ist es: dieselbe Schwelle in dBFS, mit der auch der Zusammenbau Stille an den
+Rändern wegschneidet (`CLONEY_TRIM_THRESHOLD_DB`, Vorgabe −45). Eine Schwelle
+*relativ* zum lautesten Rahmen im Suchfenster hat genau das zerstört: wurde das
+Fenster weiter, kamen die lauten Vokale des Satzes mit hinein, das Maximum stieg,
+die Schwelle stieg — und derselbe auslaufende Nasal fiel darunter und zerfiel in
+Bruchstücke. Dieselbe Aufnahme ergab so einmal 0,14 s Fetzen und 0,36 s Pause und
+einmal 0,02 s und 0,01 s. Ein Messgerät, das seinen Maßstab aus dem Gemessenen
+zieht, misst nichts.
+
+Gesucht wird außerdem die erste **echte** Ruhe und nicht die erste stille Stelle:
+ein auslaufender Laut schwankt um jede Schwelle, und ein einzelner Rahmen Stille
+darin ist keine Pause.
+
 * Er **beginnt vorn** (< 0,15 s).
 * Er ist **kurz** (< 0,20 s) — der Rest eines Lautes, keine gesprochene Einheit.
 * Dahinter steht eine **Pause von Satzlänge** (≥ 0,25 s). Das ist die tragende

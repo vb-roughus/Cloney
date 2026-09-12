@@ -375,7 +375,8 @@ def vorspann(
     typer.echo(
         f"Ein Fetzen gilt als solcher, wenn er vor {FETZEN_BEGINN_MAX:.2f}s beginnt, "
         f"höchstens {FETZEN_DAUER_MAX:.2f}s dauert\n"
-        f"und mindestens {PAUSE_MIN_SEKUNDEN:.2f}s Ruhe dahinter liegen."
+        f"und mindestens {PAUSE_MIN_SEKUNDEN:.2f}s Ruhe dahinter liegen. "
+        f"Still heißt leiser als {settings.trim_threshold_db:.0f} dBFS."
     )
     typer.echo("")
     typer.echo(f"{'Satz':>5}  {'Beginn':>7}  {'Dauer':>7}  {'Pause':>7}  {'Schnitt':>8}  Grund")
@@ -387,7 +388,7 @@ def vorspann(
         if not pfad.exists():
             continue
         audio, rate = read_wav(pfad)
-        urteil = beurteile(audio, rate, chunk.raw_text)
+        urteil = beurteile(audio, rate, chunk.raw_text, settings.trim_threshold_db)
         if urteil.befund is None:
             continue
         befunde += 1

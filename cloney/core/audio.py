@@ -111,10 +111,17 @@ def peak_dbfs(audio: np.ndarray) -> float:
     return 20.0 * np.log10(peak) if peak > 0 else -np.inf
 
 
+#: Ab wo Cloney etwas als Stille ansieht, in dBFS auf einem Rahmen von 10 ms.
+#: Eine Zahl für das ganze Projekt: Zusammenbau und Vorspann-Erkennung müssen
+#: dieselbe Vorstellung von "still" haben, sonst schneidet die eine weg, was die
+#: andere für Sprache hält.
+SILENCE_THRESHOLD_DB = -45.0
+
+
 def trim_silence(
     audio: np.ndarray,
     sample_rate: int,
-    threshold_db: float = -45.0,
+    threshold_db: float = SILENCE_THRESHOLD_DB,
     margin_ms: int = 40,
 ) -> np.ndarray:
     """Schneidet Stille an Anfang und Ende weg, lässt aber einen Rand stehen.

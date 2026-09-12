@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from cloney.asr.base import TranscribedWord
+from cloney.core.audio import SILENCE_THRESHOLD_DB
 from cloney.core.metrics import normalize_for_comparison
 
 #: So viele Wörter müssen in Folge passen, damit der Anfang als gefunden gilt.
@@ -102,10 +103,10 @@ PAUSE_MIN_SEKUNDEN = 0.25
 #: so aus, als käme nach der Pause nichts mehr, und nichts würde geschnitten.
 _FETZEN_FENSTER_SEKUNDEN = 1.5
 
-#: Ab welchem Anteil des lautesten Rahmens im Fenster etwas als hörbar gilt.
-#: Tiefer als die Ruheschwelle: ein auslaufender Nasal ist deutlich leiser als
-#: ein Vokal, und er soll trotzdem gefunden werden.
-_FETZEN_SCHWELLE = 0.08
+#: So lange muss es still sein, damit es als Ruhe zählt und nicht als Flackern.
+#: Ein auslaufender Nasal schwankt um die Schwelle; ohne dieses Maß zerfiele er
+#: in Bruchstücke, und hinter dem ersten stünde eine "Pause" von einem Rahmen.
+_RUHE_MIN_SEKUNDEN = 0.06
 
 #: Satzzeichen, hinter denen eine Pause gewollt ist.
 _PAUSENZEICHEN = ",;:.!?…–—-"
@@ -208,7 +209,12 @@ def cut_point(
     return ab + int(ruhig[-1]) * _RAHMEN_SEKUNDEN
 
 
-def leading_fragment(audio: np.ndarray, sample_rate: int, raw_text: str = "") -> float | None:
+def leading_fragment(
+    audio: np.ndarray,
+    sample_rate: int,
+    raw_text: str = "",
+    schwelle_db: float = SILENCE_THRESHOLD_DB,
+) -> float | None:
     """Ein kurzer Fetzen ganz am Anfang, durch eine Pause vom Satz getrennt.
 
     Gibt die Stelle zurück, an der der Satz beginnt -- oder ``None``, wenn da
@@ -227,7 +233,7 @@ def leading_fragment(audio: np.ndarray, sample_rate: int, raw_text: str = "") ->
 
     Welche Bedingung im Einzelfall greift, beantwortet ``beurteile``.
     """
-    return beurteile(audio, sample_rate, raw_text).schnitt
+    return beurteile(audio, sample_rate, raw_text, schwelle_db).schnitt
 
 
 @dataclass(frozen=True)
@@ -245,9 +251,14 @@ class Urteil:
     befund: Anfang | None
 
 
-def beurteile(audio: np.ndarray, sample_rate: int, raw_text: str = "") -> Urteil:
+def beurteile(
+    audio: np.ndarray,
+    sample_rate: int,
+    raw_text: str = "",
+    schwelle_db: float = SILENCE_THRESHOLD_DB,
+) -> Urteil:
     """Ist das am Anfang ein Fetzen? Und wenn nein, woran liegt es?"""
-    befund = describe_start(audio, sample_rate)
+    befund = describe_start(audio, sample_rate, schwelle_db)
     if befund is None:
         return Urteil(None, "am Anfang ist nichts zu hören", None)
     if befund.beginn > FETZEN_BEGINN_MAX:
@@ -305,27 +316,40 @@ class Anfang:
     danach: bool
 
 
-def describe_start(audio: np.ndarray, sample_rate: int) -> Anfang | None:
-    """Das erste Geräusch am Anfang und die Ruhe dahinter -- ohne Wertung."""
+def describe_start(
+    audio: np.ndarray,
+    sample_rate: int,
+    schwelle_db: float = SILENCE_THRESHOLD_DB,
+) -> Anfang | None:
+    """Das erste Geräusch am Anfang und die Ruhe dahinter -- ohne Wertung.
+
+    Die Schwelle ist **absolut** und nicht relativ zum lautesten Rahmen im
+    Fenster. Der Unterschied ist nicht theoretisch: mit einer relativen Schwelle
+    hing das Ergebnis an der Fensterbreite. Wurde das Fenster weiter, kamen die
+    lauten Vokale des Satzes mit hinein, das Maximum stieg, die Schwelle stieg --
+    und derselbe auslaufende Nasal fiel darunter und zerfiel in Bruchstücke.
+    Dieselbe Aufnahme ergab dann 0,14 s Fetzen und 0,36 s Pause oder 0,02 s und
+    0,01 s, je nachdem, wie weit gerade gesucht wurde. Ein Messgerät, das seinen
+    Maßstab aus dem Gemessenen zieht, misst nichts.
+
+    Gesucht wird die erste **echte** Ruhe, nicht die erste stille Stelle: ein
+    Nasal schwankt um jede Schwelle, und ein Rahmen Stille darin ist keine Pause.
+    """
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
     energie = _rahmenenergie(audio[: int(_FETZEN_FENSTER_SEKUNDEN * sample_rate)], sample_rate)
-    if energie.size < 3 or not energie.max():
+    if energie.size < 3:
         return None
 
-    # '>=' und nicht '>': ist der Fetzen selbst das Lauteste im Fenster --
-    # weil dahinter nur noch Stille kommt --, fiele er sonst durch.
-    hoerbar = energie >= energie.max() * _FETZEN_SCHWELLE
+    with np.errstate(divide="ignore"):
+        pegel = 20.0 * np.log10(np.maximum(energie, 1e-12))
+    hoerbar = pegel > schwelle_db
     if not hoerbar.any():
         return None
 
     beginn = int(np.argmax(hoerbar))
-    ende = beginn
-    while ende < hoerbar.size and hoerbar[ende]:
-        ende += 1
-    weiter = ende
-    while weiter < hoerbar.size and not hoerbar[weiter]:
-        weiter += 1
+    mindestens = max(1, round(_RUHE_MIN_SEKUNDEN / _RAHMEN_SEKUNDEN))
+    ende, weiter = _erste_ruhe(hoerbar, beginn, mindestens)
 
     return Anfang(
         beginn=beginn * _RAHMEN_SEKUNDEN,
@@ -333,6 +357,26 @@ def describe_start(audio: np.ndarray, sample_rate: int) -> Anfang | None:
         pause=(weiter - ende) * _RAHMEN_SEKUNDEN,
         danach=weiter < hoerbar.size,
     )
+
+
+def _erste_ruhe(hoerbar: np.ndarray, ab: int, mindestens: int) -> tuple[int, int]:
+    """Anfang und Ende der ersten Ruhe von mindestens ``mindestens`` Rahmen.
+
+    Gibt ``(len, len)`` zurück, wenn im Fenster keine zu finden ist -- dann
+    reicht das Hörbare bis ans Ende, und es gibt nichts zu trennen.
+    """
+    stelle = ab
+    while stelle < hoerbar.size:
+        if hoerbar[stelle]:
+            stelle += 1
+            continue
+        ruhe_ende = stelle
+        while ruhe_ende < hoerbar.size and not hoerbar[ruhe_ende]:
+            ruhe_ende += 1
+        if ruhe_ende - stelle >= mindestens:
+            return stelle, ruhe_ende
+        stelle = ruhe_ende
+    return hoerbar.size, hoerbar.size
 
 
 def first_word(text: str) -> str:
