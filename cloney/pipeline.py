@@ -196,7 +196,7 @@ def _trim_reference_bleed(
     if start is not None and start >= settings.min_bleed_seconds:
         schnitt: float | None = cut_point(audio, sample_rate, start)
     else:
-        schnitt = leading_fragment(audio, sample_rate, chunk.raw_text)
+        schnitt = leading_fragment(audio, sample_rate, chunk.raw_text, settings.trim_threshold_db)
         # Kein Wort war zu verwerfen: die Rückschrift hat den Fetzen nie gesehen.
         vorspann_woerter = 0
 

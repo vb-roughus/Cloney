@@ -21,11 +21,13 @@ Anlaut.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from cloney.asr.base import TranscribedWord
 from cloney.core.bleed import (
     beurteile,
     cut_point,
+    describe_start,
     find_content_start,
     first_word,
     leading_fragment,
@@ -255,6 +257,50 @@ def test_ohne_ton_gibt_es_nichts_zu_beurteilen() -> None:
 
     assert urteil.schnitt is None
     assert urteil.befund is None
+
+
+def test_die_messung_haengt_nicht_an_der_fensterbreite() -> None:
+    """Der Fehler, der die Messung selbst verdorben hat.
+
+    Die Schwelle war ein Anteil des lautesten Rahmens *im Fenster*. Wurde das
+    Fenster weiter, kamen die lauten Vokale des Satzes mit hinein, das Maximum
+    stieg, die Schwelle stieg -- und derselbe auslaufende Nasal fiel darunter
+    und zerfiel in Bruchstücke. Dieselbe Aufnahme ergab dann 0,14 s Fetzen und
+    0,36 s Pause oder 0,02 s und 0,01 s, je nachdem, wie weit gerade gesucht
+    wurde.
+
+    Gemessen wird jetzt gegen eine feste Schwelle in dBFS. Diese Prüfung hält
+    fest, was das heißt: der Satz dahinter darf so laut sein, wie er will.
+    """
+    leise = _tonspur((0.10, 0.0), (0.14, 0.03), (0.36, 0.0), (2.0, 0.08))
+    laut = _tonspur((0.10, 0.0), (0.14, 0.03), (0.36, 0.0), (2.0, 0.9))
+
+    a, b = describe_start(leise, RATE), describe_start(laut, RATE)
+
+    assert a is not None and b is not None
+    assert (a.beginn, a.dauer, a.pause) == (b.beginn, b.dauer, b.pause)
+    assert a.dauer == pytest.approx(0.14, abs=0.02)
+    assert a.pause == pytest.approx(0.36, abs=0.02)
+
+
+def test_ein_flackernder_nasal_zerfaellt_nicht_in_bruchstuecke() -> None:
+    """Ein auslaufender Laut schwankt um jede Schwelle. Ein Rahmen Stille darin
+    ist keine Pause -- sonst stünde hinter dem ersten Bruchstück eine 'Pause'
+    von einem Hundertstel, und der Fetzen wäre verworfen."""
+    audio = _tonspur(
+        (0.10, 0.0),
+        (0.05, 0.03),
+        (0.02, 0.0),  # ein Zucken unter die Schwelle
+        (0.07, 0.03),
+        (0.36, 0.0),
+        (2.0, 0.4),
+    )
+
+    befund = describe_start(audio, RATE)
+
+    assert befund is not None
+    assert befund.dauer == pytest.approx(0.14, abs=0.02)
+    assert befund.pause == pytest.approx(0.36, abs=0.02)
 
 
 def test_pause_erwartet_liest_das_satzzeichen() -> None:
