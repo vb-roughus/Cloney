@@ -2237,3 +2237,69 @@ def test_ohne_stimme_gibt_es_nichts_anzulegen(settings: Settings) -> None:
 
     assert 'href="/projects/new"' not in seite
     assert "Zuerst eine Stimme anlegen" in seite
+
+
+# -- Die fertige Spur nach einem Nachbessern --------------------------------
+
+
+def test_ein_nachgerenderter_satz_macht_die_spur_veraltet(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der stillste Fehler: die Spur liegt da, der Abspieler spielt, und
+    gehört wird ein Satz, den es so nicht mehr gibt."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    assert "veraltet" not in client.get(f"/projects/{project_id}/status").text
+
+    client.post(f"/projects/{project_id}/chunks/0/reroll")
+
+    assert "veraltet" in client.get(f"/projects/{project_id}/status").text
+    assert Project.load(settings.projects_dir / project_id).output_stale
+
+
+def test_neu_zusammenbauen_bringt_die_spur_wieder_in_uebereinstimmung(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    project = Project.load(settings.projects_dir / project_id)
+    vorher = project.output_path.read_bytes()
+    client.post(f"/projects/{project_id}/chunks/0/reroll")
+
+    antwort = client.post(f"/projects/{project_id}/spur")
+
+    assert antwort.status_code == 200
+    assert "Spur neu zusammengebaut" in antwort.text
+    assert "veraltet" not in antwort.text
+    assert not Project.load(settings.projects_dir / project_id).output_stale
+    assert project.output_path.read_bytes() != vorher
+
+
+def test_die_spur_wird_nicht_waehrend_eines_laufs_gebaut(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der Lauf baut sie am Ende selbst. Daneben zu bauen hieße, zwei Schreiber
+    auf einer Datei zu haben."""
+    client = _client(settings)
+    project_id = _create_project(client)
+    client.post(f"/projects/{project_id}/run")
+    try:
+        assert client.post(f"/projects/{project_id}/spur").status_code == 409
+    finally:
+        _wait_for_run(client, project_id)
+
+
+def test_ohne_einen_einzigen_satz_gibt_es_keine_spur(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    antwort = client.post(f"/projects/{project_id}/spur")
+
+    assert antwort.status_code == 400
+    assert "nichts zusammenzubauen" in antwort.text

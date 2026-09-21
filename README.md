@@ -541,6 +541,29 @@ Die Reiter sind reines CSS über versteckte Radioknöpfe. Ohne Skript heißt: de
 gewählte Reiter bleibt stehen, auch wenn htmx die Statusleiste darüber
 austauscht.
 
+### Die fertige Spur nach einem Nachbessern
+
+Die Spur entsteht am Ende eines Laufs. Die Sätze ändern sich danach aber
+weiter: wer einen neu würfelt, umformuliert oder nachrendert, hat eine Spur,
+die ihn noch nicht kennt — und nichts ist ihr anzusehen. Die Datei liegt da,
+der Abspieler spielt, und gehört wird ein Satz, den es so nicht mehr gibt.
+
+Sie deswegen bei jedem Handgriff zu verwerfen wäre zu scharf; nach dem ersten
+Neuwürfeln stünde man ohne Ergebnis da. Cloney lässt sie deshalb stehen, weist
+sie als **veraltet** aus und stellt den Weg zurück daneben: **Neu
+zusammenbauen** in der Statusleiste.
+
+Das ist reine Rechenarbeit auf der CPU — kein Modell, keine Spracherkennung,
+kein VRAM. Dieselben Lautheiten, Pausen und Übergänge wie am Ende eines Laufs,
+weil es derselbe Zusammenbau ist.
+
+Ob sie veraltet ist, beantworten wie beim Prototyp die **Uhrzeiten der
+Dateien**: ist eine `chunk_*.wav` jünger als `output.wav`, stimmt die Spur
+nicht mehr. Kein Eintrag im Manifest, der an jeder Stelle mitgepflegt werden
+müsste, an der ein Satz entsteht — beim Neuwürfeln, beim Umformulieren, beim
+Nachrendern, in der Wiederholungsschleife der Pipeline. Eine davon zu vergessen
+wäre eine Frage der Zeit.
+
 ### Zwischendurch hören: der Prototyp
 
 Ein Kapitel läuft Stunden. Ob die Stimme trägt, ob die Pausen sitzen, ob zwei

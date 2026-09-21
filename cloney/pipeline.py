@@ -342,6 +342,27 @@ def _zusammenbauen(project: Project, settings: Settings) -> tuple[np.ndarray, in
     return track, sample_rate, len(segments)
 
 
+def assemble_track(project: Project, settings: Settings) -> tuple[int, float]:
+    """Die fertige Spur aus dem jetzigen Satzbestand schreiben.
+
+    Gibt die Zahl der verwendeten Sätze und die Dauer in Sekunden zurück.
+
+    Eigener Schritt und nicht nur das Ende eines Laufs: die Spur entsteht am
+    Schluss, aber die Sätze ändern sich danach weiter. Wer einen Satz neu
+    würfelt, umformuliert oder nachrendert, hat eine Spur, die ihn noch nicht
+    kennt -- und nichts daran sieht man ihr an. Hier ist der Weg, sie wieder in
+    Übereinstimmung zu bringen, ohne die ganze Pipeline anzuwerfen: reine
+    Rechenarbeit auf der CPU, kein Modell, keine Spracherkennung.
+    """
+    track, sample_rate, anzahl = _zusammenbauen(project, settings)
+    if sample_rate != project.sample_rate:
+        project.sample_rate = sample_rate
+    write_wav(project.output_path, track, sample_rate)
+    project.output_file = project.output_path.name
+    project.save()
+    return anzahl, len(track) / sample_rate
+
+
 def assemble_output(
     project: Project,
     settings: Settings,
@@ -349,23 +370,11 @@ def assemble_output(
 ) -> None:
     """Phase ASSEMBLE. Alle vorhandenen Chunks zur fertigen Spur."""
     try:
-        track, sample_rate, anzahl = _zusammenbauen(project, settings)
+        anzahl, sekunden = assemble_track(project, settings)
     except AssembleError as exc:
         on_event(ProgressEvent("assemble", str(exc)))
         return
-
-    if sample_rate != project.sample_rate:
-        project.sample_rate = sample_rate
-
-    write_wav(project.output_path, track, sample_rate)
-    project.output_file = project.output_path.name
-    project.save()
-    on_event(
-        ProgressEvent(
-            "assemble",
-            f"{anzahl} Chunks, {len(track) / sample_rate:.1f}s geschrieben",
-        )
-    )
+    on_event(ProgressEvent("assemble", f"{anzahl} Chunks, {sekunden:.1f}s geschrieben"))
 
 
 def build_prototype(project: Project, settings: Settings) -> tuple[int, float]:
