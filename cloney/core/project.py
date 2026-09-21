@@ -224,23 +224,43 @@ class Project(BaseModel):
 
     @property
     def prototype_stale(self) -> bool:
-        """Ist seit dem Prototyp ein Satz dazugekommen oder neu erzeugt worden?
+        """Ist seit dem Prototyp ein Satz dazugekommen oder neu erzeugt worden?"""
+        return self._aelter_als_ein_satz(self.prototype_path)
 
-        Beantwortet über die Uhrzeiten der Dateien und nicht über einen eigenen
-        Eintrag im Manifest: die Dateien wissen es genauer, und ein Eintrag
-        müsste an jeder Stelle mitgepflegt werden, an der ein Satz entsteht.
+    @property
+    def output_stale(self) -> bool:
+        """Ist seit dem Zusammenbau ein Satz neu erzeugt worden?
 
-        Ohne diese Frage wäre der unangenehmste Fehler möglich: ein Prototyp,
-        der aussieht wie der aktuelle Stand und einer von vor zwanzig Sätzen
-        ist. Man hörte einem Ergebnis nach, das es so nicht mehr gibt.
+        Die fertige Spur entsteht am Ende eines Laufs. Wer danach einen
+        einzelnen Satz neu würfelt, umformuliert oder nachrendert, ändert die
+        Sätze -- die Spur aber nicht. Sie enthält dann weiter die alte Fassung,
+        und nichts sagte es: die Datei liegt da, der Abspieler spielt, und
+        gehört wird ein Satz, den es so nicht mehr gibt.
+
+        Sie deswegen bei jedem Handgriff zu verwerfen wäre zu scharf -- ein
+        Kapitel hat hundert Sätze, und nach dem ersten Neuwürfeln stünde man
+        ohne Ergebnis da. Sie stillschweigend stehen zu lassen ist aber falsch.
+        Also: stehen lassen und als veraltet ausweisen.
+        """
+        return self._aelter_als_ein_satz(self.output_path)
+
+    def _aelter_als_ein_satz(self, pfad: Path) -> bool:
+        """Ist diese Datei älter als der jüngste erzeugte Satz?
+
+        Beantwortet über die Uhrzeiten der Dateien und nicht über einen Eintrag
+        im Manifest: die Dateien wissen es genauer, und ein Eintrag müsste an
+        jeder Stelle mitgepflegt werden, an der ein Satz entsteht -- beim
+        Neuwürfeln, beim Umformulieren, beim Nachrendern, in der
+        Wiederholungsschleife der Pipeline. Eine davon zu vergessen ist eine
+        Frage der Zeit.
         """
         try:
-            stand = self.prototype_path.stat().st_mtime_ns
+            stand = pfad.stat().st_mtime_ns
         except OSError:
             return False
-        for pfad in self.chunks_dir.glob("chunk_*.wav"):
+        for satz in self.chunks_dir.glob("chunk_*.wav"):
             with suppress(OSError):
-                if pfad.stat().st_mtime_ns > stand:
+                if satz.stat().st_mtime_ns > stand:
                     return True
         return False
 

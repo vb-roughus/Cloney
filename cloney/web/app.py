@@ -31,7 +31,13 @@ from cloney.core.pronounce import acronyms, spell_out
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
 from cloney.engines.registry import available_engines, create_engine, engine_info
-from cloney.pipeline import AssembleError, build_prototype, quality_check, synthesize_chunks
+from cloney.pipeline import (
+    AssembleError,
+    assemble_track,
+    build_prototype,
+    quality_check,
+    synthesize_chunks,
+)
 from cloney.web.filters import LABELS, select
 from cloney.web.jobs import ComparisonRunner, JobRunner
 from cloney.web.overview import summarize
@@ -874,6 +880,35 @@ def create_app(
             )
         return templates.TemplateResponse(
             request, "_prototyp.html", {"project": project, "bericht": bericht}
+        )
+
+    @app.post("/projects/{project_id}/spur", response_class=HTMLResponse)
+    def spur_bauen(request: Request, project_id: str) -> HTMLResponse:
+        """Die fertige Spur aus dem jetzigen Satzbestand neu zusammenbauen.
+
+        Reine Rechenarbeit auf der CPU -- kein Modell, keine Spracherkennung.
+        Deshalb steht das hier als eigener Handgriff und nicht am Ende eines
+        Laufs: wer drei Sätze nachgebessert hat, soll dafür nicht die ganze
+        Pipeline anwerfen müssen.
+        """
+        project = load(project_id)
+        guard_idle(project_id)
+        try:
+            saetze, sekunden = assemble_track(project, settings)
+        except AssembleError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+        fehlend = len(project.chunks) - saetze
+        bericht = (
+            f"Spur neu zusammengebaut: {saetze} von "
+            f"{anzahl(len(project.chunks), 'Satz', 'Sätzen')}, {dauer(sekunden)}."
+        )
+        if fehlend:
+            bericht += " Ein Satz fehlt noch." if fehlend == 1 else f" {fehlend} Sätze fehlen noch."
+        return templates.TemplateResponse(
+            request,
+            "_status.html",
+            {"project": project, "running": False, "bericht": bericht},
         )
 
     @app.get("/projects/{project_id}/prototyp")

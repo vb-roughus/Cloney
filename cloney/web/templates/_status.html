@@ -76,10 +76,36 @@
     <p class="joblog">Ohne Stimmähnlichkeit gerendert: {{ project.similarity_note }}</p>
   {% endif %}
 
+  {#
+    Die fertige Spur entsteht am Ende eines Laufs -- die Sätze ändern sich
+    danach aber weiter. Wer einen Satz neu würfelt, umformuliert oder
+    nachrendert, hat eine Spur, die ihn noch nicht kennt, und nichts daran ist
+    ihr anzusehen: die Datei liegt da, der Abspieler spielt, und gehört wird
+    ein Satz, den es so nicht mehr gibt.
+
+    Sie deswegen bei jedem Handgriff zu verwerfen wäre zu scharf; nach dem
+    ersten Neuwürfeln stünde man ohne Ergebnis da. Also: stehen lassen,
+    ausweisen, und den Weg zurück danebenstellen. Der Zusammenbau ist reine
+    Rechenarbeit -- dafür muss kein Modell laden.
+  #}
   {% if project.output_file %}
     <div class="ergebnis">
+      {% if project.output_stale %}
+        <span class="badge warn" title="Seit dem Zusammenbau wurde mindestens ein Satz
+neu erzeugt. Die Spur enthält noch die alte Fassung.">veraltet</span>
+      {% endif %}
       <audio controls preload="none"
              src="/projects/{{ project.id }}/output?v={{ tonstand(project.output_path) }}"></audio>
+      {% if not running %}
+        <button class="small {% if project.output_stale %}{% else %}secondary{% endif %}"
+                hx-post="/projects/{{ project.id }}/spur"
+                hx-target="#status" hx-swap="outerHTML"
+                hx-disabled-elt="this" hx-indicator="this"
+                title="Die Sätze in ihrem jetzigen Stand neu zu einer Spur fügen.
+Ohne Modell und ohne Spracherkennung -- reine Rechenarbeit.">
+          {% include "_spinner.html" %}Neu zusammenbauen
+        </button>
+      {% endif %}
       <a class="button secondary small" href="/projects/{{ project.id }}/output">Laden</a>
     </div>
   {% endif %}
