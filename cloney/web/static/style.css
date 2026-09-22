@@ -660,6 +660,24 @@ label.regler .muted { display: block; font-size: .82rem; }
 
 /* Drei Punkte neben einer Überschrift. Auf <details> gebaut: Aufklappen und
    Tastaturbedienung kommen damit vom Browser. */
+/* Teile der Vorlage. Einklappbar, weil ein Kapitel aus zehn Teilen bestehen
+   kann und man beim Anhängen nur den letzten sieht. */
+details.teil {
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  padding: .5rem .75rem; margin-bottom: .6rem; background: var(--erhoben);
+}
+details.teil > summary {
+  cursor: pointer; display: flex; gap: .6rem; align-items: baseline;
+  list-style: revert;
+}
+details.teil > summary .teilname { font-weight: 600; }
+details.teil > summary .muted { font-size: .8rem; }
+details.teil > summary .auszug {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+details.teil label { margin-top: .5rem; }
+details.teil [data-teil-entfernen] { margin-top: .4rem; }
+
 .menue { position: relative; }
 .menue > summary {
   list-style: none; cursor: pointer; user-select: none;

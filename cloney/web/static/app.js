@@ -262,6 +262,19 @@
   // Gelesen wird dabei das Dokument, nicht das Ereignis: bei einem
   // outerHTML-Tausch verweist detail.target auf das ersetzte, also alte
   // Element. Dessen Zustand ist genau der von vor dem Tausch.
+  // Einen Teil der Vorlage entfernen: er ist bis zum Übernehmen nur ein
+  // Formularfeld, also genügt es, ihn aus dem Dokument zu nehmen. Was gespeichert
+  // ist, ändert sich erst mit dem Absenden -- ein Fehlgriff kostet nichts weiter
+  // als ein Neuladen.
+  document.addEventListener("click", function (ereignis) {
+    var griff = ereignis.target.closest
+      ? ereignis.target.closest("[data-teil-entfernen]")
+      : null;
+    if (!griff) return;
+    var teil = griff.closest("details.teil");
+    if (teil) teil.remove();
+  });
+
   // <details> klappt von sich aus nicht wieder zu, wenn daneben geklickt wird.
   // Für ein Menü ist genau das die Erwartung.
   function menuesSchliessen(ausser) {

@@ -375,3 +375,102 @@ def test_auffrischen_meldet_nur_echte_aenderungen(
     assert project.refresh_all_spoken() == []
     assert project.refresh_all_spoken(Lexicon(entries={"SWIFT": "Ssuift"})) == [0]
     assert "Ssuift" in project.chunks[0].normalized_text
+
+
+# -- Die Vorlage in Teilen ---------------------------------------------------
+
+
+def test_ein_altes_manifest_wird_zu_teil_eins(settings: Settings) -> None:
+    """Manifeste von vor der Teilung tragen ein einzelnes 'source_text'. Der
+    ganze bisherige Text ist ein Stück -- und er hat einen Satzbau, an dem
+    gearbeitet wurde, also wandert auch das 'handschnitt' mit hinein."""
+    import json
+
+    project = _create(settings)
+    roh = json.loads((project.root / "project.json").read_text(encoding="utf-8"))
+    del roh["teile"]
+    roh["source_text"] = TEXT
+    roh["handschnitt"] = True
+    (project.root / "project.json").write_text(json.dumps(roh), encoding="utf-8")
+
+    geladen = Project.load(project.root)
+
+    assert len(geladen.teile) == 1
+    assert geladen.teile[0].titel == "Teil 1"
+    assert geladen.teile[0].text == TEXT
+    assert geladen.teile[0].handschnitt
+    assert geladen.source_text == TEXT
+
+
+def test_der_quelltext_ist_die_summe_der_teile(settings: Settings) -> None:
+    """Abgeleitet und nicht gespeichert: zwei Fassungen desselben Textes liefen
+    auseinander, und zwar genau dann, wenn man am wenigsten damit rechnet."""
+    from cloney.core.project import Teil
+
+    project = _create(settings)
+    project.teile = [Teil(text="Erster Teil."), Teil(text=" "), Teil(text="Dritter Teil.")]
+
+    assert project.source_text == "Erster Teil.\n\nDritter Teil."
+
+
+def test_ein_neuer_teil_laesst_den_handschnitt_der_alten_stehen(settings: Settings) -> None:
+    from cloney.core.project import Teil
+
+    project = _create(settings, target_seconds=1.5)
+    project.merge_chunks(0)
+    vorher = [c.raw_text for c in project.chunks]
+
+    bericht = project.reconfigure(
+        teile=[*project.teile, Teil(titel="Neu", text="Ein ganz neuer Satz.")],
+        voice=project.voice,
+        engine=DummyEngine.info,
+        target_seconds=1.5,
+    )
+
+    assert [c.raw_text for c in project.chunks][: len(vorher)] == vorher
+    assert project.chunks[-1].teil == 1
+    assert not bericht["neu_geschnitten"]
+
+
+def test_ein_stimmwechsel_kostet_den_ton_nicht_die_teilung(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Gerade beim Stimmwechsel will man dieselben Sätze noch einmal hören,
+    nur anders gesprochen."""
+    voice_store.add("zweite-stimme", voice_store.get("test-stimme").audio_path, transcript="Ja.")
+    project = _gerendert(settings, voice_store, "Erster Satz. Zweiter Satz. Dritter Satz.")
+    project.merge_chunks(0)
+    vorher = [c.raw_text for c in project.chunks]
+
+    project.reconfigure(
+        teile=project.teile,
+        voice="zweite-stimme",
+        engine=DummyEngine.info,
+        target_seconds=1.5,
+    )
+
+    assert [c.raw_text for c in project.chunks] == vorher
+    assert project.teile[0].handschnitt
+    assert all(c.audio_file is None for c in project.chunks)
+    assert list(project.chunks_dir.iterdir()) == []
+
+
+def test_der_bericht_unterscheidet_ton_von_satz(settings: Settings) -> None:
+    """'behalten' meint den Ton, 'entfernt' meint den Satz. Beides zu
+    verwechseln machte aus einem Anhängen die Meldung, es sei etwas verworfen
+    worden -- bei einem Projekt, das noch gar nicht gerendert ist."""
+    from cloney.core.project import Teil
+
+    project = _create(settings, target_seconds=1.5)
+    project.merge_chunks(0)
+
+    bericht = project.reconfigure(
+        teile=[*project.teile, Teil(text="Ein ganz neuer Satz.")],
+        voice=project.voice,
+        engine=DummyEngine.info,
+        target_seconds=1.5,
+    )
+
+    assert bericht["entfernt"] == 0
+    assert bericht["neu"] == 1
+    assert bericht["behalten"] == 0

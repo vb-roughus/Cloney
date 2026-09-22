@@ -4,15 +4,27 @@
   <div class="card">
     <h3>Vorlage</h3>
     <p class="muted">
-      Sätze, deren Sprechfassung wörtlich gleich bleibt, behalten Ton, Seed und Messwerte
-      &mdash; ein Tippfehler in Satz drei kostet also nicht die Arbeit an Satz siebzehn.
-      Ein Wechsel von Stimme, Engine oder Modell verwirft dagegen allen Ton: er stammte
-      von einem anderen Sprecher.
+      Geschnitten wird je Teil. Ein Teil, dessen Text unverändert bleibt, behält seine
+      Sätze unangetastet &mdash; mit Ton, Seed, Lage und Messwerten. Hinten etwas
+      anzuhängen kostet vorn also nichts.
+    </p>
+    <p class="muted">
+      Innerhalb eines geänderten Teils gilt: Sätze, deren Sprechfassung wörtlich gleich
+      bleibt, behalten ihren Ton &mdash; ein Tippfehler in Satz drei kostet nicht die
+      Arbeit an Satz siebzehn. Ein Wechsel von Stimme, Engine oder Modell verwirft
+      dagegen allen Ton: er stammte von einem anderen Sprecher.
     </p>
     <form method="post" action="/projects/{{ project.id }}/configure">
-      <label>Text
-        <textarea name="text" rows="12" required>{{ project.source_text }}</textarea>
-      </label>
+      <div id="teile">
+        {% for teil in project.teile %}
+          {% set nummer = loop.index %}
+          {% set offen = project.teile | length == 1 %}
+          {% include "_teil.html" %}
+        {% endfor %}
+      </div>
+      <button type="button" class="small secondary"
+              hx-get="/projects/{{ project.id }}/teil"
+              hx-target="#teile" hx-swap="beforeend">Teil hinzufügen</button>
       <div class="row">
         <label>Stimme
           <select name="voice">

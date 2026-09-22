@@ -1,0 +1,37 @@
+{#
+  Ein Teil der Vorlage, einklappbar.
+
+  Auf <details> gebaut, wie das Menü neben den Überschriften: Aufklappen,
+  Tastaturbedienung und Zustand kommen damit vom Browser.
+
+  Offen ist ein Teil, wenn es nur einen gibt oder er gerade hinzugefügt wurde --
+  sonst sähe man beim Anlegen ein zugeklapptes leeres Feld und wüsste nicht,
+  wohin man schreiben soll. Bei vielen Teilen ist Zuklappen der Sinn der Sache.
+
+  Die Felder heißen in jedem Teil gleich. Die Reihenfolge im Formular ist die
+  Reihenfolge der Teile -- 'getlist' liefert sie so, wie sie im Dokument stehen.
+
+  Braucht: teil, nummer, offen (optional).
+#}
+<details class="teil"{% if offen %} open{% endif %}>
+  <summary>
+    <span class="teilname">{{ teil.titel or "Teil %d"|format(nummer) }}</span>
+    {#
+      Der Anfang des Textes steht mit dabei. Zehn zugeklappte Teile, die nur
+      "Teil 1" bis "Teil 10" heißen, beantworten die Frage nicht, um
+      derentwillen man zuklappt: welcher ist welcher.
+    #}
+    {% if teil.text.strip() %}
+      <span class="auszug muted">{{ teil.text.strip()[:70] }}{% if teil.text.strip() | length > 70 %}&hellip;{% endif %}</span>
+    {% else %}
+      <span class="muted">noch leer</span>
+    {% endif %}
+  </summary>
+  <label>Überschrift <span class="muted">&mdash; nur zur Orientierung, wird nicht gesprochen</span>
+    <input type="text" name="teil_titel" value="{{ teil.titel }}"
+           placeholder="Teil {{ nummer }}"></label>
+  <label>Text
+    <textarea name="teil_text" rows="10"
+              placeholder="Absätze durch eine Leerzeile trennen.">{{ teil.text }}</textarea></label>
+  <button type="button" class="small secondary" data-teil-entfernen>Diesen Teil entfernen</button>
+</details>
