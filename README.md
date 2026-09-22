@@ -630,6 +630,34 @@ er unverändert bleibt -- sonst nähme schon ein Wechsel der Stimme jedes
 Verschmelzen zurück. Wer im Textfeld etwas ändert, meint den Text: dann gilt
 wieder er, und der Handschnitt ist dahin. Die Meldung über der Tabelle sagt es.
 
+### Die Vorlage in Teilen
+
+Die Vorlage war lange ein einziges Textfeld, und daraus folgte ein Ärger: wer
+hinten etwas anhängte, änderte den Text — und ein geänderter Text wird neu
+geschnitten, im ganzen Dokument. Jedes Verschmelzen, jedes Einfügen, jeder von
+Hand nachgebesserte Satz weiter vorn war damit hin, obwohl vorn gar nichts
+angerührt wurde.
+
+Der **Teil** ist die Antwort darauf: er ist die Einheit, über die der Schnitt
+entscheidet. Ein Teil, dessen Text unverändert bleibt, behält seine Sätze
+unangetastet — mit Ton, Seed, Lage und Messwerten. Nur ein geänderter oder neuer
+Teil wird frisch geschnitten. Hinten etwas anzuhängen kostet vorn also nichts.
+
+Jeder Teil hat eine Überschrift (nur zur Orientierung, sie wird nicht
+gesprochen) und ist **einklappbar**; zugeklappt steht neben dem Namen der Anfang
+des Textes, damit man bei zehn Teilen weiß, welcher welcher ist. Ein einzelner
+Teil steht offen da — sonst sähe man beim Anlegen ein zugeklapptes leeres Feld.
+
+**Teil hinzufügen** hängt ein leeres Feld an; angelegt wird dabei nichts, der
+Teil entsteht erst mit *Vorlage übernehmen*. Bis dahin ist er ein Formularfeld
+wie jedes andere, und ein Abbruch kostet nichts. Dasselbe gilt fürs Entfernen.
+
+Vorhandene Projekte brauchen nichts: ein Manifest von vor der Teilung trägt ein
+einzelnes `source_text`, und das wird beim Laden zu **Teil 1** — mitsamt seinem
+Handschnitt. Der Quelltext als Ganzes ergibt sich seither aus den Teilen und
+wird nicht getrennt geführt; zwei Fassungen desselben Textes liefen auseinander,
+und zwar genau dann, wenn man am wenigsten damit rechnet.
+
 ### Text, Stimme, Engine oder Modell nachträglich ändern
 
 Ein anderer Text heißt neu segmentieren, und damit wandern die Chunk-Grenzen.
@@ -641,7 +669,9 @@ rendern müssen.
 
 Ein Wechsel von Stimme, Engine oder trainiertem Stand verwirft dagegen allen Ton.
 Vorhandene Sätze stammten dann von einem anderen Sprecher oder Modell, und sie
-stehen zu lassen ergäbe eine Spur aus zwei Stimmen.
+stehen zu lassen ergäbe eine Spur aus zwei Stimmen. Der **Satzbau** bleibt dabei
+stehen: gerade beim Stimmwechsel will man dieselben Sätze noch einmal hören, nur
+anders gesprochen.
 
 Die fertige Spur bleibt nur, wenn sich am Satzbestand nichts geändert hat --
 sonst wäre sie eine Lüge. Dass sie ein unverändertes Übernehmen übersteht, macht

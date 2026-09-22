@@ -18,10 +18,10 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from cloney.core.lexicon import Lexicon
-from cloney.core.segment import TextChunk, build_chunks, join_raw, spoken_form
+from cloney.core.segment import build_chunks, join_raw, spoken_form
 from cloney.engines.base import NEUTRAL, EngineInfo
 
 _MANIFEST = "project.json"
@@ -36,8 +36,32 @@ class ChunkStatus(StrEnum):
     FAILED = "failed"
 
 
+class Teil(BaseModel):
+    """Ein Stück der Vorlage.
+
+    Die Vorlage war lange ein einziges Textfeld, und daraus folgte ein Ärger:
+    wer hinten etwas anhängte, änderte den Text -- und ein geänderter Text wird
+    neu geschnitten, im ganzen Dokument. Jedes Verschmelzen, jedes Einfügen,
+    jeder von Hand gesetzte Satz weiter vorn war damit hin, obwohl vorn gar
+    nichts angerührt wurde.
+
+    Der Teil ist die Antwort darauf: er ist die Einheit, über die der Schnitt
+    entscheidet. Ein neuer Teil lässt die bestehenden unberührt.
+    """
+
+    titel: str = ""
+    text: str = ""
+    #: Ob am Satzbau *dieses* Teils von Hand gearbeitet wurde. Siehe
+    #: ``Project._schnitt_erhalten``.
+    handschnitt: bool = False
+
+
 class Chunk(BaseModel):
     index: int
+    #: Aus welchem Teil der Vorlage dieser Satz stammt. Ohne diese Zuordnung
+    #: ließe sich nicht sagen, welche Sätze ein geänderter Teil betrifft -- und
+    #: die Teilung wäre bloße Anzeige.
+    teil: int = 0
     raw_text: str
     normalized_text: str
     ends_paragraph: bool = False
@@ -77,7 +101,9 @@ class Project(BaseModel):
     voice: str
     engine: str
     sample_rate: int
-    source_text: str
+    #: Die Vorlage, in Teile zerlegt. Der Quelltext als Ganzes ergibt sich
+    #: daraus (``source_text``) und wird nicht getrennt geführt.
+    teile: list[Teil] = Field(default_factory=list)
     #: Tatsächlich verwendete Chunk-Länge. Kann unter dem Wunschwert liegen, wenn
     #: die Engine eine Obergrenze je Generierung hat -- siehe EngineInfo.
     target_chunk_seconds: float = 20.0
@@ -91,15 +117,6 @@ class Project(BaseModel):
     #: neutral. Ein ganzes Kapitel ernst zu sprechen ist damit eine Einstellung
     #: und nicht hundert Klicks.
     lage: str = ""
-    #: Ob am Satzbau von Hand gearbeitet wurde -- eingefügt, verschmolzen oder
-    #: neu getextet. Von da an ist die Satzliste die Vorlage und nicht mehr der
-    #: Schnitt des Quelltexts: ein frischer Schnitt machte die Arbeit zunichte.
-    #: Siehe ``_schnitt_erhalten``.
-    #:
-    #: Manifeste von vor dieser Möglichkeit bleiben gültig: dort steht überall
-    #: False, und das ist genau der Zustand, in dem nichts von Hand geschnitten
-    #: wurde.
-    handschnitt: bool = False
     chunks: list[Chunk] = Field(default_factory=list)
     output_file: str | None = None
     #: Warum die Stimmähnlichkeit nicht gemessen wurde. Steht im Manifest und
@@ -110,6 +127,42 @@ class Project(BaseModel):
     root: Path = Field(default=Path("."), exclude=True)
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _vorlage_aus_einem_stueck(cls, werte: object) -> object:
+        """Manifeste von vor der Teilung weiterlesen.
+
+        Dort steht ein einzelnes ``source_text``. Es wird zu Teil 1 -- was sonst
+        auch: der ganze bisherige Text ist ein Stück, und er hat einen Satzbau,
+        an dem gearbeitet wurde. Das ``handschnitt`` des Projekts wandert
+        deshalb mit in diesen Teil.
+        """
+        if not isinstance(werte, dict) or werte.get("teile"):
+            return werte
+        text = werte.get("source_text")
+        if text is None:
+            return werte
+        return {
+            **werte,
+            "teile": [
+                {
+                    "titel": "Teil 1",
+                    "text": text,
+                    "handschnitt": bool(werte.get("handschnitt", False)),
+                }
+            ],
+        }
+
+    @property
+    def source_text(self) -> str:
+        """Die Vorlage als ein Text -- für alles, was sie am Stück braucht.
+
+        Abgeleitet und nicht gespeichert: zwei Fassungen desselben Textes
+        liefen auseinander, und zwar genau dann, wenn man am wenigsten damit
+        rechnet.
+        """
+        return "\n\n".join(t.text.strip() for t in self.teile if t.text.strip())
 
     # -- Erzeugen und Laden ------------------------------------------------
 
@@ -155,7 +208,7 @@ class Project(BaseModel):
             voice=voice,
             engine=engine.name,
             sample_rate=engine.sample_rate,
-            source_text=text,
+            teile=[Teil(titel="Teil 1", text=text)],
             target_chunk_seconds=budget,
             model=model,
             chunks=chunks,
@@ -298,7 +351,8 @@ class Project(BaseModel):
     def reconfigure(
         self,
         *,
-        text: str,
+        teile: list[Teil] | None = None,
+        text: str | None = None,
         voice: str,
         engine: EngineInfo,
         model: str | None = None,
@@ -308,82 +362,125 @@ class Project(BaseModel):
         max_seconds: float = 25.0,
         lexicon: Lexicon | None = None,
     ) -> dict[str, int]:
-        """Text, Stimme oder Engine eines bestehenden Projekts ändern.
+        """Vorlage, Stimme oder Engine eines bestehenden Projekts ändern.
 
-        Ein anderer Text heißt neu segmentieren, und damit wandern die
-        Chunk-Grenzen. Trotzdem soll ein Tippfehler in Satz drei nicht die
-        Arbeit an Satz siebzehn kosten: Chunks, deren Sprechfassung wörtlich
-        gleich bleibt, behalten Ton, Seed und Messwerte. Verglichen wird die
-        normalisierte Fassung, nicht der Rohtext -- wer nur die Schreibweise
-        einer Zahl ändert, hört dasselbe und soll nicht neu rendern müssen.
+        Geschnitten wird **je Teil**. Ein Teil, dessen Text unverändert bleibt,
+        behält seine Sätze unangetastet -- mit Ton, Seed, Lage und Messwerten.
+        Nur ein geänderter oder neuer Teil wird frisch geschnitten. Das ist der
+        ganze Zweck der Teilung: hinten etwas anzuhängen darf vorn nichts
+        kosten.
+
+        Innerhalb eines geänderten Teils gilt weiter die alte Regel: ein
+        Tippfehler in Satz drei soll nicht die Arbeit an Satz siebzehn kosten.
+        Sätze, deren **Sprechfassung** wörtlich gleich bleibt, behalten ihren
+        Ton. Verglichen wird die normalisierte Fassung, nicht der Rohtext -- wer
+        nur die Schreibweise einer Zahl ändert, hört dasselbe.
 
         Stimme, Engine oder trainierter Stand gewechselt heißt dagegen: alles
         neu. Vorhandener Ton stammt dann von einem anderen Sprecher oder Modell,
         und ihn stehen zu lassen ergäbe eine Spur aus zwei Stimmen.
 
-        Ein von Hand geänderter Satzbau bleibt stehen, solange der Text derselbe
-        ist -- siehe ``_schnitt_erhalten``. Ohne das nähme ein Wechsel der Stimme
-        jedes Einfügen und Verschmelzen zurück.
+        ``text`` ist die Kurzform für eine Vorlage aus einem Stück.
 
         Gibt zurück, wie viele Sätze behalten, neu angelegt und verworfen wurden
         und ob dabei ein Handschnitt verlorenging.
         """
+        if teile is None:
+            teile = [Teil(titel=self.teile[0].titel if self.teile else "", text=text or "")]
+
         # Kein Name heißt: der Stand bleibt, wie er ist. Sonst löschte ein
         # Aufrufer, der das Feld nicht kennt, stillschweigend den Finetune --
         # und das Projekt spräche danach mit einer anderen Stimme.
         stand = self.model if model is None else model
         uebernehmbar = voice == self.voice and engine.name == self.engine and stand == self.model
         budget, grenze = _budget(engine, reference_seconds, target_seconds, max_seconds)
-        erhalten = self._schnitt_erhalten(text, grenze * chars_per_second)
-        roh: list[TextChunk]
-        if erhalten:
-            roh = [
-                TextChunk(c.raw_text, c.normalized_text, c.ends_paragraph, c.is_heading)
-                for c in self.chunks
-            ]
-        else:
-            roh = build_chunks(text, chars_per_second, budget, grenze, lexicon)
+        grenze_zeichen = grenze * chars_per_second
 
+        bisher: dict[int, list[Chunk]] = {}
+        for chunk in self.chunks:
+            bisher.setdefault(chunk.teil, []).append(chunk)
+
+        # Der Schnitt hängt *nicht* an 'uebernehmbar'. Ein Wechsel der Stimme
+        # kostet den Ton, nicht die Handarbeit: gerade dann will man dieselben
+        # Sätze noch einmal hören, nur anders gesprochen.
+        erhalten = {
+            i
+            for i, teil in enumerate(teile)
+            if self._schnitt_erhalten(i, teil, bisher.get(i, ()), grenze_zeichen)
+        }
+        verloren = any(
+            t.handschnitt for i, t in enumerate(self.teile[: len(teile)]) if i not in erhalten
+        )
+
+        # Anderer Sprecher, andere Engine, anderer Stand: der vorhandene Ton
+        # stammt dann von woanders her. Er fällt, bevor irgendetwas ihn erben
+        # könnte -- auch in den Teilen, die stehen bleiben.
+        if not uebernehmbar:
+            for chunk in self.chunks:
+                self.discard_audio(chunk.index)
+
+        # Nur Sätze aus neu geschnittenen Teilen geben ihren Ton weiter. Die
+        # erhaltenen behalten ihn selbst; beide zugleich zuzulassen hieße, eine
+        # Aufnahme zweimal zu vergeben.
         frei: dict[str, list[Chunk]] = {}
         if uebernehmbar:
             for chunk in self.chunks:
+                if chunk.teil in erhalten:
+                    continue
                 if chunk.audio_file and self.chunk_path(chunk.index).exists():
                     frei.setdefault(chunk.normalized_text, []).append(chunk)
 
-        neue: list[Chunk] = []
-        umzug: dict[int, int] = {}
-        for i, c in enumerate(roh):
-            passend = frei.get(c.normalized_text)
-            alt = passend.pop(0) if passend else None
-            if alt is None:
-                neue.append(
-                    Chunk(
-                        index=i,
-                        raw_text=c.raw_text,
-                        normalized_text=c.normalized_text,
-                        ends_paragraph=c.ends_paragraph,
-                        is_heading=c.is_heading,
-                        seed=derive_seed(self.id, i, 0),
+        folge: list[Chunk] = []
+        neu_angelegt = 0
+        # Welche der bisherigen Sätze es in die neue Fassung schaffen. Gezählt
+        # wird über die alte Nummer: 'behalten' meint den Ton, 'entfernt' meint
+        # den Satz, und beides zu verwechseln machte aus einem unveränderten
+        # Übernehmen die Meldung, es sei etwas verworfen worden.
+        ueberlebt: set[int] = set()
+        for i, teil in enumerate(teile):
+            if i in erhalten:
+                # Die Sätze selbst, nicht ihre Abschrift: nur so überleben Lage,
+                # Seed und Messwerte einen Teil, an dem niemand etwas geändert hat.
+                behaltene = bisher.get(i, [])
+                ueberlebt.update(c.index for c in behaltene)
+                folge.extend(behaltene)
+                continue
+            for roh in build_chunks(teil.text, chars_per_second, budget, grenze, lexicon):
+                passend = frei.get(roh.normalized_text)
+                alt = passend.pop(0) if passend else None
+                if alt is None:
+                    neu_angelegt += 1
+                    folge.append(
+                        Chunk(
+                            index=-1,
+                            teil=i,
+                            raw_text=roh.raw_text,
+                            normalized_text=roh.normalized_text,
+                            ends_paragraph=roh.ends_paragraph,
+                            is_heading=roh.is_heading,
+                            seed=derive_seed(self.id, len(folge), 0),
+                        )
+                    )
+                    continue
+                ueberlebt.add(alt.index)
+                folge.append(
+                    alt.model_copy(
+                        update={
+                            "teil": i,
+                            "raw_text": roh.raw_text,
+                            "ends_paragraph": roh.ends_paragraph,
+                            "is_heading": roh.is_heading,
+                        }
                     )
                 )
-                continue
-            uebernommen = alt.model_copy(
-                update={
-                    "index": i,
-                    "raw_text": c.raw_text,
-                    "ends_paragraph": c.ends_paragraph,
-                    "is_heading": c.is_heading,
-                    "audio_file": self.chunk_path(i).name,
-                }
-            )
-            neue.append(uebernommen)
-            umzug[alt.index] = i
 
-        behalten = len(umzug)
-        entfernt = len(self.chunks) - behalten
-        self._move_chunk_audio(umzug)
+        vorher = len(self.chunks)
+        behalten = sum(1 for c in folge if c.audio_file)
+        self._uebernehmen(folge)
 
-        self.source_text = text
+        self.teile = [
+            Teil(titel=t.titel, text=t.text, handschnitt=i in erhalten) for i, t in enumerate(teile)
+        ]
         self.voice = voice
         self.engine = engine.name
         self.model = stand
@@ -392,41 +489,48 @@ class Project(BaseModel):
         # Regler, die die neue Engine nicht kennt, fallen weg statt still
         # weiterzuwirken.
         self.engine_options = engine.clean_options(self.engine_options)
-        vorher = len(self.chunks)
-        self.chunks = neue
         # Die fertige Spur gehört zum alten Satzbestand. Sie bleibt nur, wenn
         # sich an ihm nichts geändert hat -- sonst wäre sie eine Lüge. Dass sie
         # ein unverändertes Übernehmen übersteht, macht das Formular gefahrlos
         # wiederholbar.
-        if not (behalten == len(neue) == vorher):
+        if not (behalten == len(folge) == vorher):
             self._verwerfe_spur()
-        verloren = self.handschnitt and not erhalten
-        self.handschnitt = erhalten
         self.save()
         return {
             "behalten": behalten,
-            "neu": len(neue) - behalten,
-            "entfernt": entfernt,
+            "neu": neu_angelegt,
+            "entfernt": vorher - len(ueberlebt),
             "neu_geschnitten": verloren,
         }
 
-    def _schnitt_erhalten(self, text: str, grenze_zeichen: float) -> bool:
-        """Bleibt der bestehende Satzbau beim Übernehmen stehen?
+    def _schnitt_erhalten(
+        self,
+        nummer: int,
+        teil: Teil,
+        saetze: Iterable[Chunk],
+        grenze_zeichen: float,
+    ) -> bool:
+        """Bleibt der Satzbau dieses Teils beim Übernehmen stehen?
 
         Von Hand eingefügte, verschmolzene und neu getextete Sätze sind Arbeit,
         die ein frischer Schnitt zunichte machte. Sie bleiben deshalb stehen,
-        solange der Quelltext derselbe ist. Er wird nach jeder Änderung an den
-        Sätzen aus ihnen geschrieben (``text_aus_chunks``) -- ein Unterschied
-        heißt also: im Textfeld geändert, und dann gilt wieder der Text.
+        solange der Text des Teils derselbe ist. Er wird nach jeder Änderung an
+        den Sätzen aus ihnen geschrieben (``_vorlage_aus_chunks``) -- ein
+        Unterschied heißt also: im Textfeld geändert, und dann gilt wieder der
+        Text.
 
         Die Grenze der Engine sticht das trotzdem. Passt ein Satz nicht mehr in
         eine Generierung, teilte die Engine ihn selbst, mit einer Naht, die sich
         nicht einzeln nachbessern lässt. Genau davor bewahrt der eigene Schnitt,
         und dieser Schutz wiegt schwerer als die Handarbeit.
         """
-        if not (self.handschnitt and self.chunks and text == self.source_text):
+        saetze = list(saetze)
+        bestehend = self.teile[nummer] if nummer < len(self.teile) else None
+        if bestehend is None or not bestehend.handschnitt or not saetze:
             return False
-        return all(len(c.normalized_text) <= grenze_zeichen for c in self.chunks)
+        if bestehend.text != teil.text:
+            return False
+        return all(len(c.normalized_text) <= grenze_zeichen for c in saetze)
 
     def _move_chunk_audio(self, umzug: dict[int, int]) -> None:
         """Tondateien auf die neuen Nummern umhängen.
@@ -593,8 +697,7 @@ class Project(BaseModel):
         chunk.raw_text = raw_text
         chunk.normalized_text = spoken_form(raw_text, chunk.is_heading, lexicon)
         ergebnis = self.reroll(index)
-        self.source_text = self.text_aus_chunks()
-        self.handschnitt = True
+        self._vorlage_aus_chunks()
         return ergebnis
 
     def refresh_spoken(self, index: int, lexicon: Lexicon | None = None) -> bool:
@@ -661,6 +764,7 @@ class Project(BaseModel):
         stelle = index + 1 if danach else index
         neuer = Chunk(
             index=stelle,
+            teil=nachbar.teil,
             raw_text=roh,
             normalized_text=gesprochen,
             ends_paragraph=nachbar.ends_paragraph if danach else False,
@@ -701,6 +805,7 @@ class Project(BaseModel):
         titel = erster.is_heading and zweiter.is_heading
         verschmolzen = Chunk(
             index=index,
+            teil=erster.teil,
             raw_text=roh,
             normalized_text=spoken_form(roh, titel, lexicon),
             ends_paragraph=zweiter.ends_paragraph,
@@ -716,8 +821,8 @@ class Project(BaseModel):
         self._neu_nummerieren(folge)
         return index
 
-    def text_aus_chunks(self) -> str:
-        """Der Quelltext, wie ihn die Satzliste jetzt ergibt.
+    def text_aus_chunks(self, saetze: Iterable[Chunk] | None = None) -> str:
+        """Der Text, wie ihn diese Sätze ergeben. Ohne Angabe: alle.
 
         Absatzgrenzen bleiben erhalten: an ihnen hängt beim Zusammenbau die
         Pausenlänge, und ein Titel wird nur wieder als solcher erkannt, wenn er
@@ -725,7 +830,7 @@ class Project(BaseModel):
         """
         absaetze: list[str] = []
         laufend: list[str] = []
-        for chunk in self.chunks:
+        for chunk in self.chunks if saetze is None else saetze:
             if chunk.raw_text.strip():
                 laufend.append(chunk.raw_text.strip())
             if chunk.ends_paragraph and laufend:
@@ -735,14 +840,33 @@ class Project(BaseModel):
             absaetze.append(" ".join(laufend))
         return "\n\n".join(absaetze)
 
-    def _neu_nummerieren(self, folge: list[Chunk]) -> None:
-        """Eine geänderte Satzfolge übernehmen: Nummern, Ton, Quelltext, Manifest.
+    def _vorlage_aus_chunks(self) -> None:
+        """Den Text jedes Teils aus seinen Sätzen schreiben.
+
+        Ab der ersten Handänderung ist die Satzliste die Vorlage. Stünde in den
+        Teilen weiter die alte Fassung, nähme das nächste 'Vorlage übernehmen'
+        die Arbeit wortlos zurück -- und das Textfeld widerspräche dem, was
+        gesprochen wird.
+
+        Betroffen sind alle Teile und nicht nur der angefasste: ein Verschmelzen
+        über eine Teilgrenze hinweg gibt es nicht, aber die Zuordnung könnte
+        sich durch jede Änderung verschieben, und ein Teil, dessen Text nicht
+        zu seinen Sätzen passt, ist eine Falle für später.
+        """
+        for i, teil in enumerate(self.teile):
+            saetze = [c for c in self.chunks if c.teil == i]
+            if saetze:
+                teil.text = self.text_aus_chunks(saetze)
+            teil.handschnitt = True
+
+    def _uebernehmen(self, folge: list[Chunk]) -> None:
+        """Eine geänderte Satzfolge übernehmen: Nummern und Tondateien.
 
         ``folge`` trägt die Chunks in der gewünschten Reihenfolge, jeder noch mit
         seiner bisherigen Nummer. Der Ton zieht mit -- ein eingefügter Satz darf
         die Aufnahmen aller folgenden nicht entwerten.
         """
-        umzug = {c.index: i for i, c in enumerate(folge) if c.audio_file}
+        umzug = {c.index: i for i, c in enumerate(folge) if c.audio_file and c.index >= 0}
         for i, chunk in enumerate(folge):
             chunk.index = i
             if chunk.audio_file:
@@ -750,10 +874,13 @@ class Project(BaseModel):
         self.chunks = folge
         self._move_chunk_audio(umzug)
         self._entferne_ueberzaehligen_ton()
+
+    def _neu_nummerieren(self, folge: list[Chunk]) -> None:
+        """Eine Handänderung am Satzbau übernehmen -- samt allem, was daran hängt."""
+        self._uebernehmen(folge)
         # Die fertige Spur gehörte zum alten Satzbestand und wäre jetzt eine Lüge.
         self._verwerfe_spur()
-        self.source_text = self.text_aus_chunks()
-        self.handschnitt = True
+        self._vorlage_aus_chunks()
         self.save()
 
     def _entferne_ueberzaehligen_ton(self) -> None:

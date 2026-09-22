@@ -786,7 +786,31 @@ def _kaputte_fabrik():  # noqa: ANN202
 
 
 def _configure(client: TestClient, project_id: str, **werte: str):  # noqa: ANN202
+    """Die Vorlage übernehmen. 'text' meint hier den einen Teil."""
     daten = {"text": TEXT, "voice": "test-stimme", "engine": "dummy"}
+    daten.update(werte)
+    return _configure_teile(client, project_id, [("", daten.pop("text"))], **daten)
+
+
+def _configure_teile(  # noqa: ANN202
+    client: TestClient,
+    project_id: str,
+    teile: list[tuple[str, str]],
+    **werte: str,
+):
+    """Mehrteilig übernehmen. Die Felder heißen je Teil gleich -- ihre
+    Reihenfolge im Formular ist die Reihenfolge der Teile.
+
+    Wiederholte Felder wollen als Liste *im* Wörterbuch stehen; eine Liste aus
+    Paaren hält httpx für einen rohen Datenstrom und schickt sie gar nicht erst
+    als Formular ab.
+    """
+    daten: dict[str, object] = {
+        "voice": werte.pop("voice", "test-stimme"),
+        "engine": werte.pop("engine", "dummy"),
+        "teil_titel": [titel for titel, _ in teile],
+        "teil_text": [text for _, text in teile],
+    }
     daten.update(werte)
     return client.post(f"/projects/{project_id}/configure", data=daten)
 
@@ -882,7 +906,7 @@ def test_projektseite_zeigt_die_reiter_statt_verschachtelter_klappboxen(
         assert f'for="{reiter}"' in seite
     # Die Vorlage ist von der Projektseite aus änderbar, nicht nur beim Anlegen.
     assert f'action="/projects/{project_id}/configure"' in seite
-    assert 'name="text"' in seite
+    assert 'name="teil_text"' in seite
 
 
 # -- Trainierte Modelle ------------------------------------------------------
@@ -2031,14 +2055,12 @@ def test_der_handschnitt_ueberlebt_das_uebernehmen(
     client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
     verschmolzen = _saetze(client, project_id)
 
-    antwort = client.post(
-        f"/projects/{project_id}/configure",
-        data={
-            "text": Project.load(settings.projects_dir / project_id).source_text,
-            "voice": "zweite-stimme",
-            "engine": "dummy",
-            "model": "",
-        },
+    antwort = _configure_teile(
+        client,
+        project_id,
+        [("", Project.load(settings.projects_dir / project_id).source_text)],
+        voice="zweite-stimme",
+        model="",
     )
 
     assert antwort.status_code == 200
@@ -2054,10 +2076,7 @@ def test_der_umbau_meldet_zahlen_die_lage_einen_satz(
     client = _client(settings)
     project_id = _create_project(client)
 
-    umbau = client.post(
-        f"/projects/{project_id}/configure",
-        data={"text": TEXT, "voice": "test-stimme", "engine": "dummy", "model": ""},
-    ).text
+    umbau = _configure(client, project_id, model="").text
     assert "Übernommen:" in umbau
     assert "'behalten'" not in umbau
 
@@ -2303,3 +2322,109 @@ def test_ohne_einen_einzigen_satz_gibt_es_keine_spur(
 
     assert antwort.status_code == 400
     assert "nichts zusammenzubauen" in antwort.text
+
+
+# -- Die Vorlage in Teilen ---------------------------------------------------
+
+
+def test_ein_neuer_teil_laesst_die_bestehenden_unberuehrt(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Der ganze Zweck der Teilung. Vorher hieß 'hinten etwas anhängen': der
+    Text ist ein anderer, also wird alles neu geschnitten -- und jedes
+    Verschmelzen weiter vorn war hin, obwohl dort nichts angerührt wurde."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+    client.post(f"/projects/{project_id}/chunks/0/verschmelzen")
+    project = Project.load(settings.projects_dir / project_id)
+    verschmolzen = project.teile[0].text
+
+    antwort = _configure_teile(
+        client, project_id, [("Kapitel eins", verschmolzen), ("Kapitel zwei", "Ganz neuer Satz.")]
+    )
+
+    assert antwort.status_code == 200
+    project = Project.load(settings.projects_dir / project_id)
+    assert [c.raw_text for c in project.chunks] == [
+        "Erster Satz. Zweiter Satz.",
+        "Ganz neuer Satz.",
+    ]
+    assert [c.teil for c in project.chunks] == [0, 1]
+    assert project.teile[0].handschnitt
+    assert [t.titel for t in project.teile] == ["Kapitel eins", "Kapitel zwei"]
+
+
+def test_der_ton_des_unberuehrten_teils_bleibt(settings: Settings, voice_store: VoiceStore) -> None:
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+    client.post(f"/projects/{project_id}/run")
+    _wait_for_run(client, project_id)
+    project = Project.load(settings.projects_dir / project_id)
+    erster = project.chunk_path(0).read_bytes()
+    vorlage = project.teile[0].text
+
+    _configure_teile(client, project_id, [("", vorlage), ("", "Ganz neuer Satz.")])
+
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.chunk_path(0).read_bytes() == erster
+    assert project.chunks[0].status == ChunkStatus.OK
+    # Der neue Teil ist noch nicht erzeugt.
+    assert project.chunks[-1].audio_file is None
+
+
+def test_ein_geaenderter_teil_wird_neu_geschnitten(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    """Wer im Textfeld eines Teils etwas ändert, meint den Text -- dann gilt
+    wieder er, aber nur für diesen Teil."""
+    client = _client(settings)
+    project_id = _create_project(client, text="Erster Satz.\n\nZweiter Satz.")
+    _configure_teile(client, project_id, [("", "Erster Satz."), ("", "Zweiter Satz.")])
+    client.post(
+        f"/projects/{project_id}/chunks/0/einfuegen",
+        data={"raw_text": "Dazwischen.", "danach": "1"},
+    )
+    project = Project.load(settings.projects_dir / project_id)
+    assert project.teile[0].handschnitt
+
+    _configure_teile(
+        client, project_id, [(" ", project.teile[0].text), ("", "Zweiter Satz. Und noch einer.")]
+    )
+
+    project = Project.load(settings.projects_dir / project_id)
+    # Teil 1 steht unangetastet -- der von Hand eingefügte Satz ist noch da.
+    assert [c.raw_text for c in project.chunks if c.teil == 0] == ["Erster Satz.", "Dazwischen."]
+    assert project.teile[0].handschnitt
+    # Teil 2 ist frisch geschnitten: beide Sätze passen in eine Generierung.
+    assert [c.raw_text for c in project.chunks if c.teil == 1] == ["Zweiter Satz. Und noch einer."]
+    assert not project.teile[1].handschnitt
+
+
+def test_teile_sind_einklappbar_und_koennen_dazukommen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    seite = client.get(f"/projects/{project_id}").text
+    assert '<details class="teil"' in seite
+    # Ein einzelner Teil steht offen da -- sonst wüsste man nicht, wohin schreiben.
+    assert 'class="teil" open' in seite
+
+    leer = client.get(f"/projects/{project_id}/teil")
+    assert leer.status_code == 200
+    assert 'name="teil_text"' in leer.text
+    # Angelegt wird dabei nichts: der Teil entsteht erst mit dem Übernehmen.
+    assert len(Project.load(settings.projects_dir / project_id).teile) == 1
+
+
+def test_eine_vorlage_ohne_jeden_text_wird_abgewiesen(
+    settings: Settings, voice_store: VoiceStore
+) -> None:
+    client = _client(settings)
+    project_id = _create_project(client)
+
+    antwort = _configure_teile(client, project_id, [("", "   "), ("", "")])
+
+    assert antwort.status_code == 400
+    assert "Kein einziger Teil hat Text" in antwort.text

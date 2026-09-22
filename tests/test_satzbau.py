@@ -280,7 +280,7 @@ def test_auch_ein_geaenderter_satztext_landet_im_quelltext(settings: Settings) -
     project.retext(0, "Ganz anders.")
 
     assert project.source_text == "Ganz anders. Zweiter Satz."
-    assert project.handschnitt
+    assert project.teile[0].handschnitt
 
 
 def test_handschnitt_ueberlebt_den_stimmwechsel(
@@ -301,7 +301,7 @@ def test_handschnitt_ueberlebt_den_stimmwechsel(
 
     assert _texte(project) == ["Erster Satz. Zweiter Satz.", "Dritter Satz."]
     assert project.voice == "zweite-stimme"
-    assert project.handschnitt
+    assert project.teile[0].handschnitt
     assert not bericht["neu_geschnitten"]
 
 
@@ -340,7 +340,7 @@ def test_ein_geaenderter_text_schneidet_neu(settings: Settings) -> None:
     )
 
     assert len(project.chunks) == 4
-    assert not project.handschnitt
+    assert not project.teile[0].handschnitt
     assert bericht["neu_geschnitten"]
 
 
@@ -360,7 +360,7 @@ def test_die_grenze_der_engine_sticht_den_handschnitt(settings: Settings) -> Non
     )
 
     assert len(project.chunks) == 2
-    assert not project.handschnitt
+    assert not project.teile[0].handschnitt
     assert bericht["neu_geschnitten"]
 
 

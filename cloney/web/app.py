@@ -26,7 +26,7 @@ from cloney.core.audio import describe_audio, media_type
 from cloney.core.compare import MAX_VARIANTS, Comparison, build_variants, pruefe_raster
 from cloney.core.lexicon import Lexicon
 from cloney.core.models import ModelError, ModelStore, settings_for
-from cloney.core.project import ChunkStatus, Project
+from cloney.core.project import ChunkStatus, Project, Teil
 from cloney.core.pronounce import acronyms, spell_out
 from cloney.core.voices import TYPICAL_CHARS_PER_SECOND, VoiceStore, suggested_speed
 from cloney.engines.base import EngineError
@@ -381,24 +381,43 @@ def create_app(
     def project_view(request: Request, project_id: str) -> HTMLResponse:
         return project_page(request, load(project_id))
 
-    @app.post("/projects/{project_id}/configure", response_class=HTMLResponse)
-    def configure(
-        request: Request,
-        project_id: str,
-        text: str = Form(...),
-        voice: str = Form(...),
-        engine: str = Form(...),
-        model: str | None = Form(None),
-    ) -> HTMLResponse:
-        """Text, Stimme, Engine oder trainierten Stand eines Projekts ändern.
+    @app.get("/projects/{project_id}/teil", response_class=HTMLResponse)
+    def neuer_teil(request: Request, project_id: str) -> HTMLResponse:
+        """Ein leeres Teilfeld zum Anhängen.
 
-        Dieselben Angaben wie beim Anlegen -- nur dass hier nicht alles neu
-        entsteht: Sätze, deren Sprechfassung gleich bleibt, behalten ihren Ton.
+        Angelegt wird hier nichts -- der Teil entsteht erst mit dem Übernehmen.
+        Bis dahin ist er ein Formularfeld wie jedes andere, und ein Abbruch
+        kostet nichts.
+        """
+        project = load(project_id)
+        return templates.TemplateResponse(
+            request,
+            "_teil.html",
+            {"teil": Teil(), "nummer": len(project.teile) + 1, "offen": True},
+        )
+
+    @app.post("/projects/{project_id}/configure", response_class=HTMLResponse)
+    async def configure(request: Request, project_id: str) -> HTMLResponse:
+        """Vorlage, Stimme, Engine oder trainierten Stand eines Projekts ändern.
+
+        Die Teile kommen als gleichnamige Felder herein; ihre Reihenfolge im
+        Formular ist ihre Reihenfolge in der Vorlage. Deshalb wird das Formular
+        hier von Hand gelesen statt über benannte Parameter.
         """
         project = load(project_id)
         guard_idle(project_id)
-        if not text.strip():
-            raise HTTPException(400, "Der Text ist leer")
+        formular = await request.form()
+        voice = str(formular.get("voice") or "")
+        engine = str(formular.get("engine") or "")
+        model = formular.get("model")
+        teile = [
+            Teil(titel=str(titel).strip(), text=str(text))
+            for titel, text in zip(
+                formular.getlist("teil_titel"), formular.getlist("teil_text"), strict=False
+            )
+        ]
+        if not any(t.text.strip() for t in teile):
+            raise HTTPException(400, "Kein einziger Teil hat Text")
         if not voices.exists(voice):
             raise HTTPException(400, f"Stimme '{voice}' gibt es nicht")
 
@@ -416,10 +435,10 @@ def create_app(
         # Statusleiste hier den rohen Zähler ausgäbe und die Meldung einer Lage
         # umgekehrt als Zähler ohne Zahlen erschiene -- beides war zu sehen.
         umbau = project.reconfigure(
-            text=text,
+            teile=teile,
             voice=voice,
             engine=info,
-            model=pruefe_modell(model),
+            model=pruefe_modell(str(model) if model is not None else None),
             lexicon=lexikon(),
             reference_seconds=voices.longest_reference_seconds(voice),
             chars_per_second=settings.chars_per_second,
